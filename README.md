@@ -1,90 +1,72 @@
-# YATI (Yet Another Tiled Importer) for Godot 4
+# YATI runtime (Yet Another Tiled Importer) for Godot 4
 
-This is an addon for the [Godot Engine](https://godotengine.org) for importing files (.tmx, .tmj)
-created by the [Tiled Map Editor](http://www.mapeditor.org).
+A GDScript library that imports maps created with the [Tiled Map Editor](https://www.mapeditor.org)
+(.tmx / .tmj, with external .tsx / .tsj tilesets and .tx / .tj templates) **while your game is running**
+and turns them into a ready-to-use Godot node tree (`TileMapLayer`s, `Node2D`s, physics bodies, sprites, ...).
 
-**Please note: This addon is for Godot 4 only and won't work with Godot 3.x**
+This repository is a runtime-only fork of [YATI by Roland Helmerichs (Kiamo2)](https://github.com/Kiamo2/YATI).
+It contains only the GDScript runtime importer; the editor import plugin and the C# variants of the
+upstream project are not part of it. If you want to import Tiled maps as scenes inside the Godot editor,
+use the upstream project.
 
-Tested on Windows 11 with Godot 4.7.2 and Tiled 1.12.2 (Tiled maps from older Tiled versions may work too)
-
-Latest version: GDScript 2.2.9 / C# 2.2.10 (needs Godot 4.3.0 or higher)  
-Downloads: [GDScript version](../../releases/download/v2.2.9/v2.2.9-gdscript.zip) / [CSharp version](../../releases/download/v2.2.10/v2.2.10-csharp.zip)
-
-Latest version for Godot 4.2.x: 1.7.1  
-Version 1.7.1 downloads: [GDScript version](../../releases/download/v1.7.1/v1.7.1-gdscript.zip) / [CSharp version](../../releases/download/v1.7.1/v1.7.1-csharp.zip)
-
-**New since v1.5.2:** Runtime packages are now additionally available.  
-For installation and usage please refer to the [runtime document](Runtime.md)
+Requires Godot 4.3 or higher (tested with Godot 4.7.2 and Tiled 1.12.2; maps from older Tiled versions may work too).
+Godot 3.x is not supported.
 
 ## Installation
 
-The addon is available in GDScript as well as in C# for the Mono version of Godot 4.
+Copy the `runtime` folder with its entire content somewhere into your Godot project
+(the folder name can be changed). There is nothing to enable: the importer is plain GDScript.
 
-- Download either the [GDScript version](../../releases/download/v2.2.9/v2.2.9-gdscript.zip) or the [CSharp version](../../releases/download/v2.2.10/v2.2.10-csharp.zip)
-- Move the unzipped addon folder with its entire content to your Godot project folder
-- After starting your project in Godot the plugin should appear at Project>>Project Settings...>>Plugins
-
->**C# version:** Run your project once for building the plugin, otherwise enabling will fail  
-'Run your project' means 'Press the Play button'. For this to work a main scene must have been configured.`
-
-- Enable the plugin by ticking the enable checkbox
+`PostProcessing.gd` is only needed if you use the post-processing import methods.
 
 ## Usage
 
-- Place your Tiled map(s) with all its parts (.PNGs/.tsx/.tsj/.tx/.tj/...) somewhere inside your Godot project.    
-  If you do this by copying a full Tiled project from elsewhere please ensure that its folder structure is preserved.  
-  (Otherwise, the references stored in the maps and tilesets may be incorrect and errors will occur)
-- Please check: Tiled editor should seamlessly work with all maps *inside* your project i.e. all its references must be ok
+```gdscript
+var importer = preload("res://runtime/Importer.gd").new()
+var map = importer.import("res://maps/desert.tmx")
+if map != null:
+	add_child(map)
+```
 
-> Strictly speaking, only the tiled map files (.tmx/.tmj) and the map resources (.PNGs) *need* to be inside your Godot project so that they can be recognised and imported by Godot.
-Tilesets - if they are not embedded anyway - *can* be outside the Godot project as long as they are correctly referenced in the map file(s).
-The same goes for template files (.tx/.tj) and Tiled project files.  
-However, I doubt this to be very useful, as the PNG files referenced by the tileset must also be inside the project.  
-Thus we'd end up with internal references pointing outwards and external references pointing inwards.
+- `import(map_file, project_file = "")` imports from the file system (`res://`, `user://` or an absolute path).
+- `import_from_zip(zip_file, map_file_in_zip, project_file_in_zip = "")` reads the map and everything it references from a zip archive.
+- The returned node has no parent; add it directly to your tree. `null` is returned on a fatal error.
+- Import options are plain variables on the importer instance (e.g. `importer.use_default_filter = true`).
+- `importer.last_error_count` / `importer.last_warning_count` report the result of the last import.
 
-- Once these requirements are all met, (re-)starting the project lets the import run automatically
-- **Important recommendation:** Untick "Use multiple threads" in Project Settings (Advanced) Editor>>Import  
-Otherwise - if you have more than one Tiled map - Godot may freeze (+crash) during import.
+Details, all options and examples: [Runtime document](Runtime.md).
+What maps to what in Godot, custom properties and unsupported Tiled features: [Reference document](Reference.md).
 
 ## Features
 
-(Hopefully) nearly all Tiled features are supported:
-- all kinds of layers
-- all kinds of objects
-- all map orientations 
-- visibility, opacity, tint, offsets, probability
-- parallaxes
-- tile collisions
-- tile animations
-- templates
-- custom properties  
-...
+(Nearly) all Tiled features are supported:
+- all kinds of layers (tile, object, image, group) incl. infinite maps and all tile data encodings/compressions
+- all kinds of objects (rectangle, ellipse, capsule, point, polygon, polyline, text, tile, template)
+- all map orientations (orthogonal, isometric, staggered, hexagonal)
+- visibility, opacity, tint, offsets, parallax, layer blend modes add/multiply, object draw order
+- tile collisions (physics, navigation, occlusion), tile animations, terrains (wangsets)
+- custom properties incl. lists, class-typed properties and Tiled custom types (project file)
 
-By assigning values to the class attributes and by setting custom properties the resulting scene can be largely customized.
-
-For details please refer to the [reference document](Reference.md)
+By setting classes and custom properties in Tiled the resulting node tree can be largely customized.
 
 ## Limitations & Particularities
 
-1. Ellipses are not available in Godot. Where appropriate (on objects) a capsule is used instead.<p>
-On tiles inside Godot tilesets ellipses and capsules are approximated by polygons.<p>
-Points on tiles inside Godot tilesets are skipped.<p>
-2. Tileset animation in Godot requires involved tiles being equidistant and either horizontally or vertically arranged.<p>
-In Tiled you can randomly choose every frame tile, such animations won't map and are skipped.
-3. Godot 4 seems to make a left-down render - at least the 'perspective walls' example from the Tiled github site suggests this.  
-I've not yet found anything to change this.
-4. The C# version does not support zstd compression.
-5. I'm currently using Windows 10 therefore I can only ensure the functionality for this OS.
+1. Ellipses are not available in Godot. Where appropriate (on objects) a capsule is used instead.
+   On tiles inside Godot tilesets ellipses and capsules are approximated by polygons; points on tiles are skipped.
+2. Tileset animation in Godot requires the involved tiles to be equidistant and either horizontally or vertically arranged.
+   Tiled animations with arbitrary frame tiles cannot be mapped and are skipped.
+3. Resources (.tres/.res/.tscn) referenced by properties cannot be loaded from a zip archive.
+4. See the [Reference document](Reference.md#tiled-features-not-supported) for Tiled features without a Godot equivalent.
 
-## Known issues
+## Tests
 
-1. Godot may freeze during import, see my recommendation concerning "Use Multiple Threads" in the Usage section.  
-Maybe this is only a problem on Windows though...
+The `test` folder contains a headless test suite and a benchmark (see the comments in `test/run_tests.gd`).
 
-## Support
+## Credits
 
-Support is active i.e. if issues should arise I'll do my best to resolve them.<br>
-If you would like to sponsor the project I'd be thrilled if you [buy me a coffee](https://www.buymeacoffee.com/kiamo2).
+All the importer logic originates from [YATI](https://github.com/Kiamo2/YATI) by Roland Helmerichs.
+If you find the importer useful, consider supporting the upstream author ([buy him a coffee](https://www.buymeacoffee.com/kiamo2)).
 
 ## License
+
 [MIT License](LICENSE). Copyright (c) 2023-2026 Roland Helmerichs.

@@ -27,6 +27,8 @@ const CommonUtils := preload("CommonUtils.gd")
 const DictionaryBuilder := preload("DictionaryBuilder.gd")
 
 var _custom_types = null
+# Index "name|scope" -> Array of member dictionaries (built once after loading)
+var _class_members_by_name_and_scope: Dictionary = {}
 
 func load_custom_types(project_file: String):
 	var proj_file_content = DataLoader.get_tiled_file_content(project_file, "")
@@ -35,45 +37,57 @@ func load_custom_types(project_file: String):
 		CommonUtils.error_count += 1
 		return
 
-	var project_file_as_dictionary: Dictionary = DictionaryBuilder.new().get_dictionary(proj_file_content, project_file)
+	var project_file_as_dictionary = DictionaryBuilder.new().get_dictionary(proj_file_content, project_file)
+	if not project_file_as_dictionary is Dictionary:
+		printerr("ERROR: Tiled project file '" + project_file + "' could not be parsed.")
+		CommonUtils.error_count += 1
+		return
 	if project_file_as_dictionary.has("propertyTypes"):
 		_custom_types = project_file_as_dictionary["propertyTypes"]
+	_build_index()
+
+
+func _build_index() -> void:
+	_class_members_by_name_and_scope.clear()
+	if _custom_types == null: return
+	for ct_prop in _custom_types:
+		if ct_prop.get("type", "") != "class": continue
+		var pt_name: String = str(ct_prop.get("name", ""))
+		var pt_members: Array = ct_prop.get("members", [])
+		for scope in ct_prop.get("useAs", []):
+			var key: String = pt_name + "|" + str(scope)
+			if _class_members_by_name_and_scope.has(key):
+				# Same class name defined more than once: keep the definition order
+				_class_members_by_name_and_scope[key].append_array(pt_members)
+			else:
+				_class_members_by_name_and_scope[key] = pt_members.duplicate()
 
 
 func unload_custom_types():
-	_custom_types.clear()
+	if _custom_types != null:
+		_custom_types.clear()
+	_class_members_by_name_and_scope.clear()
 
 
 func merge_custom_properties(obj: Dictionary, scope: String):
-	if _custom_types == null: return
-	
+	if _class_members_by_name_and_scope.is_empty(): return
+
 	var class_string = obj.get("class", "")
 	if class_string == "":
 		class_string = obj.get("type", "")
-	
-	var properties: Array
-	var new_key = false
-	if obj.has("properties"):
-		properties = obj["properties"]
-	else:
-		properties = []
-		new_key = true
 
-	for ct_prop in _custom_types:
-		var pt_name = ct_prop.get("name", "")
-		var pt_type = ct_prop.get("type", "")
-		var pt_scope: Array = ct_prop.get("useAs", [])
-		if pt_name != class_string or pt_type != "class" or not pt_scope.has(scope): continue
-		var pt_members: Array = ct_prop.get("members", [])
-		for mem in pt_members:
-			var name = mem.get("name", "")
-			var append = true
-			for prop in properties:
-				if name == prop.get("name", ""):
-					append = false
-					break
-			if not append: continue
-			if new_key:
-				obj["properties"] = []
-				new_key = false
-			obj["properties"].append(mem)
+	var members = _class_members_by_name_and_scope.get(str(class_string) + "|" + scope)
+	if members == null: return
+
+	var existing_names: Dictionary = {}
+	if obj.has("properties"):
+		for prop in obj["properties"]:
+			existing_names[prop.get("name", "")] = true
+
+	for mem in members:
+		var name = mem.get("name", "")
+		if existing_names.has(name): continue
+		if not obj.has("properties"):
+			obj["properties"] = []
+		obj["properties"].append(mem)
+		existing_names[name] = true

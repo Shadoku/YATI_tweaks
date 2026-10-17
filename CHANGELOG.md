@@ -5,6 +5,70 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] — runtime-only fork (2026-10-17)
+
+This repository now contains only the GDScript runtime importer (`runtime/`) of
+[YATI](https://github.com/Kiamo2/YATI). The editor import plugin and all C# variants were removed.
+
+### Changed (breaking)
+- `TilemapCreator.create()` / `Importer.import*()` return a node **without parent**; the internal wrapper node
+  (and an unused ParallaxBackground) are freed. Add the result directly, `duplicate()` is no longer needed
+  (and no longer recommended: it doubled the import work).
+- Import options are plain variables on the `Importer` instance (`use_default_filter`, `add_class_as_metadata`,
+  `add_id_as_metadata`, `no_alternative_tiles`, `map_wangset_to_terrain`, `custom_data_prefix`, `save_tileset_to`)
+  instead of commented-out lines in `Importer.gd`.
+- `no_alternative_tiles` now defaults to `true` (engine transform flags instead of generated alternative tiles).
+- Class-typed properties (Tiled 1.8 nested properties) become `Dictionary` metadata `{member_name: value}`
+  (nested classes as nested Dictionaries) instead of a stringified dictionary; .tmx and .tmj give the same result.
+- `PostProcessing.gd` is no longer a `@tool` script and accepts/returns any `Node`.
+- The Godot 4.2 compatibility code path for alternative tiles was removed (minimum stays Godot 4.3).
+
+### Fixed
+- Ported the upstream 2.2.8 fix: the texture origin correction for tiles larger than the map tile size now also
+  applies to image collection tiles.
+- Zip mode was sticky: after one `import_from_zip()` every later `import()` read from the zip.
+  The zip archive is now scoped to a single import call.
+- Error/warning counters were never reset and never reported. They are reset per import and exposed as
+  `Importer.last_error_count` / `last_warning_count`; a one-line summary is printed after each import.
+- Missing map / project files are reported with a clear error before the import starts.
+- Exponential property duplication when merging template metadata into object properties.
+- Object references (`object` properties) to objects inside group layers resolved to `null`.
+- Image collection tiles whose image cannot be loaded no longer abort the tileset creation.
+- XML parser: properties nesting level was not decremented at top level (latent bug).
+
+### Added (Tiled feature parity)
+- Object layer `draworder`: `topdown` (Tiled default) enables y-sorting on the object layer node, `index` keeps the order.
+- Layer blend modes `add` and `multiply` (Tiled 1.12) via `CanvasItemMaterial`; other modes print a warning.
+- Object opacity is applied as `modulate.a`.
+- Text objects: bold and italic.
+- `repeatx` / `repeaty` on plain (non-parallax) image layers (tiled TextureRect over the map area).
+- Deprecated XML tile layer data (`<tile gid="..."/>` children without encoding) is imported.
+- Tileset class is stored as metadata `class` on the generated TileSet.
+- Class-typed tile and tileset properties as Dictionary metadata / tile custom data (`TYPE_DICTIONARY` layer).
+- Unsupported Tiled features (renderorder, oblique maps, hexsidelength, tilerendersize/fillmode, transformations,
+  wangcolor probability, wangset properties, parallax origin, other blend modes, text underline/strikeout/kerning,
+  hex 120° rotation, embedded images) are documented in the Reference.
+
+### Performance
+- Per-cell gid resolution uses a per-import cache (gid -> source, atlas coords, offset, material, ...) instead of
+  several linear scans of the atlas source list per cell; created tiles/alternatives are tracked locally.
+- Zip archives are opened once per import instead of once per file.
+- Textures are cached per import (image collections, templates, image layers referencing the same file).
+- Template files are read, parsed and turned into a TileSet once per import instead of once per instance.
+- CSV tile data parsed with `String.split_floats()`; fewer array copies when decoding layer data.
+- Polygon points split once; object lookup by id through a lazily built index (incl. group layers).
+- Custom types indexed by (class name, scope) once; member merging uses a name set.
+- Lookup tables (peering bits, terrain modes, custom data types, Godot node types, property types, ...) are
+  constants instead of being rebuilt per call; the Godot version is read once.
+- Fewer property scans per object/tile (one pass for special properties, one `to_lower()` per property).
+
+### Removed
+- Editor import plugin, C# runtime and C# plugin, `Reference_4.2.x.md`.
+
+### Internal
+- Consistent tab indentation in all scripts.
+- Headless test suite and benchmark under `test/` (run with Godot `--headless`).
+
 ## [2.2.10] - 2026-10-05
 
 ### Refactoring notes (no change in functionalitiy and only C# version is affected)

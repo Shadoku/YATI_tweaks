@@ -32,6 +32,31 @@ const CUSTOM_DATA_INTERNAL = "__internal__"
 const GODOT_ATLAS_ID_PROPERTY = "godot_atlas_id"
 const CLASS_INTERNAL = "class"
 
+# Wang id index -> Godot terrain peering bit (index 0 = top side)
+const PEERING_BITS: Array[int] = [
+	TileSet.CELL_NEIGHBOR_TOP_SIDE,
+	TileSet.CELL_NEIGHBOR_TOP_RIGHT_CORNER,
+	TileSet.CELL_NEIGHBOR_RIGHT_SIDE,
+	TileSet.CELL_NEIGHBOR_BOTTOM_RIGHT_CORNER,
+	TileSet.CELL_NEIGHBOR_BOTTOM_SIDE,
+	TileSet.CELL_NEIGHBOR_BOTTOM_LEFT_CORNER,
+	TileSet.CELL_NEIGHBOR_LEFT_SIDE,
+	TileSet.CELL_NEIGHBOR_TOP_LEFT_CORNER
+]
+const TERRAIN_MODES: Dictionary = {
+	"corner": TileSet.TERRAIN_MODE_MATCH_CORNERS,
+	"edge": TileSet.TERRAIN_MODE_MATCH_SIDES,
+	"mixed": TileSet.TERRAIN_MODE_MATCH_CORNERS_AND_SIDES
+}
+const CUSTOM_DATA_TYPES: Dictionary = {
+	"bool": TYPE_BOOL,
+	"int": TYPE_INT,
+	"string": TYPE_STRING,
+	"float": TYPE_FLOAT,
+	"color": TYPE_COLOR,
+	"class": TYPE_DICTIONARY
+}
+
 var _tileset = null
 var _current_atlas_source = null
 var _current_max_x = 0
@@ -61,6 +86,7 @@ var _ct = null
 var _current_first_gid = -1
 var _has_transparent_color: bool = false
 var _current_shader_material: ShaderMaterial = null
+var _godot_version: int = Engine.get_version_info()["hex"]
 
 
 enum layer_type {
@@ -94,14 +120,14 @@ func set_custom_data_prefix(value: String):
 func create_from_dictionary_array(tileSets: Array):
 	for tile_set in tileSets:
 		var tile_set_dict = tile_set
-	
+
 		if tile_set.has("source"):
 			var source_file: String = tile_set["source"]
- 
+
 			# Catch the AutoMap Rules tileset (is Tiled internal)
 			if source_file.begins_with(":/automap"):
 				continue # This is no error skip it
- 
+
 			var tiled_file_content = DataLoader.get_tiled_file_content(source_file, _base_path_map)
 			if tiled_file_content == null:
 				printerr("ERROR: Tileset file '" + source_file + "' not found. -> Continuing but result may be unusable")
@@ -109,19 +135,19 @@ func create_from_dictionary_array(tileSets: Array):
 				continue
 
 			_base_path_tileset = _base_path_map.path_join(source_file).get_base_dir()
- 
+
 			tile_set_dict = DictionaryBuilder.new().get_dictionary(tiled_file_content, source_file)
 			if tile_set_dict != null and tile_set.has("firstgid"):
 				tile_set_dict["firstgid"] = tile_set["firstgid"]
-	
+
 		# Possible error condition
 		if tile_set_dict == null:
 			CommonUtils.error_count += 1
 			continue
-	
+
 		create_or_append(tile_set_dict)
 		_append = true
-   
+
 	return _tileset
 
 
@@ -131,7 +157,7 @@ func get_registered_atlas_sources():
 
 func get_registered_object_groups():
 	return _object_groups
-	
+
 
 func create_or_append(tile_set: Dictionary):
 	# Catch the AutoMap Rules tileset (is Tiled internal)
@@ -183,15 +209,15 @@ func create_or_append(tile_set: Dictionary):
 		_current_shader_material = ShaderMaterial.new()
 		var shad: Shader = Shader.new()
 		shad.set_code("shader_type canvas_item;\n" +
-		              "const vec3 transparent = vec3(" + r_str + ", " + g_str + ", " + b_str + ");\n\n" +
-                      "void fragment() {\n" +
-        	            "\tvec4 col = texture(TEXTURE, UV);\n" +
-        	            "\tif (col.r >= transparent.r && col.r <= (transparent.r + 0.01) &&\n" +
-        	            "\t    col.g >= transparent.g && col.g <= (transparent.g + 0.01) &&\n" +
-        	            "\t\tcol.b >= transparent.b && col.b <= (transparent.b + 0.01))\n" +
-        	                "\t\tcol.a=0.0;\n" +
-        	            "\tCOLOR=col;\n" +
-        	          "}")
+			"const vec3 transparent = vec3(" + r_str + ", " + g_str + ", " + b_str + ");\n\n" +
+			"void fragment() {\n" +
+			"\tvec4 col = texture(TEXTURE, UV);\n" +
+			"\tif (col.r >= transparent.r && col.r <= (transparent.r + 0.01) &&\n" +
+			"\t    col.g >= transparent.g && col.g <= (transparent.g + 0.01) &&\n" +
+			"\t\tcol.b >= transparent.b && col.b <= (transparent.b + 0.01))\n" +
+			"\t\tcol.a=0.0;\n" +
+			"\tCOLOR=col;\n" +
+			"}")
 		_current_shader_material.set_shader(shad)
 	else:
 		_has_transparent_color = false
@@ -214,7 +240,7 @@ func create_or_append(tile_set: Dictionary):
 		_current_atlas_source.texture = texture
 		_columns = _current_atlas_source.texture.get_width() / _tile_size.x
 		_tile_count = _columns * _current_atlas_source.texture.get_height() / _tile_size.y
-		
+
 		register_atlas_source(added_source_id, _tile_count, -1, _tile_offset)
 		var atlas_grid_size = _current_atlas_source.get_atlas_grid_size()
 		_current_max_x = atlas_grid_size.x - 1
@@ -230,9 +256,14 @@ func create_or_append(tile_set: Dictionary):
 
 	if _ct != null:
 		_ct.merge_custom_properties(tile_set, "tileset")
-		
+
 	if tile_set.has("properties"):
 		handle_tileset_properties(tile_set["properties"])
+
+	# Tiled 'class' of the tileset (if several tilesets have one, the last one wins as Godot uses a single TileSet)
+	var tileset_class: String = str(tile_set.get("class", ""))
+	if tileset_class != "":
+		_tileset.set_meta(CLASS_INTERNAL, tileset_class)
 
 
 func register_atlas_source(source_id: int, num_tiles: int, assigned_tile_id: int, tile_offset: Vector2i):
@@ -248,7 +279,7 @@ func register_atlas_source(source_id: int, num_tiles: int, assigned_tile_id: int
 	atlas_source_item["firstGid"] = _current_first_gid
 	atlas_source_item["shaderMaterial"] = _current_shader_material
 	_atlas_sources.push_back(atlas_source_item)
-	
+
 
 func register_object_group(tile_id: int, object_group: Dictionary):
 	if _object_groups == null:
@@ -292,20 +323,25 @@ func handle_tiles(tiles: Array):
 		var current_tile
 		if tile.has("image"):
 			# Tile with its own image -> separate atlas source
-			_current_atlas_source = TileSetAtlasSource.new()
-			var added_source_id = _tileset.add_source(_current_atlas_source, get_special_property(tile, GODOT_ATLAS_ID_PROPERTY))
-			register_atlas_source(added_source_id, 1, tile_id, _tile_offset)
-
 			var texture_path = tile["image"]
 			var ext = texture_path.get_extension().to_lower()
+			var tile_texture: Texture2D = null
 			if ext == "tmx" or ext == "tmj":
 				var placeholder_texture = PlaceholderTexture2D.new()
 				var width = tile["imagewidth"]
 				var height = tile["imageheight"]
 				placeholder_texture.size = Vector2(width, height)
-				_current_atlas_source.texture = placeholder_texture
+				tile_texture = placeholder_texture
 			else:
-				_current_atlas_source.texture = DataLoader.load_image(texture_path, _base_path_tileset)
+				tile_texture = DataLoader.load_image(texture_path, _base_path_tileset)
+			if tile_texture == null:
+				# Error already reported by the loader
+				continue
+
+			_current_atlas_source = TileSetAtlasSource.new()
+			var added_source_id = _tileset.add_source(_current_atlas_source, get_special_property(tile, GODOT_ATLAS_ID_PROPERTY))
+			register_atlas_source(added_source_id, 1, tile_id, _tile_offset)
+			_current_atlas_source.texture = tile_texture
 
 			_current_atlas_source.resource_name = texture_path.get_file().get_basename()
 			var texture_width = _current_atlas_source.texture.get_width()
@@ -334,15 +370,15 @@ func handle_tiles(tiles: Array):
 				#Error occurred
 				continue
 
-			if _tile_size.x != _map_tile_size.x or _tile_size.y != _map_tile_size.y:
-				var diff_x = _tile_size.x - _map_tile_size.x
-				if diff_x % 2 != 0:
-					diff_x -= 1
-				var diff_y = _tile_size.y - _map_tile_size.y
-				if diff_y % 2 != 0:
-					diff_y += 1
-				@warning_ignore("integer_division")
-				current_tile.texture_origin = Vector2i(-diff_x/2, diff_y/2) - _tile_offset
+		if _tile_size.x != _map_tile_size.x or _tile_size.y != _map_tile_size.y:
+			var diff_x = _tile_size.x - _map_tile_size.x
+			if diff_x % 2 != 0:
+				diff_x -= 1
+			var diff_y = _tile_size.y - _map_tile_size.y
+			if diff_y % 2 != 0:
+				diff_y += 1
+			@warning_ignore("integer_division")
+			current_tile.texture_origin = Vector2i(-diff_x/2, diff_y/2) - _tile_offset
 
 		if _tile_offset != Vector2i.ZERO and current_tile.texture_origin == Vector2i.ZERO:
 			current_tile.texture_origin -= _tile_offset
@@ -362,10 +398,10 @@ func handle_tiles(tiles: Array):
 
 		if _ct != null:
 			_ct.merge_custom_properties(tile, "tile")
-		
+
 		if tile.has("properties"):
 			handle_tile_properties(tile["properties"], current_tile)
-	
+
 
 func handle_animation(frames: Array, tile_id: int) -> void:
 	var frame_count: int = 0
@@ -429,7 +465,7 @@ func handle_objectgroup(object_group: Dictionary, current_tile: TileData, tile_i
 	_object_groups_counter += 1
 	register_object_group(_object_groups_counter, object_group)
 	current_tile.set_custom_data(CUSTOM_DATA_INTERNAL, _object_groups_counter)
-	
+
 	var polygon_indices = {}
 	var objects = object_group["objects"] as Array
 	for obj in objects:
@@ -440,7 +476,7 @@ func handle_objectgroup(object_group: Dictionary, current_tile: TileData, tile_i
 
 		if _ct != null:
 			_ct.merge_custom_properties(obj, "object")
-		
+
 		var object_base_coords = Vector2(obj["x"], obj["y"])
 		object_base_coords = transpose_coords(object_base_coords.x, object_base_coords.y)
 		object_base_coords -= Vector2(current_tile.texture_origin)
@@ -541,7 +577,21 @@ func handle_objectgroup(object_group: Dictionary, current_tile: TileData, tile_i
 				polygon[i] = object_base_coords + pt_rot
 				i += 1
 
-		var nav = get_special_property(obj, "navigation_layer")
+		# Special properties (single pass, first matching int property wins)
+		var nav: int = -1
+		var occ: int = -1
+		var phys: int = -1
+		if obj.has("properties"):
+			for property in obj["properties"]:
+				if property.get("type", "string") != "int": continue
+				var prop_name: String = str(property.get("name", "")).to_lower()
+				if prop_name == "navigation_layer":
+					if nav < 0: nav = int(property.get("value", 0))
+				elif prop_name == "occlusion_layer":
+					if occ < 0: occ = int(property.get("value", 0))
+				elif prop_name == "physics_layer":
+					if phys < 0: phys = int(property.get("value", 0))
+
 		if nav >= 0:
 			var nav_p = NavigationPolygon.new()
 			nav_p.add_outline(polygon)
@@ -556,18 +606,16 @@ func handle_objectgroup(object_group: Dictionary, current_tile: TileData, tile_i
 			ensure_layer_existing(layer_type.NAVIGATION, nav)
 			current_tile.set_navigation_polygon(nav, nav_p)
 
-		var occ = get_special_property(obj, "occlusion_layer")
 		if occ >= 0:
 			var occ_p = OccluderPolygon2D.new()
 			occ_p.polygon = polygon
 			ensure_layer_existing(layer_type.OCCLUSION, occ)
-			if Engine.get_version_info()["hex"] >= 0x040400:
+			if _godot_version >= 0x040400:
 				current_tile.set_occluder_polygons_count(occ, 1)
 				current_tile.set_occluder_polygon(occ, 0, occ_p)
 			else:
 				current_tile.set_occluder(occ, occ_p)
 
-		var phys = get_special_property(obj, "physics_layer")
 		# If no property is specified assume collision (i.e. default)
 		if phys < 0 and nav < 0 and occ < 0:
 			phys = 0
@@ -615,6 +663,7 @@ func handle_tile_properties(properties: Array, current_tile: TileData):
 		var name = property.get("name", "")
 		var type = property.get("type", "string")
 		var list_val = ""
+		var class_val: Dictionary = {}
 		var val: String = ""
 		if type == "list":
 			list_val = []
@@ -622,6 +671,10 @@ func handle_tile_properties(properties: Array, current_tile: TileData):
 				var item_type: String = item["type"]
 				var item_val: String = str(item.get("value", ""))
 				list_val.append(CommonUtils.get_right_typed_value(item_type, item_val))
+		elif type == "class":
+			var raw_class_val = property.get("value", {})
+			if raw_class_val is Dictionary:
+				class_val = raw_class_val
 		else:
 			val = str(property.get("value", ""))
 		if name == "": continue
@@ -678,20 +731,18 @@ func handle_tile_properties(properties: Array, current_tile: TileData):
 					_tileset.add_custom_data_layer()
 					custom_layer = _tileset.get_custom_data_layers_count() - 1
 					_tileset.set_custom_data_layer_name(custom_layer, name)
-					var custom_type = {
-						"bool": TYPE_BOOL,
-						"int": TYPE_INT,
-						"string": TYPE_STRING,
-						"float": TYPE_FLOAT,
-						"color": TYPE_COLOR
-					}.get(type, TYPE_STRING)
-					_tileset.set_custom_data_layer_type(custom_layer, custom_type)
+					_tileset.set_custom_data_layer_type(custom_layer, CUSTOM_DATA_TYPES.get(type, TYPE_STRING))
 
-				current_tile.set_custom_data(name, CommonUtils.get_right_typed_value(type, val))
+				if type == "class":
+					current_tile.set_custom_data(name, class_val)
+				else:
+					current_tile.set_custom_data(name, CommonUtils.get_right_typed_value(type, val))
 
 			if _custom_data_prefix == "" or not name.to_lower().begins_with(_custom_data_prefix):
 				if type == "list":
 					current_tile.set_meta(name, list_val)
+				elif type == "class":
+					current_tile.set_meta(name, class_val)
 				else:
 					current_tile.set_meta(name, CommonUtils.get_right_typed_value(type, val))
 
@@ -701,6 +752,7 @@ func handle_tileset_properties(properties: Array):
 		var name = property.get("name", "")
 		var type = property.get("type", "string")
 		var list_val = ""
+		var class_val: Dictionary = {}
 		var val: String = ""
 		if type == "list":
 			list_val = []
@@ -708,6 +760,10 @@ func handle_tileset_properties(properties: Array):
 				var item_type: String = item["type"]
 				var item_val: String = str(item.get("value", ""))
 				list_val.append(CommonUtils.get_right_typed_value(item_type, item_val))
+		elif type == "class":
+			var raw_class_val = property.get("value", {})
+			if raw_class_val is Dictionary:
+				class_val = raw_class_val
 		else:
 			val = str(property.get("value", ""))
 		if name == "": continue
@@ -761,6 +817,8 @@ func handle_tileset_properties(properties: Array):
 		elif name.to_lower() != GODOT_ATLAS_ID_PROPERTY:
 			if type == "list":
 				_tileset.set_meta(name, list_val)
+			elif type == "class":
+				_tileset.set_meta(name, class_val)
 			else:
 				_tileset.set_meta(name, CommonUtils.get_right_typed_value(type, val))
 
@@ -779,7 +837,7 @@ func ensure_layer_existing(tp: layer_type, layer: int):
 			while _occlusion_layer_counter < layer:
 				_tileset.add_occlusion_layer()
 				_occlusion_layer_counter += 1
-	
+
 
 func handle_wangsets_old_mapping(wangsets):
 	_tileset.add_terrain_set()
@@ -793,11 +851,7 @@ func handle_wangsets_old_mapping(wangsets):
 
 		var terrain_mode = TileSet.TERRAIN_MODE_MATCH_CORNERS
 		if wangset.has("type"):
-			terrain_mode = {
-				"corner": TileSet.TERRAIN_MODE_MATCH_CORNERS,
-				"edge": TileSet.TERRAIN_MODE_MATCH_SIDES,
-				"mixed": TileSet.TERRAIN_MODE_MATCH_CORNERS_AND_SIDES
-			}.get(wangset["type"], terrain_mode)
+			terrain_mode = TERRAIN_MODES.get(wangset["type"], terrain_mode)
 
 		_tileset.set_terrain_set_mode(current_terrain_set, terrain_mode)
 
@@ -825,15 +879,7 @@ func handle_wangsets_old_mapping(wangsets):
 				current_tile.terrain = current_terrain
 				var i = 0
 				for wi in wangtile["wangid"]:
-					var peering_bit = {
-						1: TileSet.CELL_NEIGHBOR_TOP_RIGHT_CORNER,
-						2: TileSet.CELL_NEIGHBOR_RIGHT_SIDE,
-						3: TileSet.CELL_NEIGHBOR_BOTTOM_RIGHT_CORNER,
-						4: TileSet.CELL_NEIGHBOR_BOTTOM_SIDE,
-						5: TileSet.CELL_NEIGHBOR_BOTTOM_LEFT_CORNER,
-						6: TileSet.CELL_NEIGHBOR_LEFT_SIDE,
-						7: TileSet.CELL_NEIGHBOR_TOP_LEFT_CORNER
-					}.get(i, TileSet.CELL_NEIGHBOR_TOP_SIDE)
+					var peering_bit: int = PEERING_BITS[i] if i < PEERING_BITS.size() else TileSet.CELL_NEIGHBOR_TOP_SIDE
 					if wi > 0:
 						current_tile.set_terrain_peering_bit(peering_bit, current_terrain)
 					i += 1
@@ -855,11 +901,7 @@ func handle_wangsets(wangsets):
 
 		var terrain_mode = TileSet.TERRAIN_MODE_MATCH_CORNERS
 		if wangset.has("type"):
-			terrain_mode = {
-				"corner": TileSet.TERRAIN_MODE_MATCH_CORNERS,
-				"edge": TileSet.TERRAIN_MODE_MATCH_SIDES,
-				"mixed": TileSet.TERRAIN_MODE_MATCH_CORNERS_AND_SIDES
-			}.get(wangset["type"], terrain_mode)
+			terrain_mode = TERRAIN_MODES.get(wangset["type"], terrain_mode)
 
 		_tileset.set_terrain_set_mode(current_terrain_set, terrain_mode)
 
@@ -894,15 +936,7 @@ func handle_wangsets(wangsets):
 				current_tile.terrain_set = current_terrain_set
 				var i = 0
 				for wi in wangtile["wangid"]:
-					var peering_bit = {
-						1: TileSet.CELL_NEIGHBOR_TOP_RIGHT_CORNER,
-						2: TileSet.CELL_NEIGHBOR_RIGHT_SIDE,
-						3: TileSet.CELL_NEIGHBOR_BOTTOM_RIGHT_CORNER,
-						4: TileSet.CELL_NEIGHBOR_BOTTOM_SIDE,
-						5: TileSet.CELL_NEIGHBOR_BOTTOM_LEFT_CORNER,
-						6: TileSet.CELL_NEIGHBOR_LEFT_SIDE,
-						7: TileSet.CELL_NEIGHBOR_TOP_LEFT_CORNER
-					}.get(i, TileSet.CELL_NEIGHBOR_TOP_SIDE)
+					var peering_bit: int = PEERING_BITS[i] if i < PEERING_BITS.size() else TileSet.CELL_NEIGHBOR_TOP_SIDE
 					if wi > 0:
 						current_tile.terrain = wi-1
 						current_tile.set_terrain_peering_bit(peering_bit, wi-1)

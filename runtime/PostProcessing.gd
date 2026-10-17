@@ -20,32 +20,34 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-@tool
 extends RefCounted
 
 var _error: Error = OK
 
 func get_error():
-    return _error
+	return _error
 
-func call_post_process(base_node: Node2D, path: String):
-    var script = load(path)
-    if script == null or not script is GDScript:
-        printerr("Script could not be properly recognized/loaded. -> Postprocessing skipped")
-        _error = ERR_FILE_UNRECOGNIZED
-        return base_node
-    var script_obj = script.new()
-    if script_obj == null:
-        printerr("Script could not be instanciated. -> Postprocessing skipped")
-        _error = ERR_SCRIPT_FAILED
-        return base_node
-    if not script_obj.has_method("_post_process"):
-        printerr("Script has no method '_post_process'. -> Postprocessing skipped")
-        _error = ERR_METHOD_NOT_FOUND
-        return base_node
-    var returned_node = script_obj._post_process(base_node)
-    if returned_node == null or not returned_node is Node2D:
-        printerr("Script returned invalid data. -> Postprocessing skipped")
-        _error = ERR_INVALID_DATA
-        return base_node
-    return returned_node
+func call_post_process(base_node: Node, path: String):
+	if base_node == null:
+		_error = ERR_INVALID_PARAMETER
+		return null
+	var script = load(path)
+	if script == null or not script is GDScript:
+		printerr("Script could not be properly recognized/loaded. -> Postprocessing skipped")
+		_error = ERR_FILE_UNRECOGNIZED
+		return base_node
+	var script_obj = script.new()
+	if script_obj == null:
+		printerr("Script could not be instanciated. -> Postprocessing skipped")
+		_error = ERR_SCRIPT_FAILED
+		return base_node
+	if not script_obj.has_method("_post_process"):
+		printerr("Script has no method '_post_process'. -> Postprocessing skipped")
+		_error = ERR_METHOD_NOT_FOUND
+		return base_node
+	var returned_node = script_obj._post_process(base_node)
+	if returned_node == null or not returned_node is Node:
+		printerr("Script returned invalid data. -> Postprocessing skipped")
+		_error = ERR_INVALID_DATA
+		return base_node
+	return returned_node

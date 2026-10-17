@@ -30,6 +30,8 @@ var _result = {}
 var _current_dictionary = _result
 var _current_array = []
 var _csv_encoded = true
+# True while inside a <data> element without encoding (deprecated XML format with <tile gid="..."/> children)
+var _xml_tile_data: bool = false
 var _is_map: bool
 var _in_tileset: bool = false
 
@@ -58,7 +60,7 @@ func create(tiled_file_content: PackedByteArray, source_file_name: String):
 			if _current_element == "group":
 				_current_group_level -= 1
 			if _current_element == "properties":
-				_current_properties_level += 1
+				_current_properties_level -= 1
 			continue
 		if _current_element == "group" and not _xml.is_empty():
 			_current_group_level += 1
@@ -99,6 +101,18 @@ func simple_element(element_name: String, attribs: Dictionary):
 	if element_name == "capsule":
 		_current_dictionary["capsule"] = true
 		return OK
+	if _xml_tile_data and element_name == "tile":
+		# Deprecated XML tile layer data: one <tile gid="..."/> per cell (missing gid = empty cell)
+		if not _current_dictionary.has("data"):
+			_current_dictionary["data"] = []
+		_current_dictionary["data"].append(int(attribs.get("gid", "0")))
+		return OK
+	if _current_properties_level > 1:
+		# Members of a class-typed property (nested <properties>)
+		if element_name == "property":
+			return class_member_element(attribs)
+		if element_name == "item":
+			return class_member_list_item(attribs)
 
 	var dict_key = element_name
 	if (element_name == "objectgroup" and (not _is_map or _in_tileset)) or (element_name == "text") or (element_name == "tileoffset") or (element_name == "grid"):
@@ -110,23 +124,14 @@ func simple_element(element_name: String, attribs: Dictionary):
 	else:
 		if dict_key == "polygon" or dict_key == "polyline":
 			var arr = []
-			for pt in attribs["points"].split(" "):
-				var dict = {}
-				var x = float(pt.split(",")[0])
-				var y = float(pt.split(",")[1])
-				dict["x"] = x
-				dict["y"] = y
-				arr.append(dict)
+			for pt in attribs["points"].split(" ", false):
+				var coords: PackedStringArray = pt.split(",")
+				arr.append({ "x": float(coords[0]), "y": float(coords[1]) if coords.size() > 1 else 0.0 })
 			_current_dictionary[dict_key] = arr
 		elif dict_key == "frame" or dict_key == "property":
 			# i.e. will be part of the superior array (animation or properties)
 			var dict = {}
-			if _current_properties_level > 1:
-				_current_array = []
-				_current_dictionary[attribs["name"]] = _current_array
-				insert_attributes(dict, attribs, true)
-			else:
-				insert_attributes(dict, attribs)
+			insert_attributes(dict, attribs)
 			_current_array.append(dict)
 			if dict.has("type"):
 				if dict["type"] == "list":
@@ -176,7 +181,58 @@ func simple_element(element_name: String, attribs: Dictionary):
 				if attribs.has("type") and attribs["type"] == "list":
 					_current_array = []
 					_current_dictionary["value"] = _current_array
-	return OK        
+				elif attribs.has("type") and attribs["type"] == "class":
+					var class_value = {}
+					_current_dictionary["value"] = class_value
+					_current_dictionary = class_value
+	return OK
+
+
+# Converts the string value of a class member to its type (same result as the JSON format)
+static func get_typed_member_value(type: String, value: String) -> Variant:
+	match type:
+		"bool":
+			return value == "true"
+		"int", "object":
+			return int(value)
+		"float":
+			return float(value)
+	# string, color ("#AARRGGBB"), file, enum names
+	return value
+
+
+# A <property> inside a class-typed property: stored as member_name: typed_value
+# in the current (class value) dictionary. Nested classes become nested dictionaries, lists arrays.
+func class_member_element(attribs: Dictionary):
+	var member_name: String = attribs.get("name", "")
+	var member_type: String = attribs.get("type", "string")
+	if member_type == "class":
+		var class_value = {}
+		_current_dictionary[member_name] = class_value
+		_current_dictionary = class_value
+	elif member_type == "list":
+		var list_value = []
+		_current_dictionary[member_name] = list_value
+		_current_array = list_value
+	else:
+		_current_dictionary[member_name] = get_typed_member_value(member_type, attribs.get("value", ""))
+	return OK
+
+
+# An <item> of a list inside a class-typed property: appended typed to the current array
+func class_member_list_item(attribs: Dictionary):
+	var item_type: String = attribs.get("type", "string")
+	if item_type == "class":
+		var class_value = {}
+		_current_array.append(class_value)
+		_current_dictionary = class_value
+	elif item_type == "list":
+		var list_value = []
+		_current_array.append(list_value)
+		_current_array = list_value
+	else:
+		_current_array.append(get_typed_member_value(item_type, attribs.get("value", "")))
+	return OK
 
 
 func nested_element(element_name: String, attribs: Dictionary):
@@ -188,6 +244,12 @@ func nested_element(element_name: String, attribs: Dictionary):
 		if attribs.has("encoding"):
 			_current_dictionary["encoding"] = attribs["encoding"]
 			_csv_encoded = attribs["encoding"] == "csv"
+			_xml_tile_data = false
+		else:
+			# Deprecated XML format: cells as <tile gid="..."/> children, delivered as csv-like int array
+			_current_dictionary["encoding"] = "csv"
+			_csv_encoded = true
+			_xml_tile_data = true
 		if attribs.has("compression"):
 			_current_dictionary["compression"] = attribs["compression"]
 		return OK
@@ -206,8 +268,10 @@ func nested_element(element_name: String, attribs: Dictionary):
 		if _xml.is_end():
 			if _current_element == "group":
 				_current_group_level -= 1
-			if _current_element == "properties":
+			elif _current_element == "properties":
 				_current_properties_level -= 1
+			elif _current_element == "data":
+				_xml_tile_data = false
 			continue
 		if _current_element == "group" and not _xml.is_empty():
 			_current_group_level += 1
@@ -218,14 +282,17 @@ func nested_element(element_name: String, attribs: Dictionary):
 			if base_element == "text":
 				_current_dictionary[base_element] = str(data).replace("\r", "");
 			elif base_element == "property":
-				_current_array[-1]["value"] = str(data).replace("\r", "");
+				if _current_properties_level > 1:
+					# Multi-line string member of a class-typed property
+					_current_dictionary[attribs.get("name", "")] = get_typed_member_value(attribs.get("type", "string"), str(data).replace("\r", ""))
+				else:
+					_current_array[-1]["value"] = str(data).replace("\r", "");
 			else:
-				data = data.strip_edges(true, true)
+				data = _xml.get_stripped_data()
 				if _csv_encoded:
-					var arr = []
-					for s in data.split(','):
-						arr.append(int(s.strip_edges(true, true)))
-					data = arr
+					# split_floats skips spaces/newlines around the numbers but not '\r'.
+					# Float64 holds gids incl. flip flags (< 2^32) exactly.
+					data = Array(PackedInt64Array(Array(data.replace("\r", "").split_floats(","))))
 				_current_array[-1]["data"] = data
 			continue
 		var c_attributes = _xml.get_attributes()

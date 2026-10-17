@@ -1,66 +1,111 @@
-# YATI runtime package
+# YATI runtime importer
 
-The YATI runtime package allows for importing Tiled maps during (game) runtime.  
-To offer such a package was proposed by Jeff Brooks (see issue #16) as being of value for several users.  
-
-Like for the editor plugin there's a [GDScript version](../../releases/download/v2.2.9/runtime-v2.2.9-gdscript.zip) and a [CSharp version](../../releases/download/v2.2.10/runtime-v2.2.10-csharp.zip) available.  
-
-(Runtime downloads for Godot 4.2.x: [GDScript version](../../releases/download/v1.7.1/runtime-v1.7.1-gdscript.zip) and a [CSharp version](../../releases/download/v1.7.1/runtime-v1.7.1-csharp.zip))
+The runtime importer turns a Tiled map (.tmx/.tmj) into a Godot node tree while your game is running.
+(The idea of a runtime package was proposed by Jeff Brooks in upstream issue #16.)
 
 ## Installation
 
-- Download the package version you need and unzip it
-- Move unzipped 'runtime' folder with its entire content somewhere to your Godot source files.  
-  The folder name ('runtime') can be changed if you so wish.
+Copy the `runtime` folder with its entire content somewhere into your Godot project.
+The folder name (`runtime`) can be changed if you wish. Requires Godot 4.3 or higher.
 
 ## Usage
 
-- Call the import method in module 'Importer' with the path to the Tiled .tmx/.tmj as parameter.
-- **Since v1.6.0:** Optional second file parameter for the Tiled project file to make use of Custom Types 
-- **Since v2.1.2:** Import from Zip file by alternative method 'import_from_zip' (GDScript) / 'ImportFromZip' (C#)  
-Parameters are:
-  - zipfile
-  - path inside zipfile to .tmx/.tmj
-  - path inside zipfile to Tiled project file (optional)    
+Create an importer instance from `Importer.gd`, optionally set options on it and call one of the import methods:
 
-  **Note:** It's not possible to load resources (.tres/.res/.tscn) from zip (no method available)
-- The return value is a Godot 'Node2D' element.
+| Method | Parameters |
+|--------|------------|
+| `import` | path to the .tmx/.tmj, optional path to the Tiled project file (.tiled-project) for Custom Types |
+| `import_from_zip` | path to the zip file, path *inside* the zip to the .tmx/.tmj, optional path inside the zip to the project file |
+| `import_with_post_processing` | path to the .tmx/.tmj, path to the post-processing script, optional project file |
+| `import_from_zip_with_post_processing` | zip file, map path inside the zip, path to the post-processing script, optional project file inside the zip |
 
-Mini Example in GDScript:
+- Paths may be `res://`, `user://` or absolute paths. References inside the map (tilesets, images, templates)
+  are resolved relative to the file that contains them, as in Tiled.
+- The return value is the root node of the created tree (usually a `Node2D`; a map with a single layer returns
+  that layer's node directly). **The returned node has no parent** - add it directly with `add_child()`, there is
+  no need to `duplicate()` it.
+- On a fatal error (e.g. map file not found) `null` is returned.
+- Each call prints a one-line summary ("Import of '...' succeeded." or "... finished with N error(s) and M warning(s).");
+  details are printed before it.
 
-```py
+Mini example:
+
+```gdscript
 extends Node2D
 
-# Called when the node enters the scene tree for the first time.
 func _ready():
-    var importer_module = preload("res://src/runtime/Importer.gd").new()
-    var added_node = importer_module.import("res://test/desert.tmx")
-    # Since v1.6.0 also possible:
-    # var added_node = importer_module.import("res://test/desert.tmx", "res://test/desert.tiled-project")
-    # Since v2.1.2 also possible:
-    # var added_node = importer_module.import_from_zip("J://test/desert.zip", "tmx/desert.tmx", "desert.tiled-project")
-    get_tree().current_scene.add_child(added_node.duplicate())
-	
+	var importer = preload("res://runtime/Importer.gd").new()
+	var map = importer.import("res://maps/desert.tmx")
+	# With Tiled Custom Types:
+	# var map = importer.import("res://maps/desert.tmx", "res://maps/desert.tiled-project")
+	# From a zip archive:
+	# var map = importer.import_from_zip("user://downloads/desert.zip", "tmx/desert.tmx", "desert.tiled-project")
+	if map != null:
+		add_child(map)
+	if importer.last_error_count > 0:
+		push_warning("Map imported with %d error(s)" % importer.last_error_count)
 ```
 
-Mini Example in C#:
+## Options
 
-```py
-using Godot;
-using YATI;
+Options are plain variables on the importer instance. Set them before calling an import method;
+they apply to every following call on that instance. See the [Reference](Reference.md#options) for details.
 
-public partial class BaseNode : Node2D
-{
-    // Called when the node enters the scene tree for the first time.
-    public override void _Ready()
-    {
-        var addedNode = Importer.Import("res://test/desert.tmx");
-        // Since v1.6.0 also possible:
-        // var addedNode = Importer.Import("res://test/desert.tmx", "res://test/desert.tiled-project")
-        // Since v2.1.2 also possible:
-        // var addedNode = Importer.ImportFromZip("J://test/desert.zip", "tmx/desert.tmx", "desert.tiled-project")
-        GetTree().CurrentScene.AddChild(addedNode.Duplicate());
-    }
-}	
+| Variable | Type | Default | Meaning |
+|----------|------|---------|---------|
+| `use_default_filter` | bool | `false` | Keep Godot's default texture filter instead of forcing 'nearest' on the created layers |
+| `add_class_as_metadata` | bool | `true` | Store the Tiled class as metadata `class` on created nodes, tiles and the TileSet |
+| `add_id_as_metadata` | bool | `false` | Store the Tiled object id as metadata `id` on created nodes |
+| `no_alternative_tiles` | bool | `true` | Flipped/rotated tiles use the engine's transform flags instead of generated alternative tiles |
+| `map_wangset_to_terrain` | bool | `false` | Use the old wangset mapping (wangset -> terrain instead of terrain set) |
+| `custom_data_prefix` | String | `"data_"` | Tile properties with this name prefix become TileSet custom data layers |
+| `save_tileset_to` | String | `""` | If set, the generated TileSet is saved to this resource path |
+
+```gdscript
+var importer = preload("res://runtime/Importer.gd").new()
+importer.use_default_filter = true
+importer.custom_data_prefix = ""   # every tile property becomes custom data
+var map = importer.import("res://maps/desert.tmx")
 ```
-**Note:** the C# package has a namespace YATI thus the 'using YATI;' statement
+
+## Result
+
+After every import call:
+
+- `importer.last_error_count` - number of errors reported during the last import (a `null` result always counts at least one)
+- `importer.last_warning_count` - number of warnings reported during the last import
+
+The counters are reset at the start of each call.
+
+## Zip archives
+
+`import_from_zip` reads the map, tilesets, templates, images and the project file from the archive.
+The archive is opened once per call and closed when the call returns; it is **scoped to that one call** -
+a later `import()` on the same (or any other) importer reads from the file system again.
+
+**Note:** Godot resources referenced by properties (.tres/.res/.tscn, e.g. `res_path`, `material`) are always
+loaded with Godot's resource loader and cannot come from the zip. The same applies to the post-processing script.
+
+## Post-processing
+
+The post-processing methods load the given GDScript (it must be a project resource), instantiate it and call its
+method `_post_process(base_node)` with the imported root node. The method must return the (changed) node:
+
+```gdscript
+extends Node
+
+func _post_process(base_node: Node):
+	var area = base_node.find_child("Area2")
+	var mat = CanvasItemMaterial.new()
+	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_MUL
+	area.material = mat
+	return base_node
+```
+
+If you don't use post-processing you can delete `PostProcessing.gd` and the two post-processing methods in `Importer.gd`.
+
+## Performance tips
+
+- Textures are loaded once per import even if referenced many times (image collections, templates).
+- Leave `no_alternative_tiles` on (default): generating alternative tiles for flipped tiles is slower.
+- Template files are read and parsed once per import, no matter how many instances the map contains.

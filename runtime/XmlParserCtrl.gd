@@ -24,6 +24,8 @@ extends RefCounted
 
 var _parser = null
 var _parsed_file_name = ""
+# Text of the last "<data>" node with surrounding white space removed (computed once in next_element)
+var _stripped_data: String = ""
 
 func _init():
 	_parser = XMLParser.new()
@@ -37,8 +39,9 @@ func next_element():
 	if err != OK:
 		return null
 	if _parser.get_node_type() == XMLParser.NODE_TEXT:
-		var text = _parser.get_node_data().strip_edges(true, true)
+		var text: String = _parser.get_node_data().strip_edges(true, true)
 		if text.length() > 0:
+			_stripped_data = text
 			return "<data>"
 	while _parser.get_node_type() != XMLParser.NODE_ELEMENT and _parser.get_node_type() != XMLParser.NODE_ELEMENT_END:
 		err = parse_on()
@@ -54,6 +57,9 @@ func is_empty() -> bool:
 
 func get_data() -> String:
 	return _parser.get_node_data()
+
+func get_stripped_data() -> String:
+	return _stripped_data
 
 func get_attributes() -> Dictionary:
 	var attributes = {}
