@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+ <tileset firstgid="1" source="terrain.tsx"/>
+ <object name="Enemy" gid="3" width="16" height="16">
+  <properties>
+   <property name="hp" type="int" value="10"/>
+   <property name="faction" value="orcs"/>
+  </properties>
+ </object>
+</template>

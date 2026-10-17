@@ -1,0 +1,9 @@
+; Engine configuration file.
+; Minimal project used only to run the YATI runtime importer tests headless.
+
+config_version=5
+
+[application]
+
+config/name="YATI runtime tests"
+config/features=PackedStringArray("4.7")

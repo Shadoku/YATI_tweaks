@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="8" height="6" tilewidth="16" tileheight="16" infinite="0" nextlayerid="20" nextobjectid="10">
+ <properties>
+  <property name="map_prop" value="layers-map"/>
+ </properties>
+ <tileset firstgid="1" source="terrain.tsx"/>
+ <layer id="1" name="Base" width="8" height="6">
+  <properties>
+   <property name="godot_group" value="ground_layers"/>
+  </properties>
+  <data encoding="csv">
+1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1
+</data>
+ </layer>
+ <layer id="2" name="Styled" class="decor" width="8" height="6" opacity="0.5" tintcolor="#ff0000" offsetx="8" offsety="4">
+  <data encoding="csv">
+2,2,2,2,2,2,2,2,
+2,2,2,2,2,2,2,2,
+2,2,2,2,2,2,2,2,
+2,2,2,2,2,2,2,2,
+2,2,2,2,2,2,2,2,
+2,2,2,2,2,2,2,2
+</data>
+ </layer>
+ <layer id="3" name="Hidden" width="8" height="6" visible="0">
+  <data encoding="csv">
+3,3,3,3,3,3,3,3,
+3,3,3,3,3,3,3,3,
+3,3,3,3,3,3,3,3,
+3,3,3,3,3,3,3,3,
+3,3,3,3,3,3,3,3,
+3,3,3,3,3,3,3,3
+</data>
+ </layer>
+ <layer id="4" name="Parallaxed" width="8" height="6" parallaxx="0.5" parallaxy="0.75">
+  <data encoding="csv">
+4,4,4,4,4,4,4,4,
+4,4,4,4,4,4,4,4,
+4,4,4,4,4,4,4,4,
+4,4,4,4,4,4,4,4,
+4,4,4,4,4,4,4,4,
+4,4,4,4,4,4,4,4
+</data>
+ </layer>
+ <layer id="5" name="AddLayer" width="8" height="6" mode="add">
+  <data encoding="csv">
+9,9,9,9,9,9,9,9,
+9,9,9,9,9,9,9,9,
+9,9,9,9,9,9,9,9,
+9,9,9,9,9,9,9,9,
+9,9,9,9,9,9,9,9,
+9,9,9,9,9,9,9,9
+</data>
+ </layer>
+ <layer id="6" name="MulLayer" width="8" height="6" mode="multiply">
+  <data encoding="csv">
+10,10,10,10,10,10,10,10,
+10,10,10,10,10,10,10,10,
+10,10,10,10,10,10,10,10,
+10,10,10,10,10,10,10,10,
+10,10,10,10,10,10,10,10,
+10,10,10,10,10,10,10,10
+</data>
+ </layer>
+ <layer id="7" name="Skipped" width="8" height="6">
+  <properties>
+   <property name="no_import" type="bool" value="true"/>
+  </properties>
+  <data encoding="csv">
+1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1
+</data>
+ </layer>
+ <group id="8" name="Group1" offsetx="10" offsety="20" opacity="0.8">
+  <layer id="9" name="GroupTiles" width="8" height="6">
+   <data encoding="csv">
+12,12,12,12,12,12,12,12,
+12,12,12,12,12,12,12,12,
+12,12,12,12,12,12,12,12,
+12,12,12,12,12,12,12,12,
+12,12,12,12,12,12,12,12,
+12,12,12,12,12,12,12,12
+</data>
+  </layer>
+  <objectgroup id="10" name="GroupObjects">
+   <object id="1" name="GObj" x="8" y="8" width="16" height="16"/>
+  </objectgroup>
+ </group>
+ <objectgroup id="11" name="TopDown">
+  <object id="2" name="TD_A" x="0" y="64">
+   <point/>
+  </object>
+  <object id="3" name="TD_B" x="32" y="16">
+   <point/>
+  </object>
+ </objectgroup>
+ <objectgroup id="12" name="Indexed" draworder="index">
+  <object id="4" name="IX_A" x="0" y="64">
+   <point/>
+  </object>
+  <object id="5" name="IX_B" x="32" y="16">
+   <point/>
+  </object>
+ </objectgroup>
+ <imagelayer id="13" name="ImgPlain" offsetx="4" offsety="6">
+  <image source="bg.png" width="64" height="32"/>
+ </imagelayer>
+ <imagelayer id="14" name="ImgParallax" parallaxx="0.5">
+  <image source="bg.png" width="64" height="32"/>
+ </imagelayer>
+ <imagelayer id="15" name="ImgRepeat" offsetx="8" repeatx="1">
+  <image source="bg.png" width="64" height="32"/>
+ </imagelayer>
+ <imagelayer id="16" name="ImgPx2D" class="parallax" parallaxy="0.5" repeaty="1">
+  <image source="bg.png" width="64" height="32"/>
+ </imagelayer>
+</map>

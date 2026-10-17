@@ -1,0 +1,7 @@
+# Godot editor/import cache
+.godot/
+*.import
+# Test harness generated output (benchmark maps, temp files)
+test/out/
+# Local copy of the baseline runtime used for benchmark comparison
+baseline_runtime/

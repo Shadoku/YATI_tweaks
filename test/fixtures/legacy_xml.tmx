@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="4" height="2" tilewidth="16" tileheight="16" infinite="0" nextlayerid="3" nextobjectid="1">
+ <tileset firstgid="1" source="terrain.tsx"/>
+ <layer id="1" name="LegacyXml" width="4" height="2">
+  <data>
+   <tile gid="1"/>
+   <tile gid="2"/>
+   <tile/>
+   <tile gid="4"/>
+   <tile gid="9"/>
+   <tile/>
+   <tile/>
+   <tile gid="2"/>
+  </data>
+ </layer>
+ <layer id="2" name="AfterLegacy" width="4" height="2">
+  <data encoding="csv">
+3,3,3,3,
+3,3,3,3
+</data>
+ </layer>
+</map>

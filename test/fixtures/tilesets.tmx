@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="8" height="4" tilewidth="16" tileheight="16" infinite="0" nextlayerid="3" nextobjectid="1">
+ <!-- external tileset: source 0 -->
+ <tileset firstgid="1" source="terrain.tsx"/>
+ <!-- embedded tileset with margin, spacing and tileoffset: source 1 -->
+ <tileset firstgid="33" name="spaced" tilewidth="16" tileheight="16" spacing="1" margin="2" tilecount="8" columns="4">
+  <tileoffset x="2" y="-3"/>
+  <image source="tiles_ms.png" width="71" height="37"/>
+ </tileset>
+ <!-- embedded image collection: sources 2, 3 (32x48, larger than the map tile), 4 -->
+ <tileset firstgid="41" name="collection" tilewidth="32" tileheight="48" tilecount="3" columns="0">
+  <grid orientation="orthogonal" width="1" height="1"/>
+  <tile id="0">
+   <image source="small.png" width="16" height="16"/>
+  </tile>
+  <tile id="1">
+   <image source="big.png" width="32" height="48"/>
+  </tile>
+  <tile id="2" type="area">
+   <image source="obj.png" width="16" height="16"/>
+  </tile>
+ </tileset>
+ <layer id="1" name="Main" width="8" height="4">
+  <data encoding="csv">
+1,5,9,17,33,34,41,42,
+4,18,19,20,35,36,43,0,
+0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0
+</data>
+ </layer>
+ <!-- gid 2 with every flip combination: none,H,V,D,HV,HD,VD,HVD -->
+ <layer id="2" name="Flips" width="8" height="4">
+  <data encoding="csv">
+2,2147483650,1073741826,536870914,3221225474,2684354562,1610612738,3758096386,
+0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0
+</data>
+ </layer>
+</map>

@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="25" height="20" tilewidth="16" tileheight="16" infinite="0" nextlayerid="10" nextobjectid="200">
+ <tileset firstgid="1" source="terrain.tsx"/>
+ <objectgroup id="1" name="Objects">
+  <!-- shapes and classes -->
+  <object id="1" name="Rect" x="16" y="16" width="32" height="16"/>
+  <object id="2" name="AreaRect" class="area" x="64" y="16" width="16" height="16"/>
+  <object id="3" name="StaticRect" class="staticbody" x="96" y="16" width="16" height="16"/>
+  <object id="4" name="AnimRect" class="animatablebody" x="128" y="16" width="16" height="16"/>
+  <object id="5" name="NavRect" class="navigation" x="16" y="48" width="32" height="32"/>
+  <object id="6" name="OccRect" class="occluder" x="64" y="48" width="16" height="16"/>
+  <object id="7" name="PolyRect" class="polygon" x="96" y="48" width="16" height="16"/>
+  <object id="8" name="CharRect" class="characterbody" x="128" y="48" width="16" height="16"/>
+  <object id="40" name="RigidRect" class="rigidbody" x="160" y="48" width="16" height="16"/>
+  <object id="9" name="Ellipse" x="96" y="80" width="32" height="16">
+   <ellipse/>
+  </object>
+  <object id="10" name="Capsule" x="144" y="80" width="16" height="32">
+   <capsule/>
+  </object>
+  <object id="11" name="Point" x="200" y="100">
+   <point/>
+  </object>
+  <object id="12" name="Poly" x="160" y="160">
+   <polygon points="0,0 32,0 32,32"/>
+  </object>
+  <object id="13" name="Polyline" x="10" y="200">
+   <polyline points="0,0 20,0 20,20"/>
+  </object>
+  <object id="14" name="Line" class="line" x="40" y="200">
+   <polyline points="0,0 10,10 20,0"/>
+  </object>
+  <object id="15" name="Path" class="path" x="80" y="200">
+   <polyline points="0,0 10,10 20,0"/>
+  </object>
+  <object id="16" name="Text" x="50" y="120" width="100" height="20">
+   <text fontfamily="Sans" pixelsize="12" wrap="1" bold="1" italic="1" halign="center">Hello YATI</text>
+  </object>
+  <!-- tile objects -->
+  <object id="17" name="TileObj" gid="1" x="32" y="288" width="16" height="16">
+   <properties>
+    <property name="own" value="mine"/>
+   </properties>
+  </object>
+  <object id="18" name="TileObjFlipped" gid="2147483650" x="64" y="288" width="16" height="16"/>
+  <object id="19" name="CollTileObj" class="staticbody" gid="9" x="96" y="288" width="16" height="16"/>
+  <object id="20" name="CharTile" class="characterbody" gid="9" x="128" y="288" width="16" height="16"/>
+  <object id="21" name="RigidTile" class="rigidbody" gid="9" x="160" y="288" width="16" height="16"/>
+  <object id="22" name="AreaTile" class="area" gid="9" x="192" y="288" width="16" height="16"/>
+  <object id="41" name="LootTile" gid="11" x="224" y="288" width="16" height="16">
+   <properties>
+    <property name="own" value="mine"/>
+   </properties>
+  </object>
+  <!-- opacity / visibility -->
+  <object id="23" name="Faded" x="200" y="16" width="16" height="16" opacity="0.5"/>
+  <object id="29" name="HiddenRect" x="232" y="16" width="16" height="16" visible="0"/>
+  <!-- every property type -->
+  <object id="24" name="Props" x="300" y="20" width="16" height="16">
+   <properties>
+    <property name="godot_group" value="enemies, bosses"/>
+    <property name="godot_node_type" value="area"/>
+    <property name="p_bool" type="bool" value="true"/>
+    <property name="p_class" type="class" propertytype="Stats">
+     <properties>
+      <property name="hp" type="int" value="7"/>
+      <property name="label" value="boss"/>
+     </properties>
+    </property>
+    <property name="p_color" type="color" value="#80ff0000"/>
+    <property name="p_file" type="file" value="data/info.txt"/>
+    <property name="p_float" type="float" value="2.5"/>
+    <property name="p_int" type="int" value="42"/>
+    <property name="p_obj_group" type="object" value="101"/>
+    <property name="p_obj_point" type="object" value="11"/>
+    <property name="p_obj_poly" type="object" value="12"/>
+    <property name="p_string" value="hello"/>
+   </properties>
+  </object>
+  <!-- template instances -->
+  <object id="25" template="enemy.tx" name="T1" x="32" y="240"/>
+  <object id="26" template="enemy.tx" name="T2" x="64" y="240">
+   <properties>
+    <property name="hp" type="int" value="99"/>
+   </properties>
+  </object>
+  <object id="27" template="enemy.tx" x="96" y="240"/>
+  <!-- custom type from the project file -->
+  <object id="28" name="EnemyRect" class="Enemy" x="300" y="60" width="16" height="16"/>
+ </objectgroup>
+ <objectgroup id="2" name="IndexObjects" draworder="index">
+  <object id="30" name="IdxPoint" x="10" y="10">
+   <point/>
+  </object>
+ </objectgroup>
+ <group id="3" name="ObjGroup">
+  <objectgroup id="4" name="InnerObjects">
+   <object id="101" name="GroupPoly" class="polygon" x="100" y="100">
+    <polygon points="0,0 10,0 10,10 0,10"/>
+   </object>
+  </objectgroup>
+ </group>
+ <objectgroup id="5" name="NoImportObjs">
+  <properties>
+   <property name="no_import" type="bool" value="true"/>
+  </properties>
+  <object id="31" name="ShouldNotExist" x="0" y="0" width="16" height="16"/>
+ </objectgroup>
+</map>

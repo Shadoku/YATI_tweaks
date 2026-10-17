@@ -1,28 +1,14 @@
-CSharp/addons/YATI/DictionaryBuilder.cs linguist-detectable=false
-CSharp/addons/YATI/DictionaryFromXml.cs linguist-detectable=false
-CSharp/addons/YATI/Importer.cs linguist-detectable=false
-CSharp/addons/YATI/PostProcessing.cs linguist-detectable=false
-CSharp/addons/YATI/TilesetCreator.cs linguist-detectable=false
-CSharp/addons/YATI/CommonUtils.cs linguist-detectable=false
-CSharp/addons/YATI/CustomTypes.cs linguist-detectable=false
-CSharp/runtime/DictionaryBuilder.cs linguist-detectable=false
-CSharp/runtime/DictionaryFromXml.cs linguist-detectable=false
-CSharp/runtime/Importer.cs linguist-detectable=false
-CSharp/runtime/TilesetCreator.cs linguist-detectable=false
-CSharp/runtime/CommonUtils.cs linguist-detectable=false
-CSharp/runtime/CustomTypes.cs linguist-detectable=false
-
-# Exclude all top-level files and directories (except addons) from ZIP downloads.
-# This makes installing through the AssetLib easier, because no files and folders need to be unchecked.
+# Exclude everything but the runtime importer from `git archive` ZIP downloads,
+# so the archive can be dropped straight into a Godot project.
 .github export-ignore
-CSharp/* export-ignore
-GDScript/runtime export-ignore
-supplemental export-ignore
 .gitattributes export-ignore
+.gitignore export-ignore
+project.godot export-ignore
+test export-ignore
+supplemental export-ignore
 CHANGELOG.md export-ignore
 LICENSE export-ignore
 README.md export-ignore
 Reference.md export-ignore
-Reference_4.2.x.md export-ignore
 Runtime.md export-ignore
 icon.png export-ignore

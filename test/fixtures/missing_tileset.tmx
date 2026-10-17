@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="2" height="2" tilewidth="16" tileheight="16" infinite="0" nextlayerid="3" nextobjectid="1">
+ <tileset firstgid="1" source="does_not_exist.tsx"/>
+ <layer id="1" name="Ground" width="2" height="2">
+  <data encoding="csv">
+1,1,
+1,1
+</data>
+ </layer>
+ <layer id="2" name="Second" width="2" height="2">
+  <data encoding="csv">
+0,0,
+0,0
+</data>
+ </layer>
+</map>

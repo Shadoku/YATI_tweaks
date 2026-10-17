@@ -1,0 +1,56 @@
+{
+  "automappingRulesFile": "",
+  "commands": [],
+  "compatibilityVersion": 1100,
+  "extensionsPath": "extensions",
+  "folders": [
+    "."
+  ],
+  "properties": [],
+  "propertyTypes": [
+    {
+      "id": 1,
+      "name": "Enemy",
+      "type": "class",
+      "useAs": [
+        "object"
+      ],
+      "color": "#ffa0a0a4",
+      "drawFill": true,
+      "members": [
+        {
+          "name": "hp",
+          "type": "int",
+          "value": 100
+        },
+        {
+          "name": "speed",
+          "type": "float",
+          "value": 1.5
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Stats",
+      "type": "class",
+      "useAs": [
+        "property"
+      ],
+      "color": "#ffa0a0a4",
+      "drawFill": true,
+      "members": [
+        {
+          "name": "hp",
+          "type": "int",
+          "value": 1
+        },
+        {
+          "name": "label",
+          "type": "string",
+          "value": ""
+        }
+      ]
+    }
+  ]
+}

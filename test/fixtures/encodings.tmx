@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="4" height="4" tilewidth="16" tileheight="16" infinite="0" nextlayerid="6" nextobjectid="1">
+ <tileset firstgid="1" source="terrain.tsx"/>
+ <layer id="1" name="CSV" width="4" height="4">
+  <data encoding="csv">
+1,2,3,4,
+9,10,11,12,
+0,0,17,18,
+25,26,27,2147483650
+</data>
+ </layer>
+ <layer id="2" name="B64" width="4" height="4">
+  <data encoding="base64">
+   AQAAAAIAAAADAAAABAAAAAkAAAAKAAAACwAAAAwAAAAAAAAAAAAAABEAAAASAAAAGQAAABoAAAAbAAAAAgAAgA==
+  </data>
+ </layer>
+ <layer id="3" name="B64zlib" width="4" height="4">
+  <data encoding="base64" compression="zlib">
+   eJxjZGBgYAJiZiBmAWJOIOYCYm4g5mFAAEEgFgJiSSCWAmJpiL4GABBoASg=
+  </data>
+ </layer>
+ <layer id="4" name="B64gzip" width="4" height="4">
+  <data encoding="base64" compression="gzip">
+   H4sIAAAAAAAAA2NkYGBgAmJmIGYBYk4g5gJibiDmYUAAQSAWAmJJIJYCYmmIvgYAbuLWTEAAAAA=
+  </data>
+ </layer>
+ <layer id="5" name="B64zstd" width="4" height="4">
+  <data encoding="base64" compression="zstd">
+   KLUv/SBAAQIAAQAAAAIAAAADAAAABAAAAAkAAAAKAAAACwAAAAwAAAAAAAAAAAAAABEAAAASAAAAGQAAABoAAAAbAAAAAgAAgA==
+  </data>
+ </layer>
+</map>

@@ -723,22 +723,25 @@ func handle_tile_properties(properties: Array, current_tile: TileData):
 			ensure_layer_existing(layer_type.PHYSICS, layer_index)
 			current_tile.set_constant_angular_velocity(layer_index, float(val))
 		elif name.to_lower() != GODOT_ATLAS_ID_PROPERTY:
-			if _custom_data_prefix == "" or name.to_lower().begins_with(_custom_data_prefix):
-				name = name.substr(len(_custom_data_prefix))
+			# Properties starting with the custom data prefix become TileSet custom data (prefix stripped),
+			# all others become tile metadata. An empty prefix means: every property becomes both.
+			var is_custom_data: bool = _custom_data_prefix == "" or name.to_lower().begins_with(_custom_data_prefix)
+			if is_custom_data:
+				var data_name: String = name.substr(len(_custom_data_prefix))
 
-				var custom_layer = _tileset.get_custom_data_layer_by_name(name)
+				var custom_layer = _tileset.get_custom_data_layer_by_name(data_name)
 				if custom_layer < 0:
 					_tileset.add_custom_data_layer()
 					custom_layer = _tileset.get_custom_data_layers_count() - 1
-					_tileset.set_custom_data_layer_name(custom_layer, name)
+					_tileset.set_custom_data_layer_name(custom_layer, data_name)
 					_tileset.set_custom_data_layer_type(custom_layer, CUSTOM_DATA_TYPES.get(type, TYPE_STRING))
 
 				if type == "class":
-					current_tile.set_custom_data(name, class_val)
+					current_tile.set_custom_data(data_name, class_val)
 				else:
-					current_tile.set_custom_data(name, CommonUtils.get_right_typed_value(type, val))
+					current_tile.set_custom_data(data_name, CommonUtils.get_right_typed_value(type, val))
 
-			if _custom_data_prefix == "" or not name.to_lower().begins_with(_custom_data_prefix):
+			if not is_custom_data or _custom_data_prefix == "":
 				if type == "list":
 					current_tile.set_meta(name, list_val)
 				elif type == "class":

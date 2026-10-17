@@ -1,0 +1,132 @@
+{
+  "type": "map",
+  "version": "1.10",
+  "tiledversion": "1.11.2",
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "width": 4,
+  "height": 4,
+  "tilewidth": 16,
+  "tileheight": 16,
+  "infinite": false,
+  "nextlayerid": 3,
+  "nextobjectid": 3,
+  "tilesets": [
+    {
+      "firstgid": 1,
+      "name": "jtiles",
+      "image": "tiles.png",
+      "imagewidth": 128,
+      "imageheight": 64,
+      "tilewidth": 16,
+      "tileheight": 16,
+      "tilecount": 32,
+      "columns": 8,
+      "margin": 0,
+      "spacing": 0,
+      "tiles": [
+        {
+          "id": 0,
+          "properties": [
+            {
+              "name": "data_speed",
+              "type": "int",
+              "value": 5
+            },
+            {
+              "name": "kind",
+              "type": "string",
+              "value": "json-grass"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": 1,
+      "name": "JTiles",
+      "type": "tilelayer",
+      "width": 4,
+      "height": 4,
+      "x": 0,
+      "y": 0,
+      "opacity": 1,
+      "visible": true,
+      "data": [
+        1,
+        2,
+        3,
+        4,
+        9,
+        10,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1073741826,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "id": 2,
+      "name": "JObjects",
+      "type": "objectgroup",
+      "draworder": "topdown",
+      "x": 0,
+      "y": 0,
+      "opacity": 1,
+      "visible": true,
+      "objects": [
+        {
+          "id": 1,
+          "name": "JRect",
+          "type": "",
+          "x": 16,
+          "y": 16,
+          "width": 16,
+          "height": 16,
+          "rotation": 0,
+          "visible": true,
+          "properties": [
+            {
+              "name": "p_int",
+              "type": "int",
+              "value": 42
+            },
+            {
+              "name": "p_str",
+              "type": "string",
+              "value": "json"
+            },
+            {
+              "name": "stats",
+              "type": "class",
+              "propertytype": "Stats",
+              "value": {
+                "hp": 5,
+                "label": "orc"
+              }
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "name": "JPoint",
+          "point": true,
+          "x": 40,
+          "y": 48,
+          "width": 0,
+          "height": 0,
+          "rotation": 0,
+          "visible": true
+        }
+      ]
+    }
+  ]
+}
