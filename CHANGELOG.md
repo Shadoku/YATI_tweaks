@@ -35,10 +35,19 @@ This repository now contains only the GDScript runtime importer (`runtime/`) of
 - Object references (`object` properties) to objects inside group layers resolved to `null`.
 - Image collection tiles whose image cannot be loaded no longer abort the tileset creation.
 - XML parser: properties nesting level was not decremented at top level (latent bug).
+- `<tileoffset>` was ignored for same-size tiles that are created on the fly while filling a layer.
+- `parallaxx`/`parallaxy` defaulted to 0 instead of 1 on the ParallaxLayer path when only one of them was set.
+- Tile properties carrying the custom data prefix were also stored as tile metadata under the stripped name.
+- Rectangle, polygon and polyline objects of class `characterbody` / `rigidbody` were silently dropped;
+  they now become CharacterBody2D / RigidBody2D with the matching collision shapes.
+- Tile objects with collisions leaked 4 to 5 nodes each (eagerly constructed body candidates); the empty
+  wrapper node was never freed.
+- Numeric object names, `__`-forwarded list properties and `one_way_collision_margin` no longer cause script errors.
 
 ### Added (Tiled feature parity)
 - Object layer `draworder`: `topdown` (Tiled default) enables y-sorting on the object layer node, `index` keeps the order.
-- Layer blend modes `add` and `multiply` (Tiled 1.12) via `CanvasItemMaterial`; other modes print a warning.
+- Layer blend modes `add` and `multiply` (Tiled 1.12) via `CanvasItemMaterial`; on group layers the material is
+  propagated to all descendants via `use_parent_material`; other modes print a warning.
 - Object opacity is applied as `modulate.a`.
 - Text objects: bold and italic.
 - `repeatx` / `repeaty` on plain (non-parallax) image layers (tiled TextureRect over the map area).

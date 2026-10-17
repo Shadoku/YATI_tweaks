@@ -41,6 +41,29 @@ const GODOT_GROUP_PROPERTY = "godot_group"
 const GODOT_SCRIPT_PROPERTY = "godot_script"
 const DEFAULT_ALIGNMENT = "unspecified"
 
+# Unit offsets (multiplied with (width, height)) for the different object alignments
+const ALIGNMENT_UNIT_OFFSETS = {
+	"bottomleft": Vector2(0.5, -0.5),
+	"bottom": Vector2(0.0, -0.5),
+	"bottomright": Vector2(-0.5, -0.5),
+	"left": Vector2(0.5, 0.0),
+	"center": Vector2(0.0, 0.0),
+	"right": Vector2(-0.5, 0.0),
+	"topleft": Vector2(0.5, 0.5),
+	"top": Vector2(0.0, 0.5),
+	"topright": Vector2(-0.5, 0.5),
+}
+const META_TYPE_TO_PROPERTY_TYPE = {
+	TYPE_BOOL: "bool",
+	TYPE_INT: "int",
+	TYPE_STRING: "string",
+	TYPE_FLOAT: "float",
+	TYPE_COLOR: "color"
+}
+const FORCED_FILE_PROPERTIES = ["godot_script", "material", "physics_material_override"]
+const ONE_WAY_PROPERTY_KEYS = ["one_way:bool", "one_way_margin:int", "one_way_margin:float"]
+const TILE_INSTANCE_PROPERTY_KEYS = ["res_path:file", "res_alignment:string"]
+
 var _map_orientation: String
 var _map_width: int = 0
 var _map_height: int = 0
@@ -83,6 +106,14 @@ var _iso_scale: Vector2
 
 var _godot_version: int
 
+# Per-import caches (reset in create())
+var _atlas_index_cache: Dictionary = {}		# gid -> index into _atlas_sources (or -1)
+var _first_gid_index_cache: Dictionary = {}	# gid -> index into _first_gids
+var _cell_cache: Dictionary = {}			# raw cell value (incl. flip flags) -> [source_id, atlas_coords, alt_id] or [] (skip)
+var _known_tiles: Dictionary = {}			# Vector3i / Vector4i keys of tiles/alternatives known to exist in _tileset
+var _template_cache: Dictionary = {}		# template full path -> {"dict": Dictionary, "tileset": TileSet, "missing": bool}
+var _objects_by_id = null					# lazily built: object id -> object dictionary
+
 enum _godot_type {
 	EMPTY,
 	BODY,
@@ -98,6 +129,25 @@ enum _godot_type {
 	INSTANCE,
 	PARALLAX,
 	UNKNOWN
+}
+
+const COLLISION_OBJECT_TYPES = [_godot_type.BODY, _godot_type.ABODY, _godot_type.AREA, _godot_type.CBODY, _godot_type.RBODY]
+
+const GODOT_TYPE_MAP = {
+	"": _godot_type.EMPTY,
+	"collision": _godot_type.BODY,
+	"staticbody": _godot_type.BODY,
+	"characterbody": _godot_type.CBODY,
+	"rigidbody": _godot_type.RBODY,
+	"animatablebody": _godot_type.ABODY,
+	"area": _godot_type.AREA,
+	"navigation": _godot_type.NAVIGATION,
+	"occluder": _godot_type.OCCLUDER,
+	"line": _godot_type.LINE,
+	"path": _godot_type.PATH,
+	"polygon": _godot_type.POLYGON,
+	"instance": _godot_type.INSTANCE,
+	"parallax": _godot_type.PARALLAX
 }
 
 
@@ -149,8 +199,24 @@ static func recursively_change_owner(node: Node, new_owner: Node):
 		recursively_change_owner(child, new_owner)
 
 
+func reset_import_state() -> void:
+	_first_gids = []
+	_atlas_sources = null
+	_object_groups = null
+	_tileset = null
+	_background = null
+	_parallax_layer_existing = false
+	_atlas_index_cache.clear()
+	_first_gid_index_cache.clear()
+	_cell_cache.clear()
+	_known_tiles.clear()
+	_template_cache.clear()
+	_objects_by_id = null
+
+
 func create(source_file: String):
 	_godot_version = Engine.get_version_info()["hex"]
+	reset_import_state()
 	_base_path = source_file.get_base_dir()
 	var map_content = DataLoader.get_tiled_file_content(source_file, _base_path)
 	if map_content == null:
@@ -187,6 +253,9 @@ func create(source_file: String):
 		if _atlas_sources != null:
 			_atlas_sources.sort_custom(custom_compare)
 		_object_groups = tileset_creator.get_registered_object_groups()
+	# gid lookups depend on _atlas_sources / _first_gids, which are final from here on
+	_atlas_index_cache.clear()
+	_first_gid_index_cache.clear()
 	if _tileset == null:
 		# If tileset still null create an empty one
 		_tileset = TileSet.new()
@@ -244,19 +313,35 @@ func create(source_file: String):
 
 	if _parallax_background.get_child_count() == 0:
 		_base_node.remove_child(_parallax_background)
-		_parallax_background.queue_free()
+		# Nothing is inside a scene tree yet, so free immediately
+		_parallax_background.free()
+	_parallax_background = null
 
 	# Remove internal helper custom data
 	if _tileset.get_custom_data_layers_count() > 0:
 		_tileset.remove_custom_data_layer(0)
 
-	if _base_node.get_child_count() > 1: return _base_node
+	# Release per-import caches (they hold references to dictionaries and tilesets)
+	_cell_cache.clear()
+	_known_tiles.clear()
+	_template_cache.clear()
+	_objects_by_id = null
 
+	if _base_node.get_child_count() != 1:
+		var base = _base_node
+		_base_node = null
+		return base
+
+	# Single child: return it parentless and free the wrapper node
 	var ret = _base_node.get_child(0)
+	_base_node.remove_child(ret)
 	recursively_change_owner(ret, ret)
 	if _base_dictionary.has("properties"):
 		handle_properties(ret, _base_dictionary["properties"])
 	ret.name = _base_name
+	_base_node.free()
+	_base_node = null
+	_background = null
 	return ret
 
 
@@ -293,6 +378,7 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 		handle_parallaxes(parent, _tilemap_layer, layer)
 		if _map_orientation == "isometric" or _map_orientation == "staggered":
 			_tilemap_layer.y_sort_enabled = true
+		apply_blend_mode(_tilemap_layer, layer)
 
 		if not _use_default_filter:
 			_tilemap_layer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -353,8 +439,11 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 		layer_node.position = Vector2(layer_pos_x + layer_offset_x, layer_pos_y + layer_offset_y)
 		if not _use_default_filter:
 			layer_node.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		if _map_orientation == "isometric" or _map_orientation == "staggered":
+		# Tiled's default draw order "topdown" sorts objects by y, "index" keeps the object order
+		var draw_order := str(layer.get("draworder", "topdown"))
+		if _map_orientation == "isometric" or _map_orientation == "staggered" or draw_order != "index":
 			layer_node.y_sort_enabled = true
+		apply_blend_mode(layer_node, layer)
 
 		if layer.has("objects"):
 			for obj in layer["objects"]:
@@ -387,10 +476,16 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 		var layer_pos_x = layer.get("x", 0.0)
 		var layer_pos_y = layer.get("y", 0.0)
 		group_node.position = Vector2(layer_pos_x + layer_offset_x, layer_pos_y + layer_offset_y)
-	
+		apply_blend_mode(group_node, layer)
+
 		if layer.has("layers"):
 			for child_layer in layer["layers"]:
 				handle_layer(child_layer, group_node)
+
+		# A material on a plain Node2D does not affect its children: make the group's
+		# blend mode reach every descendant that has no material of its own.
+		if group_node.material != null:
+			use_parent_material_recursively(group_node)
 
 		if layer.has("properties"):
 			handle_properties(group_node, layer["properties"])
@@ -427,6 +522,7 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 				texture_rect.modulate = Color(tint_color, layer_opacity)
 			texture_rect.visible = layer_visible
 			texture_rect.texture = DataLoader.load_image(layer["image"], _base_path)
+			apply_blend_mode(texture_rect, layer)
 
 			px_2d.add_child(texture_rect)
 			texture_rect.owner = _base_node
@@ -447,9 +543,55 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 				texture_rect.modulate = Color(tint_color, layer_opacity)
 			texture_rect.visible = layer_visible
 			texture_rect.texture = DataLoader.load_image(layer["image"], _base_path)
+			apply_blend_mode(texture_rect, layer)
+
+			# Repeated image (only if not handled by a ParallaxLayer's motion_mirroring)
+			if not layer.has("parallaxx") and not layer.has("parallaxy"):
+				var repeat_x: bool = int(layer.get("repeatx", 0)) == 1 and imagewidth > 0
+				var repeat_y: bool = int(layer.get("repeaty", 0)) == 1 and imageheight > 0
+				if repeat_x or repeat_y:
+					texture_rect.stretch_mode = TextureRect.STRETCH_TILE
+					texture_rect.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+					var rect_pos: Vector2 = texture_rect.position
+					var rect_size: Vector2 = texture_rect.size
+					if repeat_x:
+						var start_x: float = get_repeat_start(float(layer_offset_x), float(imagewidth))
+						rect_pos.x = start_x
+						rect_size.x = maxf(float(_map_width * _map_tile_width) - start_x, float(imagewidth))
+					if repeat_y:
+						var start_y: float = get_repeat_start(float(layer_offset_y), float(imageheight))
+						rect_pos.y = start_y
+						rect_size.y = maxf(float(_map_height * _map_tile_height) - start_y, float(imageheight))
+					texture_rect.position = rect_pos
+					texture_rect.size = rect_size
 
 			if layer.has("properties"):
 				handle_properties(texture_rect, layer["properties"])
+
+
+# Returns the start coordinate (<= 0) of a repeated image so that the repeat phase matches the original offset
+static func get_repeat_start(offset: float, image_size: float) -> float:
+	return offset - ceilf(offset / image_size) * image_size
+
+
+static func use_parent_material_recursively(node: Node) -> void:
+	for child in node.get_children():
+		if child is CanvasItem and child.material == null:
+			child.use_parent_material = true
+		use_parent_material_recursively(child)
+
+
+func apply_blend_mode(node: CanvasItem, layer: Dictionary) -> void:
+	if not layer.has("mode"): return
+	var mode := str(layer["mode"]).to_lower()
+	if mode == "" or mode == "normal": return
+	if mode == "add" or mode == "multiply":
+		var mat := CanvasItemMaterial.new()
+		mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD if mode == "add" else CanvasItemMaterial.BLEND_MODE_MUL
+		node.material = mat
+	else:
+		print_rich("[color=" + WARNING_COLOR + "] -- Blend mode '" + mode + "' of layer '" + str(layer.get("name", "")) + "' is not supported. -> Ignored[/color]")
+		CommonUtils.warning_count += 1
 
 func handle_parallaxes(parent: Node, layer_node: Node, layer_dict: Dictionary):
 	if layer_dict.has("parallaxx") or layer_dict.has("parallaxy"):
@@ -460,8 +602,9 @@ func handle_parallaxes(parent: Node, layer_node: Node, layer_dict: Dictionary):
 				_background.owner = _base_node
 			_parallax_layer_existing = true
 	
-		var par_x = layer_dict.get("parallaxx", 0.0)
-		var par_y = layer_dict.get("parallaxy", 0.0)
+		# Tiled's default parallax factor is 1.0 for an axis that is not set
+		var par_x = layer_dict.get("parallaxx", 1.0)
+		var par_y = layer_dict.get("parallaxy", 1.0)
 		var parallax_node = ParallaxLayer.new()
 		_parallax_background.add_child(parallax_node)
 		parallax_node.owner = _base_node
@@ -479,29 +622,33 @@ func handle_parallaxes(parent: Node, layer_node: Node, layer_dict: Dictionary):
 	layer_node.owner = _base_node
 
 
+# Returns the layer's cell values as an Array or a Packed*Array (no element-wise copy)
 func handle_data(data, map_size):
-	var ret: Array = []
 	match _encoding:
 		"csv":
+			if data is Array or data is PackedInt32Array or data is PackedInt64Array \
+					or data is PackedFloat32Array or data is PackedFloat64Array:
+				return data
+			var ret: Array = []
 			for cell in data:
 				ret.append(cell)
+			return ret
 		"base64":
-			var bytes = Marshalls.base64_to_raw(data)
+			var bytes: PackedByteArray = Marshalls.base64_to_raw(data)
 			if _compression != "":
 				match _compression:
 					"gzip":
-						ret = bytes.decompress(map_size * 4, FileAccess.COMPRESSION_GZIP)
+						bytes = bytes.decompress(map_size * 4, FileAccess.COMPRESSION_GZIP)
 					"zlib":
-						ret = bytes.decompress(map_size * 4, FileAccess.COMPRESSION_DEFLATE)
+						bytes = bytes.decompress(map_size * 4, FileAccess.COMPRESSION_DEFLATE)
 					"zstd":
-						ret = bytes.decompress(map_size * 4, FileAccess.COMPRESSION_ZSTD)
+						bytes = bytes.decompress(map_size * 4, FileAccess.COMPRESSION_ZSTD)
 					_:
 						printerr("Decompression for type '" + _compression + "' not yet implemented.")
 						CommonUtils.error_count += 1
 						return []
-				bytes = PackedByteArray(ret)
-			ret = bytes.to_int32_array()	
-	return ret
+			return bytes.to_int32_array()
+	return []
 
 
 func create_polygons_on_alternative_tiles(source_data: TileData, target_data: TileData, alt_id: int):
@@ -593,41 +740,63 @@ func create_polygons_on_alternative_tiles(source_data: TileData, target_data: Ti
 			target_data.set_occluder(layer_id, occluder_polygon)
 		
 
-func create_map_from_data(layer_data: Array, offset_x: int, offset_y: int, map_width: int):
+func create_map_from_data(layer_data, offset_x: int, offset_y: int, map_width: int):
 	var cell_counter: int = -1
+	var cell_cache: Dictionary = _cell_cache
+	var tilemap_layer: TileMapLayer = _tilemap_layer
 	for cell in layer_data:
 		cell_counter += 1
 		var int_id: int = int(cell) & 0xFFFFFFFF
-		var flipped_h = (int_id & FLIPPED_HORIZONTALLY_FLAG) > 0
-		var flipped_v = (int_id & FLIPPED_VERTICALLY_FLAG) > 0
-		var flipped_d = (int_id & FLIPPED_DIAGONALLY_FLAG) > 0
-		var gid: int = int_id & 0x0FFFFFFF
-		if gid <= 0: continue
+		if (int_id & 0x0FFFFFFF) <= 0: continue
+		var resolved = cell_cache.get(int_id)
+		if resolved == null:
+			resolved = resolve_cell(int_id)
+			cell_cache[int_id] = resolved
+		if resolved.is_empty(): continue
 		@warning_ignore("integer_division")
-		var cell_coords = Vector2(cell_counter % map_width + offset_x, cell_counter / map_width + offset_y)
+		var cell_coords := Vector2i(cell_counter % map_width + offset_x, cell_counter / map_width + offset_y)
+		tilemap_layer.set_cell(cell_coords, resolved[0], resolved[1], resolved[2])
 
-		var source_id = get_matching_source_id(gid)
-		# Should not be the case, but who knows...
-		if source_id < 0: continue
 
-		var tile_offset = get_tile_offset(gid)
-		var tile_shader_material = get_tileset_shader_material(gid)
+# Resolves a raw cell value (gid incl. flip flags) to [source_id, atlas_coords, alt_id].
+# Creates missing tiles / alternative tiles in _tileset on the way.
+# Returns an empty array if the cell has to be skipped.
+# Called once per distinct cell value and import (results are cached in _cell_cache).
+func resolve_cell(int_id: int) -> Array:
+	var flipped_h = (int_id & FLIPPED_HORIZONTALLY_FLAG) > 0
+	var flipped_v = (int_id & FLIPPED_VERTICALLY_FLAG) > 0
+	var flipped_d = (int_id & FLIPPED_DIAGONALLY_FLAG) > 0
+	var gid: int = int_id & 0x0FFFFFFF
 
-		var atlas_source
-		if _tileset.has_source(source_id):
-			atlas_source = _tileset.get_source(source_id)
-		else: continue
-		var atlas_width: int = atlas_source.get_atlas_grid_size().x
-		if atlas_width <= 0: continue
+	var atlas_index: int = get_atlas_source_index(gid)
+	# Should not be the case, but who knows...
+	if atlas_index < 0: return []
+	var atlas_source_item: Dictionary = _atlas_sources[atlas_index]
+	var source_id: int = atlas_source_item["sourceId"]
+	if source_id < 0: return []
 
-		var effective_gid: int = gid - _first_gids[get_first_gid_index(gid)]
-		var atlas_coords = Vector2i.ZERO
-		if get_num_tiles_for_source_id(source_id) > 1:
-			if atlas_source.get_atlas_grid_size() == Vector2i.ONE:
-				atlas_coords = Vector2i.ZERO
-			else:
-				@warning_ignore("integer_division")
-				atlas_coords = Vector2(effective_gid % atlas_width, effective_gid / atlas_width)
+	var tile_offset = atlas_source_item["tileOffset"]
+	var tile_shader_material = atlas_source_item["shaderMaterial"]
+
+	var atlas_source
+	if _tileset.has_source(source_id):
+		atlas_source = _tileset.get_source(source_id)
+	else: return []
+	var atlas_grid_size: Vector2i = atlas_source.get_atlas_grid_size()
+	var atlas_width: int = atlas_grid_size.x
+	if atlas_width <= 0: return []
+
+	var effective_gid: int = gid - _first_gids[get_first_gid_index(gid)]
+	var atlas_coords := Vector2i.ZERO
+	if get_num_tiles_for_source_id(source_id) > 1:
+		if atlas_grid_size == Vector2i.ONE:
+			atlas_coords = Vector2i.ZERO
+		else:
+			@warning_ignore("integer_division")
+			atlas_coords = Vector2i(effective_gid % atlas_width, effective_gid / atlas_width)
+	var tile_key := Vector3i(source_id, atlas_coords.x, atlas_coords.y)
+	if not _known_tiles.has(tile_key):
+		_known_tiles[tile_key] = true
 		if not atlas_source.has_tile(atlas_coords):
 			atlas_source.create_tile(atlas_coords)
 			var current_tile = atlas_source.get_tile_data(atlas_coords, 0)
@@ -640,21 +809,27 @@ func create_map_from_data(layer_data: Array, offset_x: int, offset_y: int, map_w
 				if diff_y % 2 != 0:
 					diff_y += 1
 				current_tile.texture_origin = Vector2i(-diff_x/2, diff_y/2) - tile_offset
+			else:
+				# The tileset's tileoffset applies to every tile (as for alternative tiles below)
+				current_tile.texture_origin = -tile_offset
 
 			if tile_shader_material != null:
 				current_tile.material = tile_shader_material
 
-		var alt_id = 0
-		if flipped_h or flipped_v or flipped_d:
-			if _dont_use_alternative_tiles and _godot_version >= 0x40200:
-				if flipped_h:
-					alt_id |= TileSetAtlasSource.TRANSFORM_FLIP_H
-				if flipped_v:
-					alt_id |= TileSetAtlasSource.TRANSFORM_FLIP_V
-				if flipped_d:
-					alt_id |= TileSetAtlasSource.TRANSFORM_TRANSPOSE
-			else:
-				alt_id = (1 if flipped_h else 0) + (2 if flipped_v else 0) + (4 if flipped_d else 0)
+	var alt_id = 0
+	if flipped_h or flipped_v or flipped_d:
+		if _dont_use_alternative_tiles:
+			if flipped_h:
+				alt_id |= TileSetAtlasSource.TRANSFORM_FLIP_H
+			if flipped_v:
+				alt_id |= TileSetAtlasSource.TRANSFORM_FLIP_V
+			if flipped_d:
+				alt_id |= TileSetAtlasSource.TRANSFORM_TRANSPOSE
+		else:
+			alt_id = (1 if flipped_h else 0) + (2 if flipped_v else 0) + (4 if flipped_d else 0)
+			var alt_key := Vector4i(source_id, atlas_coords.x, atlas_coords.y, alt_id)
+			if not _known_tiles.has(alt_key):
+				_known_tiles[alt_key] = true
 				if not atlas_source.has_alternative_tile(atlas_coords, alt_id):
 					atlas_source.create_alternative_tile(atlas_coords, alt_id)
 					var tile_data = atlas_source.get_tile_data(atlas_coords, alt_id)
@@ -673,38 +848,21 @@ func create_map_from_data(layer_data: Array, offset_x: int, offset_y: int, map_w
 							diff_y += 1
 						tile_data.texture_origin = Vector2i(-diff_x/2, diff_y/2)
 					tile_data.texture_origin -= tile_offset
-					
+
 					if tile_shader_material != null:
 						tile_data.material = tile_shader_material
-					
+
 					var src_data = atlas_source.get_tile_data(atlas_coords, 0)
 					create_polygons_on_alternative_tiles(src_data, tile_data, alt_id)
 					# Copy metadata to alternative tile
 					for meta_name in src_data.get_meta_list():
 						tile_data.set_meta(meta_name, src_data.get_meta(meta_name))
-		
-		_tilemap_layer.set_cell(cell_coords, source_id, atlas_coords, alt_id)
+
+	return [source_id, atlas_coords, alt_id]
 
 
 static func get_godot_type(godot_type_string: String):
-	var gts = godot_type_string.to_lower()
-	var godot_type = {
-		"": _godot_type.EMPTY,
-		"collision": _godot_type.BODY,
-		"staticbody": _godot_type.BODY,
-		"characterbody": _godot_type.CBODY,
-		"rigidbody": _godot_type.RBODY,
-		"animatablebody": _godot_type.ABODY,
-		"area": _godot_type.AREA,
-		"navigation": _godot_type.NAVIGATION,
-		"occluder": _godot_type.OCCLUDER,
-		"line": _godot_type.LINE,
-		"path": _godot_type.PATH,
-		"polygon": _godot_type.POLYGON,
-		"instance": _godot_type.INSTANCE,
-		"parallax": _godot_type.PARALLAX
-	}.get(gts, _godot_type.UNKNOWN)
-	return godot_type
+	return GODOT_TYPE_MAP.get(godot_type_string.to_lower(), _godot_type.UNKNOWN)
 
 
 static func get_godot_node_type_property(obj: Dictionary):
@@ -735,42 +893,14 @@ static func get_godot_node_type(obj: Dictionary):
 
 
 static func set_sprite_offset(obj_sprite: Sprite2D, width: float, height: float, alignment: String):
-	obj_sprite.offset = {
-		"bottomleft": Vector2(width / 2.0, -height / 2.0),
-		"bottom": Vector2(0.0, -height / 2.0),
-		"bottomright": Vector2(-width / 2.0, -height / 2.0),
-		"left": Vector2(width / 2.0, 0.0),
-		"center": Vector2(0.0, 0.0),
-		"right": Vector2(-width / 2.0, 0.0),
-		"topleft": Vector2(width / 2.0, height / 2.0),
-		"top": Vector2(0.0, height / 2.0),
-		"topright": Vector2(-width / 2.0, height / 2.0),
-	}.get(alignment, Vector2(width / 2.0, -height / 2.0))
+	var unit: Vector2 = ALIGNMENT_UNIT_OFFSETS.get(alignment, ALIGNMENT_UNIT_OFFSETS["bottomleft"])
+	obj_sprite.offset = unit * Vector2(width, height)
 
 
 static func get_instance_offset(width: float, height: float, r_alignment: String, c_alignment: String) -> Vector2:
-	var centered_alignment = {
-		"bottomleft": Vector2(width / 2.0, -height / 2.0),
-		"bottom": Vector2(0.0, -height / 2.0),
-		"bottomright": Vector2(-width / 2.0, -height / 2.0),
-		"left": Vector2(width / 2.0, 0.0),
-		"center": Vector2.ZERO,
-		"right": Vector2(-width / 2.0, 0.0),
-		"topleft": Vector2(width / 2.0, height / 2.0),
-		"top": Vector2(0.0, height / 2.0),
-		"topright": Vector2(-width / 2.0, height / 2.0),
-	}.get(c_alignment, Vector2.ZERO)
-	return centered_alignment + {
-		"bottomleft": Vector2(-width / 2.0, height / 2.0),
-		"bottom": Vector2(0.0, height / 2.0),
-		"bottomright": Vector2(width / 2.0, height / 2.0),
-		"left": Vector2(-width / 2.0, 0.0),
-		"center": Vector2.ZERO,
-		"right": Vector2(width / 2.0, 0.0),
-		"topleft": Vector2(-width / 2.0, -height / 2.0),
-		"top": Vector2(0.0, -height / 2.0),
-		"topright": Vector2(width / 2.0, -height / 2.0),
-	}.get(r_alignment, Vector2.ZERO)
+	var size := Vector2(width, height)
+	var centered_alignment: Vector2 = ALIGNMENT_UNIT_OFFSETS.get(c_alignment, Vector2.ZERO) * size
+	return centered_alignment - ALIGNMENT_UNIT_OFFSETS.get(r_alignment, Vector2.ZERO) * size
 
 
 static func get_position_offset(width: float, height: float, rotation: float) -> Vector2:
@@ -783,23 +913,18 @@ static func get_position_offset(width: float, height: float, rotation: float) ->
 func convert_metadata_to_obj_properties(td: TileData, obj: Dictionary) -> void:
 	var meta_list = td.get_meta_list()
 	for meta_name in meta_list:
-		if meta_name.to_lower() == GODOT_NODE_TYPE_PROPERTY:
+		var meta_name_lower: String = String(meta_name).to_lower()
+		if meta_name_lower == GODOT_NODE_TYPE_PROPERTY:
 			continue
-		if meta_name.to_lower() == CLASS_INTERNAL and not _add_class_as_metadata:
+		if meta_name_lower == CLASS_INTERNAL and not _add_class_as_metadata:
 			continue
 		var meta_val = td.get_meta(meta_name)
 		var meta_type = typeof(meta_val)
 		var prop_dict = {}
 		prop_dict["name"] = meta_name
-		var prop_type = {
-			TYPE_BOOL: "bool",
-			TYPE_INT: "int",
-			TYPE_STRING: "string",
-			TYPE_FLOAT: "float",
-			TYPE_COLOR: "color"
-		}.get(meta_type, "string")
+		var prop_type = META_TYPE_TO_PROPERTY_TYPE.get(meta_type, "string")
 		# Type "file" assumed and thus forced for these properties
-		if meta_name.to_lower() in ["godot_script", "material", "physics_material_override"]:
+		if meta_name_lower in FORCED_FILE_PROPERTIES:
 			prop_type = "file"
 
 		prop_dict["type"] = prop_type
@@ -809,15 +934,57 @@ func convert_metadata_to_obj_properties(td: TileData, obj: Dictionary) -> void:
 			# Add property only if not already contained in properties
 			var found = false
 			for prop in obj["properties"]:
-				if prop["name"].to_lower() == meta_name.to_lower():
+				if prop["name"].to_lower() == meta_name_lower:
 					found = true
-				if not found:
-					obj["properties"].append(prop_dict)
+					break
+			if not found:
+				obj["properties"].append(prop_dict)
 		else:
 			obj["properties"] = [prop_dict]
 
 
 func handle_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: Vector2) -> void:
+	# Template instances pass their (overriding) opacity on to the template objects
+	if obj.has("template") or not obj.has("opacity"):
+		create_object(obj, layer_node, tileset, offset)
+		return
+	var opacity: float = float(obj["opacity"])
+	var child_count_before: int = layer_node.get_child_count()
+	create_object(obj, layer_node, tileset, offset)
+	if opacity >= 1.0: return
+	# Apply the object opacity to whatever node(s) got created for the object
+	for i in range(child_count_before, layer_node.get_child_count()):
+		var created = layer_node.get_child(i)
+		if created is CanvasItem:
+			created.modulate.a *= opacity
+
+
+func load_template(template_file: String) -> Dictionary:
+	var template_file_full_path = _base_path.path_join(template_file)
+	if _template_cache.has(template_file_full_path):
+		return _template_cache[template_file_full_path]
+	var entry = {"dict": {}, "tileset": null, "missing": false, "full_path": template_file_full_path}
+	var template_content = DataLoader.get_tiled_file_content(template_file, _base_path)
+	if template_content == null:
+		entry["missing"] = true
+	else:
+		var template_dict = DictionaryBuilder.new().get_dictionary(template_content, template_file)
+		if template_dict == null:
+			template_dict = {}
+		entry["dict"] = template_dict
+		if template_dict.has("tilesets"):
+			var tilesets = template_dict["tilesets"]
+			var tileset_creator = TilesetCreator.new()
+			tileset_creator.set_base_path(template_file_full_path)
+			tileset_creator.set_map_parameters(Vector2i(_map_tile_width, _map_tile_height))
+			if _map_wangset_to_terrain:
+				tileset_creator.map_wangset_to_terrain()
+			entry["tileset"] = tileset_creator.create_from_dictionary_array(tilesets)
+	_template_cache[template_file_full_path] = entry
+	return entry
+
+
+func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: Vector2) -> void:
 	var obj_id = obj.get("id", 0)
 	var obj_x = obj.get("x", offset.x)
 	var obj_y = obj.get("y", offset.y)
@@ -851,29 +1018,20 @@ func handle_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 
 
 	if obj.has("template"):
-		var template_dict: Dictionary
 		var template_file = obj["template"]
-		var template_file_full_path = _base_path.path_join(template_file)
-		var template_content = DataLoader.get_tiled_file_content(template_file, _base_path)
-		if template_content == null:
+		# Templates are parsed (and their tilesets created) only once per import
+		var template_entry: Dictionary = load_template(template_file)
+		var template_file_full_path: String = template_entry["full_path"]
+		if template_entry["missing"]:
 			printerr("ERROR: Template file '" + template_file + "' not found. -> Continuing but result may be unusable")
 			CommonUtils.error_count += 1
-			template_dict = {}
-		else:
-			template_dict = DictionaryBuilder.new().get_dictionary(template_content, template_file)
-
-		var template_tileset = null
-		if template_dict.has("tilesets"):
-			var tilesets = template_dict["tilesets"]
-			var tileset_creator = TilesetCreator.new()
-			tileset_creator.set_base_path(template_file_full_path)
-			tileset_creator.set_map_parameters(Vector2i(_map_tile_width, _map_tile_height))
-			if _map_wangset_to_terrain:
-				tileset_creator.map_wangset_to_terrain()
-			template_tileset = tileset_creator.create_from_dictionary_array(tilesets)
+		var template_dict: Dictionary = template_entry["dict"]
+		var template_tileset = template_entry["tileset"]
 
 		if template_dict.has("objects"):
-			for template_obj in template_dict["objects"]:
+			# The template objects get modified below (and in handle_object), so work on a copy
+			var template_objects: Array = template_dict["objects"].duplicate(true)
+			for template_obj in template_objects:
 				template_obj["template_dir_path"] = template_file_full_path.get_base_dir()
 
 				# v1.5.3 Fix according to Carlo M (dogezen)
@@ -906,6 +1064,8 @@ func handle_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 					template_obj["type"] = obj["type"]
 				if obj.has("name") and obj["name"] != "":
 					template_obj["name"] = obj["name"]
+				if obj.has("opacity"):
+					template_obj["opacity"] = obj["opacity"]
 
 				handle_object(template_obj, layer_node, template_tileset, Vector2(obj_x, obj_y))
 
@@ -954,7 +1114,7 @@ func handle_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 			_current_object_alignment = "bottomleft" if _map_orientation == "orthogonal" else "bottom"
 
 		if not tileset.has_source(source_id):
-			printerr("Could not get AtlasSource with id " + source_id + ". -> Skipped")
+			printerr("Could not get AtlasSource with id " + str(source_id) + ". -> Skipped")
 			CommonUtils.error_count += 1
 			return
 	
@@ -1025,7 +1185,8 @@ func handle_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 			tile_class = td.get_meta(GODOT_NODE_TYPE_PROPERTY)
 
 		if tile_class.to_lower() == "instance" or obj_is_instance:
-			var res_path = get_property(obj, "res_path", "file")
+			var instance_props: Dictionary = get_properties(obj, TILE_INSTANCE_PROPERTY_KEYS)
+			var res_path = instance_props.get("res_path:file", "")
 			if td.has_meta("res_path"):
 				if res_path == "":
 					res_path = td.get_meta("res_path")
@@ -1040,11 +1201,11 @@ func handle_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				if scene == null: return
 
 				var res_path_extension = res_path.get_file().get_extension().to_lower()
-				var res_alignment = get_property(obj, "res_alignment", "string")
+				var res_alignment = instance_props.get("res_alignment:string", "")
 
 				obj_sprite.owner = null
 				layer_node.remove_child(obj_sprite)
-				obj_sprite.queue_free()
+				obj_sprite.free()
 				var instance = scene.instantiate()
 				layer_node.add_child(instance)
 				instance.owner = _base_node
@@ -1074,13 +1235,14 @@ func handle_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 
 		var idx = td.get_custom_data(CUSTOM_DATA_INTERNAL)
 		if idx > 0:
-			var parent = {
-				_godot_type.AREA: Area2D.new(),
-				_godot_type.CBODY: CharacterBody2D.new(),
-				_godot_type.RBODY: RigidBody2D.new(),
-				_godot_type.ABODY: AnimatableBody2D.new(),
-				_godot_type.BODY: StaticBody2D.new(),
-			}.get(godot_type, null)
+			# Only instantiate the needed node (a dictionary of .new() calls leaked the unused ones)
+			var parent = null
+			match godot_type:
+				_godot_type.AREA: parent = Area2D.new()
+				_godot_type.CBODY: parent = CharacterBody2D.new()
+				_godot_type.RBODY: parent = RigidBody2D.new()
+				_godot_type.ABODY: parent = AnimatableBody2D.new()
+				_godot_type.BODY: parent = StaticBody2D.new()
 			if parent != null:
 				obj_sprite.owner = null
 				layer_node.remove_child(obj_sprite)
@@ -1136,6 +1298,10 @@ func handle_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 		var font = SystemFont.new()
 		font.font_names = [font_family]
 		font.oversampling = 5.0
+		if is_true(txt.get("bold", false)):
+			font.font_weight = 700
+		if is_true(txt.get("italic", false)):
+			font.font_italic = true
 		obj_text.add_theme_font_override("font", font)
 		obj_text.add_theme_font_size_override("font_size", txt.get("pixelsize", 16))
 		obj_text.add_theme_color_override("font_color", Color(txt.get("color", "#000000")))
@@ -1164,20 +1330,8 @@ func handle_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 			if obj.has("properties"):
 				handle_properties(marker, obj["properties"])
 		elif obj.has("polygon"):
-			if godot_type == _godot_type.BODY or godot_type == _godot_type.ABODY or godot_type == _godot_type.AREA:
-				var co: CollisionObject2D
-				if godot_type == _godot_type.AREA:
-					co = Area2D.new()
-					layer_node.add_child(co)
-					co.name = obj_name + " (Area)" if obj_name != "" else "Area"
-				elif godot_type == _godot_type.ABODY:
-					co = AnimatableBody2D.new()
-					layer_node.add_child(co)
-					co.name = obj_name + " (AB)" if obj_name != "" else "AnimatableBody"
-				else:
-					co = StaticBody2D.new()
-					layer_node.add_child(co)
-					co.name = obj_name + " (SB)" if obj_name != "" else "StaticBody"
+			if godot_type in COLLISION_OBJECT_TYPES:
+				var co: CollisionObject2D = create_collision_object(godot_type, obj_name, layer_node)
 				co.owner = _base_node
 				co.position = object_base_coords
 				co.visible = obj_visible
@@ -1288,19 +1442,7 @@ func handle_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				if obj.has("properties"):
 					handle_properties(path, obj["properties"])
 			else:
-				var co: CollisionObject2D
-				if godot_type == _godot_type.AREA:
-					co = Area2D.new()
-					layer_node.add_child(co)
-					co.name = obj_name + " (Area)" if obj_name != "" else "Area"
-				elif godot_type == _godot_type.ABODY:
-					co = AnimatableBody2D.new()
-					layer_node.add_child(co)
-					co.name = obj_name + " (AB)" if obj_name != "" else "AnimatableBody"
-				else:
-					co = StaticBody2D.new()
-					layer_node.add_child(co)
-					co.name = obj_name + " (SB)" if obj_name != "" else "StaticBody"
+				var co: CollisionObject2D = create_collision_object(godot_type, obj_name, layer_node)
 				co.owner = _base_node
 				co.position = object_base_coords
 				co.visible = obj_visible
@@ -1323,20 +1465,8 @@ func handle_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				if obj.has("properties"):
 					handle_properties(co, obj["properties"])
 		else:
-			if godot_type == _godot_type.BODY or godot_type == _godot_type.ABODY or godot_type == _godot_type.AREA:
-				var co: CollisionObject2D
-				if godot_type == _godot_type.AREA:
-					co = Area2D.new()
-					layer_node.add_child(co)
-					co.name = obj_name + " (Area)" if obj_name != "" else "Area"
-				elif godot_type == _godot_type.ABODY:
-					co = AnimatableBody2D.new()
-					layer_node.add_child(co)
-					co.name = obj_name + " (AB)" if obj_name != "" else "AnimatableBody"
-				else:
-					co = StaticBody2D.new()
-					layer_node.add_child(co)
-					co.name = obj_name + " (SB)" if obj_name != "" else "StaticBody"
+			if godot_type in COLLISION_OBJECT_TYPES:
+				var co: CollisionObject2D = create_collision_object(godot_type, obj_name, layer_node)
 				co.owner = _base_node
 				co.position = object_base_coords
 				co.visible = obj_visible
@@ -1472,6 +1602,39 @@ func handle_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 						handle_properties(polygon, obj["properties"])	
 
 
+# Creates the CollisionObject2D for a (non tile) shape object and adds it to layer_node.
+# Types other than area/animatablebody/characterbody/rigidbody become a StaticBody2D.
+func create_collision_object(godot_type, obj_name, layer_node: Node) -> CollisionObject2D:
+	var co: CollisionObject2D
+	var suffix: String
+	var default_name: String
+	match godot_type:
+		_godot_type.AREA:
+			co = Area2D.new()
+			suffix = " (Area)"
+			default_name = "Area"
+		_godot_type.ABODY:
+			co = AnimatableBody2D.new()
+			suffix = " (AB)"
+			default_name = "AnimatableBody"
+		_godot_type.CBODY:
+			co = CharacterBody2D.new()
+			suffix = " (CB)"
+			default_name = "CharacterBody"
+		_godot_type.RBODY:
+			co = RigidBody2D.new()
+			suffix = " (RB)"
+			default_name = "RigidBody"
+		_:
+			co = StaticBody2D.new()
+			suffix = " (SB)"
+			default_name = "StaticBody"
+	layer_node.add_child(co)
+	var name_string := str(obj_name)
+	co.name = name_string + suffix if name_string != "" else default_name
+	return co
+
+
 func add_collision_shapes(parent: CollisionObject2D, object_group: Dictionary, tile_width: float, tile_height: float, flippedH: bool, flippedV: bool, scale: Vector2):
 	var objects = object_group["objects"]
 	for obj in objects:
@@ -1523,13 +1686,14 @@ func add_collision_shapes(parent: CollisionObject2D, object_group: Dictionary, t
 			collision_polygon.rotation_degrees = rot
 			collision_polygon.position = Vector2(pos_x, pos_y)
 			collision_polygon.name = obj_name if obj_name != "" else "Collision Polygon"
-			if get_property(obj, "one_way", "bool") == "true":
+			var one_way_props: Dictionary = get_properties(obj, ONE_WAY_PROPERTY_KEYS)
+			if one_way_props.get("one_way:bool", "") == "true":
 				collision_polygon.one_way_collision = true
-			var coll_margin = get_property(obj, "one_way_margin", "int")
+			var coll_margin = one_way_props.get("one_way_margin:int", "")
 			if coll_margin == "":
-				coll_margin = get_property(obj, "one_way_margin", "float")
+				coll_margin = one_way_props.get("one_way_margin:float", "")
 			if coll_margin != "":
-				collision_polygon.one_way_collision_margin = coll_margin
+				collision_polygon.one_way_collision_margin = float(coll_margin)
 		else:
 			# Ellipse or rectangle
 			var collision_shape = CollisionShape2D.new()
@@ -1611,13 +1775,39 @@ func add_collision_shapes(parent: CollisionObject2D, object_group: Dictionary, t
 
 			collision_shape.shape = shape
 			collision_shape.rotation_degrees = rot
-			if get_property(obj, "one_way", "bool") == "true":
+			var one_way_props: Dictionary = get_properties(obj, ONE_WAY_PROPERTY_KEYS)
+			if one_way_props.get("one_way:bool", "") == "true":
 				collision_shape.one_way_collision = true
-			var coll_margin = get_property(obj, "one_way_margin", "int")
+			var coll_margin = one_way_props.get("one_way_margin:int", "")
 			if coll_margin == "":
-				coll_margin = get_property(obj, "one_way_margin", "float")
+				coll_margin = one_way_props.get("one_way_margin:float", "")
 			if coll_margin != "":
-				collision_shape.one_way_collision_margin = coll_margin
+				collision_shape.one_way_collision_margin = float(coll_margin)
+
+
+static func is_true(value) -> bool:
+	match typeof(value):
+		TYPE_BOOL:
+			return value
+		TYPE_INT, TYPE_FLOAT:
+			return value != 0
+		TYPE_STRING, TYPE_STRING_NAME:
+			var s := String(value).to_lower()
+			return s == "1" or s == "true"
+	return false
+
+
+# Single pass variant of get_property for several properties at once.
+# wanted_keys: Array of "<lowercase name>:<type>" strings.
+# Returns a Dictionary "<lowercase name>:<type>" -> String value of the first matching property.
+static func get_properties(obj: Dictionary, wanted_keys: Array) -> Dictionary:
+	var ret = {}
+	if not obj.has("properties"): return ret
+	for property in obj["properties"]:
+		var key: String = str(property.get("name", "")).to_lower() + ":" + str(property.get("type", "string"))
+		if not ret.has(key) and key in wanted_keys:
+			ret[key] = str(property.get("value", ""))
+	return ret
 
 
 static func get_property(obj: Dictionary, property_name: String, property_type: String) -> String:
@@ -1674,17 +1864,30 @@ func transpose_coords(x: float, y: float, no_offset_x: bool = false):
 	return Vector2(x, y)
 
 
-func get_first_gid_index(gid: int):
+func get_first_gid_index(gid: int) -> int:
+	var cached = _first_gid_index_cache.get(gid)
+	if cached != null:
+		return cached
 	var index = 0
 	var gid_index = 0
 	for first_gid in _first_gids:
 		if gid >= first_gid:
 			gid_index = index
 		index += 1
+	_first_gid_index_cache[gid] = gid_index
 	return gid_index
 
 
-func get_atlas_source_index(gid: int):
+func get_atlas_source_index(gid: int) -> int:
+	var cached = _atlas_index_cache.get(gid)
+	if cached != null:
+		return cached
+	var ret: int = find_atlas_source_index(gid)
+	_atlas_index_cache[gid] = ret
+	return ret
+
+
+func find_atlas_source_index(gid: int) -> int:
 	var idx = -1
 	if _atlas_sources == null:
 		return -1
@@ -1760,13 +1963,24 @@ func get_object_group(index: int):
 
 
 func get_object(index: int):
-	if not _base_dictionary.has("layers"): return null
-	for layer in _base_dictionary["layers"]:
-		if not layer.has("objects"): continue
-		for obj in layer["objects"]:
-			if index == obj.get("id", 0):
-				return obj
-	return null
+	if _objects_by_id == null:
+		_objects_by_id = {}
+		if _base_dictionary.has("layers"):
+			index_objects(_base_dictionary["layers"])
+	return _objects_by_id.get(index, null)
+
+
+# Recursively indexes the objects of all layers (incl. those inside group layers) by id.
+# The first object found for an id wins.
+func index_objects(layers: Array) -> void:
+	for layer in layers:
+		if layer.has("objects"):
+			for obj in layer["objects"]:
+				var obj_id: int = int(obj.get("id", 0))
+				if not _objects_by_id.has(obj_id):
+					_objects_by_id[obj_id] = obj
+		if layer.has("layers"):
+			index_objects(layer["layers"])
 
 
 func get_object_polygon(obj_id: int):
@@ -1826,6 +2040,9 @@ func handle_list_property(current_array: Array, current_value: Array):
 				current_array.append(obj)
 			else:
 				current_array.append(CommonUtils.get_right_typed_value(item_type, str(item_val)))
+		elif item_type == "class" and item_val is Dictionary:
+			# Class typed items keep their member dictionary (see contract C4)
+			current_array.append(item_val)
 		else:
 			current_array.append(CommonUtils.get_right_typed_value(item_type, str(item_val)))
 
@@ -1839,17 +2056,22 @@ func handle_properties(target_node: Node, properties: Array):
 		var type: String = property.get("type", "string")
 		var list_val = ""
 		var val: String = ""
+		# Class typed property: value is a Dictionary {member_name: member_value} (see contract C4)
+		var class_val = property.get("value", {}) if type == "class" else null
+		var is_class_dict: bool = class_val is Dictionary
 		if type == "list":
 			list_val = []
 			handle_list_property(list_val, property["value"])
-		else:
+		elif not is_class_dict:
 			val = str(property.get("value", ""))
-		if name == "" or name.to_lower() == GODOT_NODE_TYPE_PROPERTY or name.to_lower() == "res_path": continue
+		var lname := name.to_lower()
+		if name == "" or lname == GODOT_NODE_TYPE_PROPERTY or lname == "res_path": continue
 		if name.begins_with("__") and has_children:
 			var child_prop_dict = {}
 			child_prop_dict["name"] = name.substr(2)
 			child_prop_dict["type"] = type
-			child_prop_dict["value"] = val
+			# Lists and class dictionaries are forwarded unchanged
+			child_prop_dict["value"] = property["value"] if type == "list" or is_class_dict else val
 			var child_props = []
 			child_props.append(child_prop_dict)
 			for child in target_node.get_children():
@@ -1857,392 +2079,392 @@ func handle_properties(target_node: Node, properties: Array):
 		
 		# Node properties
 		# v1.5.4: godot_group property
-		if name.to_lower() == GODOT_GROUP_PROPERTY and type == "string":
+		if lname == GODOT_GROUP_PROPERTY and type == "string":
 			for group in val.split(",", false):
 				target_node.add_to_group(group.strip_edges(), true)
 
 		# v1.6.6: script resource and godot_script property
-		elif name.to_lower() == GODOT_SCRIPT_PROPERTY and (type == "file" or type == "string"):
+		elif lname == GODOT_SCRIPT_PROPERTY and (type == "file" or type == "string"):
 			var path = val
 			if type == "file":
 				path = CommonUtils.cleanup_path(_base_path.replace("res://", "") + "/" + val)
 			target_node.set_script(load(path))
 
 		# CanvasItem properties
-		elif name.to_lower() == "modulate" and type == "string":
+		elif lname == "modulate" and type == "string":
 			target_node.modulate = Color(val)
-		elif name.to_lower() == "self_modulate" and type == "string":
+		elif lname == "self_modulate" and type == "string":
 			target_node.self_modulate = Color(val)
-		elif name.to_lower() == "show_behind_parent" and type == "bool":
+		elif lname == "show_behind_parent" and type == "bool":
 			target_node.show_behind_parent = val.to_lower() == "true"
-		elif name.to_lower() == "top_level" and type == "bool":
+		elif lname == "top_level" and type == "bool":
 			target_node.top_level = val.to_lower() == "true"
-		elif name.to_lower() == "clip_children" and type == "int":
+		elif lname == "clip_children" and type == "int":
 			if int(val) < CanvasItem.CLIP_CHILDREN_MAX:
 				target_node.clip_children = int(val)
-		elif name.to_lower() == "light_mask" and type == "string":
+		elif lname == "light_mask" and type == "string":
 			target_node.light_mask = CommonUtils.get_bitmask_integer_from_string(val, 20)
-		elif name.to_lower() == "visibility_layer" and type == "string":
+		elif lname == "visibility_layer" and type == "string":
 			target_node.visibility_layer = CommonUtils.get_bitmask_integer_from_string(val, 20)
-		elif name.to_lower() == "z_index" and type == "int":
+		elif lname == "z_index" and type == "int":
 			target_node.z_index = int(val)
-		elif name.to_lower() == "z_as_relative" and type == "bool":
+		elif lname == "z_as_relative" and type == "bool":
 			target_node.z_as_relative = val.to_lower() == "true"
-		elif name.to_lower() == "y_sort_enabled" and type == "bool":
+		elif lname == "y_sort_enabled" and type == "bool":
 			target_node.y_sort_enabled = val.to_lower() == "true"
-		elif name.to_lower() == "texture_filter" and type == "int":
+		elif lname == "texture_filter" and type == "int":
 			if int(val) < CanvasItem.TEXTURE_FILTER_MAX:
 				target_node.texture_filter = int(val)
-		elif name.to_lower() == "texture_repeat" and type == "int":
+		elif lname == "texture_repeat" and type == "int":
 			if int(val) < CanvasItem.TEXTURE_REPEAT_MAX:
 				target_node.texture_repeat = int(val)
-		elif name.to_lower() == "material" and type == "file":
+		elif lname == "material" and type == "file":
 			target_node.material = DataLoader.load_resource_from_file(val, _base_path)
-		elif name.to_lower() == "use_parent_material" and type == "bool":
+		elif lname == "use_parent_material" and type == "bool":
 			target_node.use_parent_material = val.to_lower() == "true"
 	
 		# TileMapLayer properties
-		elif name.to_lower() == "tile_set" and type == "file" and target_node is TileMapLayer:
+		elif lname == "tile_set" and type == "file" and target_node is TileMapLayer:
 			target_node.tile_set = DataLoader.load_resource_from_file(val, _base_path)
 
 		# Experimental only! Not sure if properly functioning
-		elif name.to_lower() == "tileset_resource_path" and type == "string" and target_node is TileMapLayer:
+		elif lname == "tileset_resource_path" and type == "string" and target_node is TileMapLayer:
 			var tileset = target_node.tile_set
 			tileset.resource_path = val
 
-		elif name.to_lower() == "y_sort_origin" and type == "int" and target_node is TileMapLayer:
+		elif lname == "y_sort_origin" and type == "int" and target_node is TileMapLayer:
 			target_node.y_sort_origin = int(val)
-		elif name.to_lower() == "x_draw_order_reversed" and type == "bool" and target_node is TileMapLayer:
+		elif lname == "x_draw_order_reversed" and type == "bool" and target_node is TileMapLayer:
 			target_node.x_draw_order_reversed = val.to_lower() == "true"
-		elif name.to_lower() == "rendering_quadrant_size" and type == "int" and target_node is TileMapLayer:
+		elif lname == "rendering_quadrant_size" and type == "int" and target_node is TileMapLayer:
 			target_node.rendering_quadrant_size = int(val)
-		elif name.to_lower() == "collision_enabled" and type == "bool" and target_node is TileMapLayer:
+		elif lname == "collision_enabled" and type == "bool" and target_node is TileMapLayer:
 			target_node.collision_enabled = val.to_lower() == "true"
-		elif name.to_lower() == "use_kinematic_bodies" and type == "bool" and target_node is TileMapLayer:
+		elif lname == "use_kinematic_bodies" and type == "bool" and target_node is TileMapLayer:
 			target_node.use_kinematic_bodies = val.to_lower() == "true"
-		elif name.to_lower() == "collision_visibility_mode" and type == "int" and target_node is TileMapLayer:
+		elif lname == "collision_visibility_mode" and type == "int" and target_node is TileMapLayer:
 			if int(val) < 3:
 				target_node.collision_visibility_mode = int(val)
-		elif name.to_lower() == "navigation_enabled" and type == "bool" and target_node is TileMapLayer:
+		elif lname == "navigation_enabled" and type == "bool" and target_node is TileMapLayer:
 			target_node.navigation_enabled = val.to_lower() == "true"
-		elif name.to_lower() == "navigation_visibility_mode" and type == "int" and target_node is TileMapLayer:
+		elif lname == "navigation_visibility_mode" and type == "int" and target_node is TileMapLayer:
 			if int(val) < 3:
 				target_node.navigation_visibility_mode = int(val)
 
 		# Parallax2D properties
-		elif name.to_lower() == "scroll_scale_x" and (type == "float" or type == "int") and target_node is Parallax2D:
+		elif lname == "scroll_scale_x" and (type == "float" or type == "int") and target_node is Parallax2D:
 			target_node.scroll_scale = Vector2(float(val), target_node.scroll_scale.y)
-		elif name.to_lower() == "scroll_scale_y" and (type == "float" or type == "int") and target_node is Parallax2D:
+		elif lname == "scroll_scale_y" and (type == "float" or type == "int") and target_node is Parallax2D:
 			target_node.scroll_scale = Vector2(target_node.scroll_scale.x, float(val))
-		elif name.to_lower() == "scroll_offset_x" and (type == "float" or type == "int") and target_node is Parallax2D:
+		elif lname == "scroll_offset_x" and (type == "float" or type == "int") and target_node is Parallax2D:
 			target_node.scroll_offset = Vector2(float(val), target_node.scroll_offset.y)
-		elif name.to_lower() == "scroll_offset_y" and (type == "float" or type == "int") and target_node is Parallax2D:
+		elif lname == "scroll_offset_y" and (type == "float" or type == "int") and target_node is Parallax2D:
 			target_node.scroll_offset = Vector2(target_node.scroll_offset.x, float(val))
-		elif name.to_lower() == "repeat_size_x" and (type == "float" or type == "int") and target_node is Parallax2D:
+		elif lname == "repeat_size_x" and (type == "float" or type == "int") and target_node is Parallax2D:
 			target_node.repeat_size = Vector2(float(val), target_node.repeat_size.y)
-		elif name.to_lower() == "repeat_size_y" and (type == "float" or type == "int") and target_node is Parallax2D:
+		elif lname == "repeat_size_y" and (type == "float" or type == "int") and target_node is Parallax2D:
 			target_node.repeat_size = Vector2(target_node.repeat_size.x, float(val))
-		elif name.to_lower() == "autoscroll_x" and (type == "float" or type == "int") and target_node is Parallax2D:
+		elif lname == "autoscroll_x" and (type == "float" or type == "int") and target_node is Parallax2D:
 			target_node.autoscroll = Vector2(float(val), target_node.autoscroll.y)
-		elif name.to_lower() == "autoscroll_y" and (type == "float" or type == "int") and target_node is Parallax2D:
+		elif lname == "autoscroll_y" and (type == "float" or type == "int") and target_node is Parallax2D:
 			target_node.autoscroll = Vector2(target_node.autoscroll.x, float(val))
-		elif name.to_lower() == "repeat_times" and type == "int" and target_node is Parallax2D:
+		elif lname == "repeat_times" and type == "int" and target_node is Parallax2D:
 			target_node.repeat_times = int(val)
-		elif name.to_lower() == "limit_begin_x" and (type == "float" or type == "int") and target_node is Parallax2D:
+		elif lname == "limit_begin_x" and (type == "float" or type == "int") and target_node is Parallax2D:
 			target_node.limit_begin = Vector2(float(val), target_node.limit_begin.y)
-		elif name.to_lower() == "limit_begin_y" and (type == "float" or type == "int") and target_node is Parallax2D:
+		elif lname == "limit_begin_y" and (type == "float" or type == "int") and target_node is Parallax2D:
 			target_node.limit_begin = Vector2(target_node.limit_begin.x, float(val))
-		elif name.to_lower() == "limit_end_x" and (type == "float" or type == "int") and target_node is Parallax2D:
+		elif lname == "limit_end_x" and (type == "float" or type == "int") and target_node is Parallax2D:
 			target_node.limit_end = Vector2(float(val), target_node.limit_end.y)
-		elif name.to_lower() == "limit_end_y" and (type == "float" or type == "int") and target_node is Parallax2D:
+		elif lname == "limit_end_y" and (type == "float" or type == "int") and target_node is Parallax2D:
 			target_node.limit_end = Vector2(target_node.limit_end.x, float(val))
-		elif name.to_lower() == "follow_viewport" and type == "bool" and target_node is Parallax2D:
+		elif lname == "follow_viewport" and type == "bool" and target_node is Parallax2D:
 			target_node.follow_viewport = val.to_lower() == "true"
-		elif name.to_lower() == "ignore_camera_scroll" and type == "bool" and target_node is Parallax2D:
+		elif lname == "ignore_camera_scroll" and type == "bool" and target_node is Parallax2D:
 			target_node.ignore_camera_scroll = val.to_lower() == "true"
-		elif name.to_lower() == "screen_offset_x" and (type == "float" or type == "int") and target_node is Parallax2D:
+		elif lname == "screen_offset_x" and (type == "float" or type == "int") and target_node is Parallax2D:
 			target_node.screen_offset = Vector2(float(val), target_node.screen_offset.y)
-		elif name.to_lower() == "screen_offset_y" and (type == "float" or type == "int") and target_node is Parallax2D:
+		elif lname == "screen_offset_y" and (type == "float" or type == "int") and target_node is Parallax2D:
 			target_node.screen_offset = Vector2(target_node.screen_offset.x, float(val))
 		# CollisionObject2D properties
-		elif name.to_lower() == "disable_mode" and type == "int" and target_node is CollisionObject2D:
+		elif lname == "disable_mode" and type == "int" and target_node is CollisionObject2D:
 			if int(val) < 3:
 				target_node.disable_mode = int(val)
-		elif name.to_lower() == "collision_layer" and type == "string" and target_node is CollisionObject2D:
+		elif lname == "collision_layer" and type == "string" and target_node is CollisionObject2D:
 			target_node.collision_layer = CommonUtils.get_bitmask_integer_from_string(val, 32)
-		elif name.to_lower() == "collision_mask" and type == "string" and target_node is CollisionObject2D:
+		elif lname == "collision_mask" and type == "string" and target_node is CollisionObject2D:
 			target_node.collision_mask = CommonUtils.get_bitmask_integer_from_string(val, 32)
-		elif name.to_lower() == "collision_priority" and  (type == "float" or type == "int") and target_node is CollisionObject2D:
+		elif lname == "collision_priority" and  (type == "float" or type == "int") and target_node is CollisionObject2D:
 			target_node.collision_priority = float(val)
-		elif name.to_lower() == "input_pickable" and type == "bool" and target_node is CollisionObject2D:
+		elif lname == "input_pickable" and type == "bool" and target_node is CollisionObject2D:
 			target_node.input_pickable = val.to_lower() == "true"
 
 		# CollisionPolygon2D properties
-		elif name.to_lower() == "build_mode" and type == "int" and has_children and int(val) < 2:
+		elif lname == "build_mode" and type == "int" and has_children and int(val) < 2:
 			for child in target_node.get_children():
 				if child is CollisionPolygon2D:
 					child.build_mode = int(val)
 
 		# CollisionPolygon2D & CollisionShape2D properties
-		elif name.to_lower() == "disabled" and type == "bool" and has_children:
+		elif lname == "disabled" and type == "bool" and has_children:
 			for child in target_node.get_children():
 				child.disabled = val.to_lower() == "true"
-		elif name.to_lower() == "one_way_collision" and type == "bool" and has_children:
+		elif lname == "one_way_collision" and type == "bool" and has_children:
 			for child in target_node.get_children():
 				child.one_way_collision = val.to_lower() == "true"
-		elif name.to_lower() == "one_way_collision_margin" and (type == "float" or type == "int") and has_children:
+		elif lname == "one_way_collision_margin" and (type == "float" or type == "int") and has_children:
 			for child in target_node.get_children():
 				child.one_way_collision_margin = float(val)
 
 		# CollisionShape2D properties
-		elif name.to_lower() == "debug_color" and type == "string" and has_children:
+		elif lname == "debug_color" and type == "string" and has_children:
 			for child in target_node.get_children():
 				if child is CollisionShape2D:
 					child.debug_color = Color(val)
 
 		# Area2D properties
-		elif name.to_lower() == "monitoring" and type == "bool" and target_node is Area2D:
+		elif lname == "monitoring" and type == "bool" and target_node is Area2D:
 			target_node.monitoring = val.to_lower() == "true"
-		elif name.to_lower() == "monitorable" and type == "bool" and target_node is Area2D:
+		elif lname == "monitorable" and type == "bool" and target_node is Area2D:
 			target_node.monitorable = val.to_lower() == "true"
-		elif name.to_lower() == "priority" and (type == "float" or type == "int") and target_node is Area2D:
+		elif lname == "priority" and (type == "float" or type == "int") and target_node is Area2D:
 			target_node.priority = float(val)
-		elif name.to_lower() == "gravity_space_override" and type == "int" and target_node is Area2D:
+		elif lname == "gravity_space_override" and type == "int" and target_node is Area2D:
 			if int(val) < 5:
 				target_node.gravity_space_override = int(val)
-		elif name.to_lower() == "gravity_point" and type == "bool" and target_node is Area2D:
+		elif lname == "gravity_point" and type == "bool" and target_node is Area2D:
 			target_node.gravity_point = val.to_lower() == "true"
-		elif name.to_lower() == "gravitiy_point_center_x" and (type == "float" or type == "int") and target_node is Area2D:
+		elif lname == "gravitiy_point_center_x" and (type == "float" or type == "int") and target_node is Area2D:
 			target_node.gravity_point_center = Vector2(float(val), target_node.gravity_point_center.y)
-		elif name.to_lower() == "gravitiy_point_center_y" and (type == "float" or type == "int") and target_node is Area2D:
+		elif lname == "gravitiy_point_center_y" and (type == "float" or type == "int") and target_node is Area2D:
 			target_node.gravity_point_center = Vector2(target_node.gravity_point_center.x, float(val))
-		elif name.to_lower() == "gravity_point_unit_distance" and (type == "float" or type == "int") and target_node is Area2D:
+		elif lname == "gravity_point_unit_distance" and (type == "float" or type == "int") and target_node is Area2D:
 			target_node.gravitiy_point_unit_distance = float(val)
-		elif name.to_lower() == "gravitiy_direction_x" and (type == "float" or type == "int") and target_node is Area2D:
+		elif lname == "gravitiy_direction_x" and (type == "float" or type == "int") and target_node is Area2D:
 			target_node.gravity_direction = Vector2(float(val), target_node.gravity_direction.y)
-		elif name.to_lower() == "gravitiy_direction_y" and (type == "float" or type == "int") and target_node is Area2D:
+		elif lname == "gravitiy_direction_y" and (type == "float" or type == "int") and target_node is Area2D:
 			target_node.gravity_direction = Vector2(target_node.gravity_direction.x, float(val))
-		elif name.to_lower() == "gravity" and (type == "float" or type == "int") and target_node is Area2D:
+		elif lname == "gravity" and (type == "float" or type == "int") and target_node is Area2D:
 			target_node.gravitiy = float(val)
-		elif name.to_lower() == "linear_damp_space_override" and type == "int" and target_node is Area2D:
+		elif lname == "linear_damp_space_override" and type == "int" and target_node is Area2D:
 			if int(val) < 5:
 				target_node.linear_damp_space_override = int(val)
-		elif name.to_lower() == "linear_damp" and (type == "float" or type == "int") and target_node is Area2D:
+		elif lname == "linear_damp" and (type == "float" or type == "int") and target_node is Area2D:
 			target_node.linear_damp = float(val)
-		elif name.to_lower() == "angular_damp_space_override" and type == "int" and target_node is Area2D:
+		elif lname == "angular_damp_space_override" and type == "int" and target_node is Area2D:
 			if int(val) < 5:
 				target_node.angular_damp_space_override = int(val)
-		elif name.to_lower() == "angular_damp" and (type == "float" or type == "int") and target_node is Area2D:
+		elif lname == "angular_damp" and (type == "float" or type == "int") and target_node is Area2D:
 			target_node.angular_damp = float(val)
 			
 		# StaticBody2D properties
-		elif name.to_lower() == "physics_material_override" and type == "file" and target_node is StaticBody2D:
+		elif lname == "physics_material_override" and type == "file" and target_node is StaticBody2D:
 			target_node.physics_material_override = DataLoader.load_resource_from_file(val, _base_path)
-		elif name.to_lower() == "constant_linear_velocity_x" and (type == "float" or type == "int") and target_node is StaticBody2D:
+		elif lname == "constant_linear_velocity_x" and (type == "float" or type == "int") and target_node is StaticBody2D:
 			target_node.constant_linear_velocity = Vector2(float(val), target_node.constant_linear_velocity.y)
-		elif name.to_lower() == "constant_linear_velocity_y" and (type == "float" or type == "int") and target_node is StaticBody2D:
+		elif lname == "constant_linear_velocity_y" and (type == "float" or type == "int") and target_node is StaticBody2D:
 			target_node.constant_linear_velocity = Vector2(target_node.constant_linear_velocity.x, float(val))
-		elif name.to_lower() == "constant_angular_velocity" and (type == "float" or type == "int") and target_node is StaticBody2D:
+		elif lname == "constant_angular_velocity" and (type == "float" or type == "int") and target_node is StaticBody2D:
 			target_node.constant_angular_velocity = float(val)
 
 		# AnimatableBody2D properties
-		elif name.to_lower() == "sync_to_physics" and type == "bool" and target_node is AnimatableBody2D:
+		elif lname == "sync_to_physics" and type == "bool" and target_node is AnimatableBody2D:
 			target_node.sync_to_physics = val.to_lower() == "true"
 
 		# CharacterBody2D properties
-		elif name.to_lower() == "motion_mode" and type == "int" and target_node is CharacterBody2D:
+		elif lname == "motion_mode" and type == "int" and target_node is CharacterBody2D:
 			if int(val) < 2:
 				target_node.motion_mode = int(val)
-		elif name.to_lower() == "up_direction_x" and (type == "float" or type == "int") and target_node is CharacterBody2D:
+		elif lname == "up_direction_x" and (type == "float" or type == "int") and target_node is CharacterBody2D:
 			target_node.up_direction = Vector2(float(val), target_node.up_direction.y)
-		elif name.to_lower() == "up_direction_y" and (type == "float" or type == "int") and target_node is CharacterBody2D:
+		elif lname == "up_direction_y" and (type == "float" or type == "int") and target_node is CharacterBody2D:
 			target_node.up_direction = Vector2(target_node.up_direction.x, float(val))
-		elif name.to_lower() == "slide_on_ceiling" and type == "bool" and target_node is CharacterBody2D:
+		elif lname == "slide_on_ceiling" and type == "bool" and target_node is CharacterBody2D:
 			target_node.slide_on_ceiling = val.to_lower() == "true"
-		elif name.to_lower() == "wall_min_slide_angle" and (type == "float" or type == "int") and target_node is CharacterBody2D:
+		elif lname == "wall_min_slide_angle" and (type == "float" or type == "int") and target_node is CharacterBody2D:
 			target_node.wall_min_slide_angle = float(val)
-		elif name.to_lower() == "floor_stop_on_slope" and type == "bool" and target_node is CharacterBody2D:
+		elif lname == "floor_stop_on_slope" and type == "bool" and target_node is CharacterBody2D:
 			target_node.floor_stop_on_slope = val.to_lower() == "true"
-		elif name.to_lower() == "floor_constant_speed" and type == "bool" and target_node is CharacterBody2D:
+		elif lname == "floor_constant_speed" and type == "bool" and target_node is CharacterBody2D:
 			target_node.floor_constant_speed = val.to_lower() == "true"
-		elif name.to_lower() == "floor_block_on_wall" and type == "bool" and target_node is CharacterBody2D:
+		elif lname == "floor_block_on_wall" and type == "bool" and target_node is CharacterBody2D:
 			target_node.floor_block_on_wall = val.to_lower() == "true"
-		elif name.to_lower() == "floor_max_angle" and (type == "float" or type == "int") and target_node is CharacterBody2D:
+		elif lname == "floor_max_angle" and (type == "float" or type == "int") and target_node is CharacterBody2D:
 			target_node.floor_max_angle = float(val)
-		elif name.to_lower() == "floor_snap_length" and (type == "float" or type == "int") and target_node is CharacterBody2D:
+		elif lname == "floor_snap_length" and (type == "float" or type == "int") and target_node is CharacterBody2D:
 			target_node.floor_snap_length = float(val)
-		elif name.to_lower() == "platform_on_leave" and type == "int" and target_node is CharacterBody2D:
+		elif lname == "platform_on_leave" and type == "int" and target_node is CharacterBody2D:
 			if int(val) < 3:
 				target_node.platform_on_leave = int(val)
-		elif name.to_lower() == "platform_floor_layers" and type == "string" and target_node is CharacterBody2D:
+		elif lname == "platform_floor_layers" and type == "string" and target_node is CharacterBody2D:
 			target_node.platform_floor_layers = CommonUtils.get_bitmask_integer_from_string(val, 32)
-		elif name.to_lower() == "platform_wall_layers" and type == "string" and target_node is CharacterBody2D:
+		elif lname == "platform_wall_layers" and type == "string" and target_node is CharacterBody2D:
 			target_node.platform_wall_layers = CommonUtils.get_bitmask_integer_from_string(val, 32)
-		elif name.to_lower() == "safe_margin" and  (type == "float" or type == "int") and target_node is CharacterBody2D:
+		elif lname == "safe_margin" and  (type == "float" or type == "int") and target_node is CharacterBody2D:
 			target_node.safe_margin = float(val)
-		elif name.to_lower() == "collision_layer" and type == "string" and target_node is CharacterBody2D:
+		elif lname == "collision_layer" and type == "string" and target_node is CharacterBody2D:
 			target_node.collision_layer = CommonUtils.get_bitmask_integer_from_string(val, 32)
-		elif name.to_lower() == "collision_mask" and type == "string" and target_node is CharacterBody2D:
+		elif lname == "collision_mask" and type == "string" and target_node is CharacterBody2D:
 			target_node.collision_mask = CommonUtils.get_bitmask_integer_from_string(val, 32)
-		elif name.to_lower() == "collision_priority" and  (type == "float" or type == "int") and target_node is CharacterBody2D:
+		elif lname == "collision_priority" and  (type == "float" or type == "int") and target_node is CharacterBody2D:
 			target_node.collision_priority = float(val)
 
 		# RigidBody2D properties
-		elif name.to_lower() == "mass" and  (type == "float" or type == "int") and target_node is RigidBody2D:
+		elif lname == "mass" and  (type == "float" or type == "int") and target_node is RigidBody2D:
 			target_node.mass = float(val)
-		elif name.to_lower() == "inertia" and  (type == "float" or type == "int") and target_node is RigidBody2D:
+		elif lname == "inertia" and  (type == "float" or type == "int") and target_node is RigidBody2D:
 			target_node.inertia = float(val)
-		elif name.to_lower() == "center_of_mass_mode" and type == "int" and target_node is RigidBody2D:
+		elif lname == "center_of_mass_mode" and type == "int" and target_node is RigidBody2D:
 			if int(val) < 2:
 				target_node.center_of_mass_mode = int(val)
-		elif name.to_lower() == "physics_material_override" and type == "file" and target_node is RigidBody2D:
+		elif lname == "physics_material_override" and type == "file" and target_node is RigidBody2D:
 			target_node.physics_material_override = DataLoader.load_resource_from_file(val, _base_path)
-		elif name.to_lower() == "gravity_scale" and  (type == "float" or type == "int") and target_node is RigidBody2D:
+		elif lname == "gravity_scale" and  (type == "float" or type == "int") and target_node is RigidBody2D:
 			target_node.gravity_scale = float(val)
-		elif name.to_lower() == "custom_integrator" and type == "bool" and target_node is RigidBody2D:
+		elif lname == "custom_integrator" and type == "bool" and target_node is RigidBody2D:
 			target_node.custom_integrator = val.to_lower() == "true"
-		elif name.to_lower() == "continuous_cd" and type == "int" and target_node is RigidBody2D:
+		elif lname == "continuous_cd" and type == "int" and target_node is RigidBody2D:
 			if int(val) < 3:
 				target_node.continuous_cd = int(val)
-		elif name.to_lower() == "max_contacts_reported" and type == "int" and target_node is RigidBody2D:
+		elif lname == "max_contacts_reported" and type == "int" and target_node is RigidBody2D:
 			target_node.max_contacts_reported = int(val)
-		elif name.to_lower() == "contact_monitor" and type == "bool" and target_node is RigidBody2D:
+		elif lname == "contact_monitor" and type == "bool" and target_node is RigidBody2D:
 			target_node.contact_monitor = val.to_lower() == "true"
-		elif name.to_lower() == "sleeping" and type == "bool" and target_node is RigidBody2D:
+		elif lname == "sleeping" and type == "bool" and target_node is RigidBody2D:
 			target_node.sleeping = val.to_lower() == "true"
-		elif name.to_lower() == "can_sleep" and type == "bool" and target_node is RigidBody2D:
+		elif lname == "can_sleep" and type == "bool" and target_node is RigidBody2D:
 			target_node.can_sleep = val.to_lower() == "true"
-		elif name.to_lower() == "lock_rotation" and type == "bool" and target_node is RigidBody2D:
+		elif lname == "lock_rotation" and type == "bool" and target_node is RigidBody2D:
 			target_node.lock_rotation = val.to_lower() == "true"
-		elif name.to_lower() == "freeze" and type == "bool" and target_node is RigidBody2D:
+		elif lname == "freeze" and type == "bool" and target_node is RigidBody2D:
 			target_node.freeze = val.to_lower() == "true"
-		elif name.to_lower() == "freeze_mode" and type == "int" and target_node is RigidBody2D:
+		elif lname == "freeze_mode" and type == "int" and target_node is RigidBody2D:
 			if int(val) < 2:
 				target_node.freeze_mode = int(val)
-		elif name.to_lower() == "linear_velocity_x" and (type == "float" or type == "int") and target_node is RigidBody2D:
+		elif lname == "linear_velocity_x" and (type == "float" or type == "int") and target_node is RigidBody2D:
 			target_node.linear_velocity = Vector2(float(val), target_node.linear_velocity.y)
-		elif name.to_lower() == "linear_velocity_y" and (type == "float" or type == "int") and target_node is RigidBody2D:
+		elif lname == "linear_velocity_y" and (type == "float" or type == "int") and target_node is RigidBody2D:
 			target_node.linear_velocity = Vector2(target_node.linear_velocity.x, float(val))
-		elif name.to_lower() == "linear_damp_mode" and type == "int" and target_node is RigidBody2D:
+		elif lname == "linear_damp_mode" and type == "int" and target_node is RigidBody2D:
 			if int(val) < 2:
 				target_node.linear_damp_mode = int(val)
-		elif name.to_lower() == "linear_damp" and  (type == "float" or type == "int") and target_node is RigidBody2D:
+		elif lname == "linear_damp" and  (type == "float" or type == "int") and target_node is RigidBody2D:
 			target_node.linear_damp = float(val)
-		elif name.to_lower() == "angular_velocity" and (type == "float" or type == "int") and target_node is RigidBody2D:
+		elif lname == "angular_velocity" and (type == "float" or type == "int") and target_node is RigidBody2D:
 			target_node.angular_velocity = float(val)
-		elif name.to_lower() == "angular_damp_mode" and type == "int" and target_node is RigidBody2D:
+		elif lname == "angular_damp_mode" and type == "int" and target_node is RigidBody2D:
 			if int(val) < 2:
 				target_node.angular_damp_mode = int(val)
-		elif name.to_lower() == "angular_damp" and  (type == "float" or type == "int") and target_node is RigidBody2D:
+		elif lname == "angular_damp" and  (type == "float" or type == "int") and target_node is RigidBody2D:
 			target_node.angular_damp = float(val)
-		elif name.to_lower() == "constant_force_x" and (type == "float" or type == "int") and target_node is RigidBody2D:
+		elif lname == "constant_force_x" and (type == "float" or type == "int") and target_node is RigidBody2D:
 			target_node.constant_force = Vector2(float(val), target_node.constant_force.y)
-		elif name.to_lower() == "constant_force_y" and (type == "float" or type == "int") and target_node is RigidBody2D:
+		elif lname == "constant_force_y" and (type == "float" or type == "int") and target_node is RigidBody2D:
 			target_node.constant_force = Vector2(target_node.constant_force.x, float(val))
-		elif name.to_lower() == "constant_torque" and (type == "float" or type == "int") and target_node is RigidBody2D:
+		elif lname == "constant_torque" and (type == "float" or type == "int") and target_node is RigidBody2D:
 			target_node.constant_torque = float(val)
 				
 		# NavigationRegion2D properties
-		elif name.to_lower() == "navigation_polygon" and type == "file" and target_node is NavigationRegion2D:
+		elif lname == "navigation_polygon" and type == "file" and target_node is NavigationRegion2D:
 			target_node.navigation_polygon = DataLoader.load_resource_from_file(val, _base_path)
-		elif name.to_lower() == "enabled" and type == "bool" and target_node is NavigationRegion2D:
+		elif lname == "enabled" and type == "bool" and target_node is NavigationRegion2D:
 			target_node.enabled = val.to_lower() == "true"
-		elif name.to_lower() == "navigation_layers" and type == "string" and target_node is NavigationRegion2D:
+		elif lname == "navigation_layers" and type == "string" and target_node is NavigationRegion2D:
 			target_node.navigation_layers = CommonUtils.get_bitmask_integer_from_string(val, 32)
-		elif name.to_lower() == "use_edge_connection" and type == "bool" and target_node is NavigationRegion2D:
+		elif lname == "use_edge_connection" and type == "bool" and target_node is NavigationRegion2D:
 			target_node.use_edge_connection = val.to_lower() == "true"
-		elif name.to_lower() == "enter_cost" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
+		elif lname == "enter_cost" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
 			target_node.enter_cost = float(val)
-		elif name.to_lower() == "travel_cost" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
+		elif lname == "travel_cost" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
 			target_node.travel_cost = float(val)
 
 		# NavigationPolygon properties
-		elif name.to_lower() == "parsed_geometry_type" and type == "int" and target_node is NavigationRegion2D:
+		elif lname == "parsed_geometry_type" and type == "int" and target_node is NavigationRegion2D:
 			if int(val) < 3:
 				var nav_poly = target_node.navigation_polygon
 				nav_poly.parsed_geometry_type = int(val)
-		elif name.to_lower() == "parsed_collision_mask" and type == "string" and target_node is NavigationRegion2D:
+		elif lname == "parsed_collision_mask" and type == "string" and target_node is NavigationRegion2D:
 			var nav_poly = target_node.navigation_polygon
 			nav_poly.parsed_collision_mask = CommonUtils.get_bitmask_integer_from_string(val, 32)
-		elif name.to_lower() == "source_geometry_mode" and type == "int" and target_node is NavigationRegion2D:
+		elif lname == "source_geometry_mode" and type == "int" and target_node is NavigationRegion2D:
 			if int(val) < 3:
 				var nav_poly = target_node.navigation_polygon
 				nav_poly.source_geometry_mode = int(val)
-		elif name.to_lower() == "source_geometry_group_name" and type == "string" and target_node is NavigationRegion2D:
+		elif lname == "source_geometry_group_name" and type == "string" and target_node is NavigationRegion2D:
 			var nav_poly = target_node.navigation_polygon
 			nav_poly.source_geometry_group_name = val
-		elif name.to_lower() == "cell_size" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
+		elif lname == "cell_size" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
 			var nav_poly = target_node.navigation_polygon
 			nav_poly.cell_size = float(val)
-		elif name.to_lower() == "border_size" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
+		elif lname == "border_size" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
 			var nav_poly = target_node.navigation_polygon
 			nav_poly.border_size = float(val)
-		elif name.to_lower() == "agent_radius" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
+		elif lname == "agent_radius" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
 			var nav_poly = target_node.navigation_polygon
 			nav_poly.agent_radius = float(val)
-		elif name.to_lower() == "baking_rect_x" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
+		elif lname == "baking_rect_x" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
 			var nav_poly = target_node.navigation_polygon
 			var baking_rect = nav_poly.baking_rect
 			var br_pos = baking_rect.position
 			br_pos.x = float(val)
 			baking_rect.position = br_pos
 			nav_poly.baking_rect = baking_rect
-		elif name.to_lower() == "baking_rect_y" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
+		elif lname == "baking_rect_y" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
 			var nav_poly = target_node.navigation_polygon
 			var baking_rect = nav_poly.baking_rect
 			var br_pos = baking_rect.position
 			br_pos.y = float(val)
 			baking_rect.position = br_pos
 			nav_poly.baking_rect = baking_rect
-		elif name.to_lower() == "baking_rect_w" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
+		elif lname == "baking_rect_w" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
 			var nav_poly = target_node.navigation_polygon
 			var baking_rect = nav_poly.baking_rect
 			var br_size = baking_rect.size
 			br_size.x = float(val)
 			baking_rect.size = br_size
 			nav_poly.baking_rect = baking_rect
-		elif name.to_lower() == "baking_rect_h" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
+		elif lname == "baking_rect_h" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
 			var nav_poly = target_node.navigation_polygon
 			var baking_rect = nav_poly.baking_rect
 			var br_size = baking_rect.size
 			br_size.y = float(val)
 			baking_rect.size = br_size
 			nav_poly.baking_rect = baking_rect
-		elif name.to_lower() == "baking_rect_offset_x" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
+		elif lname == "baking_rect_offset_x" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
 			var nav_poly = target_node.navigation_polygon
 			var baking_rect_offset = nav_poly.baking_rect_offset
 			baking_rect_offset.x = float(val)
 			nav_poly.baking_rect_offset = baking_rect_offset
-		elif name.to_lower() == "baking_rect_offset_y" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
+		elif lname == "baking_rect_offset_y" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
 			var nav_poly = target_node.navigation_polygon
 			var baking_rect_offset = nav_poly.baking_rect_offset
 			baking_rect_offset.y = float(val)
 			nav_poly.baking_rect_offset = baking_rect_offset
-		elif name.to_lower() == "resource_local_to_scene" and type == "bool" and target_node is NavigationRegion2D:
+		elif lname == "resource_local_to_scene" and type == "bool" and target_node is NavigationRegion2D:
 			var nav_poly = target_node.navigation_polygon
 			nav_poly.resource_local_to_scene = val.to_lower() == "true"
-		elif name.to_lower() == "resource_name" and type == "string" and target_node is NavigationRegion2D:
+		elif lname == "resource_name" and type == "string" and target_node is NavigationRegion2D:
 			var nav_poly = target_node.navigation_polygon
 			nav_poly.resource_name = val
 
 		# LightOccluder2D properties
-		elif name.to_lower() == "sdf_collision" and type == "bool" and target_node is LightOccluder2D:
+		elif lname == "sdf_collision" and type == "bool" and target_node is LightOccluder2D:
 			target_node.sdf_collision = val.to_lower() == "true"
-		elif name.to_lower() == "occluder_light_mask" and type == "string" and target_node is LightOccluder2D:
+		elif lname == "occluder_light_mask" and type == "string" and target_node is LightOccluder2D:
 			target_node.occluder_light_mask = CommonUtils.get_bitmask_integer_from_string(val, 20)
 
 		# Polygon2D properties
-		elif name.to_lower() == "color" and type == "string" and target_node is Polygon2D:
+		elif lname == "color" and type == "string" and target_node is Polygon2D:
 			target_node.color = Color(val)
 
 		# Line2D properties
-		elif name.to_lower() == "width" and (type == "float" or type == "int") and target_node is Line2D:
+		elif lname == "width" and (type == "float" or type == "int") and target_node is Line2D:
 			target_node.width = float(val)
-		elif name.to_lower() == "default_color" and type == "string" and target_node is Line2D:
+		elif lname == "default_color" and type == "string" and target_node is Line2D:
 			target_node.default_color = Color(val)
 
 		# Marker2D properties
-		elif name.to_lower() == "gizmo_extents" and (type == "float" or type == "int") and target_node is Marker2D:
+		elif lname == "gizmo_extents" and (type == "float" or type == "int") and target_node is Marker2D:
 			target_node.gizmo_extents = float(val)
 
 		# Other properties are added as Metadata
@@ -2255,5 +2477,7 @@ func handle_properties(target_node: Node, properties: Array):
 					target_node.set_meta(name, CommonUtils.get_right_typed_value(type, val))
 			elif type == "list":
 				target_node.set_meta(name, list_val)
+			elif is_class_dict:
+				target_node.set_meta(name, class_val)
 			else:
 				target_node.set_meta(name, CommonUtils.get_right_typed_value(type, val))
