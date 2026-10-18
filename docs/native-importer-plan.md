@@ -312,7 +312,11 @@ numbers measured. Stages 1 and 2 are the bulk; 3 and 4 are what the two goals ne
 - Gate: at a 4 ms budget no streaming frame exceeds the idle frame by more than the budget
   plus one chunk's engine cost from 1.3 (about 2 ms with collision); memory of the loaded
   `TiledMap` near the file size; chunks that leave the window plus margin are gone (cells
-  erased, objects freed, no orphans).
+  erased, objects freed, no orphans). *Outcome (section 6): met against a control run (the
+  same scroll over preloaded content, the streamer paused) at p99 and at the worst frame in five
+  of six runs, and a streaming frame less the streamer's own work costs what a control frame
+  costs; the literal reading (the worst streaming frame against one idle frame) cannot hold on
+  this machine, whose still frames alone spread by 8 ms and more. Memory: 1.56 times the file.*
 
 ### Stage 5: web build, documentation, adoption
 
@@ -335,7 +339,17 @@ numbers measured. Stages 1 and 2 are the bulk; 3 and 4 are what the two goals ne
   streamer uses anyway).
 - **Y-sorted layers** (isometric, staggered, `draworder` on object layers) do not use rendering
   quadrants: their per-cell engine cost is different and `bench_materialize.gd` should grow a
-  variant before stage 4's budgets are calibrated for them.
+  variant before stage 4's budgets are calibrated for them. *Measured in stage 4 (`--ysort`): a
+  y-sorted layer re-sorts all of its cells in every frame that changes it, after the streamer's
+  work, so the streamer refuses y-sorted tile layers unless told otherwise (section 6).*
+- **A `TileMapLayer` remembers every area it has shown** (found in stage 4, Godot 4.7.2): one
+  object, about 1.3 KB, per 16 × 16 area that ever held a cell, kept after its cells are erased
+  and freed only with the layer, whatever `rendering_quadrant_size`, `physics_quadrant_size` or the
+  collision, navigation and occlusion switches say (20 000 areas set and erased: 20 000 objects,
+  +24.2 MB, all objects back when the layer is freed). A streamer that crosses a whole huge map
+  accumulates it (80 MB per layer for 4 000 × 4 000 cells). World mode frees a map's layers with the
+  map; for one huge map, replacing a layer by a fresh one once it has seen many areas would bound it,
+  at the price of re-adding its live cells in one frame (an option for later, if games need it).
 - **Collision streaming is the expensive case** (1.9 ms per 16 × 16 chunk here, software GL and
   a shared machine). A game that streams collision-heavy maps may want its collision elsewhere
   (one body per chunk from merged polygons, which the streamer could offer as an option later),
@@ -711,6 +725,220 @@ numbers measured. Stages 1 and 2 are the bulk; 3 and 4 are what the two goals ne
     poll); `READING` is the status between `load_async` and the first poll. The build frame keeps the
     builder's own per-layer decoding (`builder/cells.rs`); moving the decode onto the worker would
     take about 10 ms off the build frame of the benchmark map and is left for later.
+
+- 2026-10-18, **stage 4 done** (the streamer):
+  - **`TiledStreamer`** (`native/src/streamer.rs`, a `Node2D`): `map` (a `TiledMap`, loaded or
+    loading: it is polled) or `world` (a `TiledWorld`), `tilesets` (null: `TiledTileSets.shared()`),
+    `options`, `project_file` (the world's maps'); `window: Rect2i` in cells, or `follow: Node2D` +
+    `margin: Vector2i` (the window is the followed node's chunk grown by `margin` cells, recomputed
+    each frame); `keep_margin` (16 × 16: a loaded chunk stays until it is that far outside the
+    window), `world_margin` (32 × 32), `world_cell_size` (16 × 16 px: world mode's cells),
+    `budget_us` (2000; `<= 0` unbounded), `keep_objects_resident` (false), `chunk_size` (16 × 16),
+    `allow_y_sorted_layers` (false). `_process` calls `step(budget_us) -> bool` (also callable by hand
+    with processing off); `load_all()`, `is_settled()`, `loaded_chunk_count()`,
+    `get_loaded_chunks(layer)`, `get_spawned_object_count()`, `get_layer(name) -> TileMapLayer`,
+    `get_object_layer(name)`, `get_map_root(path)`, `get_loaded_maps()`, `get_costs()`, `get_stats()`,
+    `reset_stats()`, `get_error_count()`, `get_warning_count()`. Signals `chunk_loaded(layer_name,
+    coords)`, `chunk_unloaded(layer_name, coords)`, `object_spawned(node, id)`,
+    `object_despawned(id)`, `map_loaded(path, root)`, `map_unloaded(path)`, `settled()` (emitted by
+    the frame whose work completes the window), all after the frame's work.
+  - **How a map streams.** Its tree is made by the builder with every layer node and nothing in
+    them (the `Skeleton`: one persistent `TileMapLayer` per Tiled tile layer and one node per object
+    layer, configured exactly as `TiledBuilder.build` configures them; image layers, the background,
+    groups, parallax wrappers, layer and map properties made at once), under a root named after the
+    map (never unwrapped), at the world rect's origin in world mode. Every tile of its TileSet is
+    created before the first cell is set (`tileset_gids`, a budgeted phase): a TileSet changed while
+    layers hold cells makes the engine rebuild every cell of every layer that uses it (measured here:
+    `create_tile` in a live TileSet with 30 720 cells, 42 to 59 ms in `update_internals` plus a 51 ms
+    frame; a `texture_origin` set on an unused tile, 38 ms). A tile layer's cells come from sources: an
+    infinite layer's chunks (decoded when wanted, never kept: the model keeps the payloads as the file
+    has them) or a finite layer's data (decoded once on a thread of its own, `tiled-decode`, pure
+    `tiled_core`); a grid maps each chunk of `chunk_size` to the sources that have cells in it (a
+    Tiled chunk of another size spans several). Loading a chunk: its non-empty cells collected, each
+    distinct value resolved once per map (the builder's `resolve_cell`), `set_cell` per cell, then
+    `TileMapLayer.update_internals()`, so the engine's quadrant and physics work for the chunk is done
+    (and measured) in the streamer's frame; a bit per cell records what was set, and unloading erases
+    exactly those cells, then `update_internals()`. Objects are indexed by the chunk their `x`, `y`
+    lies in (isometric maps: both divided by the tile height, as Tiled stores them) and created by
+    the builder's `handle_object` under their layer's node when that chunk enters the window
+    (`draworder="index"` layers keep the layer's order with `move_child`), freed when it leaves; each
+    object's nodes (a template can add several) are remembered and the id forgotten. Object
+    references are kept and resolved again at the end of every frame whose objects came or went: a
+    NodePath while both nodes exist, an empty one (no warning) otherwise. `_tiled_import` runs after
+    that frame's references. In `load_all()` mode every object of a layer is created in the layer's
+    order, so the tree equals the one-shot build's to the node.
+  - **The budget.** Each piece of work (a tile chunk in or out, a chunk's objects in or out) is
+    estimated before it runs from costs the streamer fits to its own measurements: a least-squares
+    fit with forgetting (0.97 per sample) and a ridge prior (the initial guesses), `t = chunk + cell ×
+    n + y-sorted cell × n_ysort + collision cell × n_collision` for tile chunks (collision cells:
+    tiles with a collision polygon on any physics layer), `chunk + cell × n (+ y-sorted cell)` for
+    erasing, `chunk + object × n` for spawning and freeing. A frame stops before the piece whose
+    estimate exceeds what is left of `budget_us`; one piece always runs (also when the map's phases,
+    loading, TileSets, tiles, decoding, took the frame's first 100 µs and more, which then count as
+    that piece). Order: one unload first (so unloading never starves), then loads nearest the window's
+    centre first, then the other unloads farthest first. (The first version averaged µs per cell; the
+    per-chunk fixed cost made small chunks read 120 µs per cell: hence the fit.)
+  - **World mode.** Each map of the world is a slot: loaded with `TiledMap.load_async` (polled once
+    per frame) when the window grown by `world_margin` reaches its rect, its TileSet built with
+    `build_step` within the budget, streamed like one map; once the window grown by `world_margin +
+    keep_margin` no longer reaches it, its chunks unload through the budget and, when none is left,
+    its tree is freed (`map_unloaded`). Maps with the same tileset combination (the cache key, now
+    `TiledTileSets::map_key`) share one TileSet: the streamer holds a `Weak` per key, so a cached
+    TileSet is reused while one of its maps is live and the exclusive cache hands it out again later.
+  - **Y-sorted layers: refused by default.** `bench_materialize.gd -- --ysort` (renderer, 218-cell
+    chunks set into a live layer, frame time over the idle frame): a y-sorted layer costs +4.2 ms for
+    one chunk per frame into a 64 × 64 layer (+4.9 ms for eight), +4.5 ms (+7.7) into 160 × 160, +8.0
+    ms (+18.3) into 320 × 320, erasing eight +2.1, +1.2 and +10.7 ms; the same without y-sort: +2.0
+    (+4.4), +0.4 (+5.2), -0.9 (+1.5), noise at one chunk. So a frame that changes a y-sorted layer
+    pays a re-sort of all of its cells after the streamer's work, growing with the layer and out of
+    any budget's reach. The streamer refuses a map whose tile layers are y-sorted (isometric,
+    staggered) with an error naming the cause and the ways out; `allow_y_sorted_layers = true`
+    streams them anyway, their cells budgeted at their own measured cost (14.5 to 15.2 µs per cell
+    against 2.0 for an ordinary one; erasing 4.6 to 7.4 µs against 1.0); `load_all()` always takes
+    them (it is the one-shot build). Object layers sorted by y stream normally (their cost is per
+    object).
+  - **Facade**: `Importer.make_streamer(map_or_world, options = null, project_file = "")` (a map path
+    loaded with `load_async`, a `.world` path, a `TiledMap` or a `TiledWorld`; the importer's options
+    and the shared cache unless `share_tilesets` is off); `Importer.shared_tilesets()` is now
+    `TiledTileSets.shared()` (a static of the extension, released at its shutdown), so streamers and
+    imports share one cache.
+  - **Refactored in `builder/`** (no behaviour change for `build`): `Build`'s owned state and a
+    `Suspended` twin are declared by one macro (`build_state!`) with `suspend()` / `resume(map,
+    tilesets, state)`, so the streamer keeps a map's build across frames (names, cell and atlas caches,
+    the object registry, scripted nodes' property lists, references, reported warnings) and resumes it
+    to create objects and resolve cells. Two new fields: `skel` (a streaming build: `handle_layer`
+    records tile and object layer nodes instead of filling them) and `stream_refs`.
+    `finish_import`'s metadata part is `root_metadata`; `resolve_object_refs` resolves each reference
+    with `resolve_ref`, which the streamer calls again; `ref_path` stays silent about missing targets
+    in a streaming build. `builder/stream.rs` holds the streaming entry points (`for_stream`,
+    `run_skeleton`, `resolve_value`, `spawn_object`, `forget_object`, `update_refs`, `run_hooks`,
+    `tileset_gids`). Verified: the suite against the facade 103 of 103 before and after; an A/B of
+    objects-only builds of the benchmark map (40 builds each, alternated three times with the stage 3
+    library built from its commit): min 46.2, 47.0, 47.9 ms before, 45.9, 42.9, 50.0 after.
+  - **Benchmark** (`test/gen_stream_bench.gd` → `test/out/stream/`: `stream.tmx`, infinite, 4 000 ×
+    4 000 cells, 57.9 MB, base64 + zlib chunks drawn from 32 variants per layer: Ground every cell,
+    Detail a third (a third of those flipped), Walls about a fifth on `walls.tsx` whose every tile has
+    a full-tile collision polygon, Deco sparse in half the chunks; an object in every third chunk,
+    every tenth referring to the previous one; `stream_iso.tmx`, the same as an isometric map of 1 024
+    × 1 024 cells; `stream.world`, 3 × 3 finite maps of 256 × 256 cells; generated in about 2.3 s).
+    `test/bench_stream.gd` (renderer: xvfb, llvmpipe, 4 cores of a shared VM; viewport 1152 × 648,
+    budget 4 000 µs, 10 s per run): a warm-up scroll elsewhere (unmeasured: the first frames that draw
+    a new kind of node compile shaders, an 80 ms frame with no streamer work in it here), the first
+    window unbounded (map 129 to 141 ms, world 121 to 190 ms, iso 0.9 s, in one frame), still frames,
+    then the measured scroll at two screens per second (right 40 %, down 30 %, left 30 % of the time;
+    the follow margin covers the screen plus a chunk), then the control: the streamer paused over a
+    preloaded region, the camera going back and forth at the same speed for as long. Two runs:
+    - **Map**: control median 15.78 / 16.33 ms, p95 20.26 / 21.71, p99 23.07 / 24.20, worst 25.81 /
+      36.86; streaming median 19.08 / 17.74, p95 24.46 / 23.52, p99 27.23 / 27.35, worst 37.85 /
+      30.46, so over the control +3.31 / +1.40 (median), +4.20 / +1.81 (p95), +4.16 / +3.14 (p99),
+      +12.05 / -6.40 (worst). Histogram of frame times over the control's median (≤ +1, +2, +4, +6, +8,
+      +12, +16, more): streaming 106, 67, 136, 98, 72, 36, 2, 2 / 254, 67, 112, 81, 32, 10, 5, 0;
+      control 410, 80, 87, 34, 5, 4, 0, 0 / 364, 67, 97, 42, 20, 1, 1, 1. Streaming frames less the
+      streamer's work in them, over the control: median +0.71 / -0.86, p95 +0.99 / -1.76, p99 +0.53 /
+      -0.86: the engine charges nothing beyond what the streamer measures. The worst streaming frames
+      had 3.5 to 4.0 ms of streamer work in them (run 1's 37.85 ms frame: 3.91 ms, 940 cells). The
+      streamer's work per frame: worst 6.89 / 5.27 ms; longest piece 3.64 / 2.79 ms, most beyond its
+      estimate 2.95 / 2.46 ms (12 of about 4 500 pieces in a world run overran by 1.5 ms or more, on
+      arbitrary chunks, loads and unloads alike: preemption on this VM, not a pattern). 2 018 / 2 015
+      tile chunks loaded (202 per second), 1 980 / 1 973 unloaded, 192 objects spawned, 189 / 187
+      freed, 229 521 / 229 425 cells (30 038 / 29 959 with collision); the budget stopped 79 % of the
+      working frames (286 of 361, 266 of 338): at this speed and density the streamer works at its
+      budget. Measured costs: chunk 54.5 / 78.0 µs + 2.01 / 2.08 µs per cell + 4.80 / 4.51 µs per
+      collision cell (a full 256-cell chunk about 0.6 ms, with a fifth of it colliding about 0.8 ms);
+      erasing 44 to 51 µs + 0.89 to 1.09 per cell; objects 43 to 45 µs + 73 to 75 per object; freeing
+      15 to 16 µs + 20 to 21 per object.
+    - **World**: maps load and unload as the camera crosses them (run 2: +world_0_1 +world_0_2
+      +world_1_1 +world_1_2 during the warm-up, then -world_0_1 -world_1_1 -world_1_2 -world_0_2
+      +world_0_0 +world_1_0 -world_0_0 +world_2_0 -world_1_0 +world_2_1 +world_1_1 -world_2_0
+      -world_2_1 +world_0_1). Control median 14.76 / 25.07, p95 19.93 / 38.57, p99 23.39 / 48.22,
+      worst 100.22 / 59.46 (a noisy session for run 2); streaming median 18.43 / 24.96, p95 23.83 /
+      34.90, p99 26.06 / 43.86, worst 36.38 / 44.05: over the control +3.67 / -0.11, +3.90 / -3.67,
+      +2.66 / -4.36, -63.84 / -15.40; less the streamer's work: +1.23 / -3.33, +0.38 / -7.17, -1.20 /
+      -8.41. Run 1's worst frame had no streamer work in it. Histograms: streaming 112, 43, 138, 135,
+      56, 52, 2, 2 / 222, 21, 63, 25, 39, 20, 4, 5; control 408, 76, 100, 46, 13, 5, 0, 3 / 213, 14,
+      55, 16, 37, 26, 17, 8. Streamer work per frame worst 6.77 / 7.18 ms, longest piece 5.94 / 4.71,
+      most beyond its estimate 5.58 / 4.16; 2 330 / 2 336 chunks loaded (233 per second); budget
+      stops 78 % / 83 %; costs chunk 70.6 / 41.3 µs + 1.92 / 1.99 per cell + 5.14 / 5.19 per collision
+      cell.
+    - **Iso** (`allow_y_sorted_layers`): still frames 24.94 / 26.32 ms, the control (a screen of
+      y-sorted cells, scrolling) median 36.50 / 47.05 ms: drawing y-sorted cells one by one is itself
+      dear on software GL. The streamer stays in its budget (work per frame worst 7.59 / 6.40 ms, a
+      y-sorted chunk being about 3.7 ms) but cannot keep up at two screens per second: 556 / 579
+      chunks loaded (56 to 58 per second, against about 200 needed), the budget hit in every working
+      frame, the screen partly empty (hence streaming frames cheaper than the control: median 5.5 ms).
+      Costs: 14.52 to 15.21 µs per y-sorted cell, 4.61 to 7.37 per erased one.
+    - **The gate** as `bench_stream.gd` checks it (streaming minus control at p99 and at the worst
+      frame within the budget plus one chunk, 6 ms): run 1 map p99 pass, worst fail (+12.05: a frame
+      with 3.91 ms of streamer work); run 1 world, run 2 map and world, both iso runs: pass. The
+      literal reading (the worst streaming frame minus the control's median) fails by 14 to 22 ms,
+      but the control's own worst frame exceeds its median by 10 to 85 ms: one idle frame is no
+      yardstick on this machine. The earlier version of the benchmark, compared with one idle frame,
+      also showed that scrolling itself costs nothing here (preloaded content: still median 15.62 to
+      16.12 ms, scrolling 16.03 to 16.66) and that a chunk's deferred engine cost is nil (a chunk set
+      per frame with a still camera, on or off screen, with or without collision: frame minus measured
+      work minus idle, median -1.8 to +0.5 ms).
+    - **Memory**: `TiledMap.load` of the 57.9 MB map takes 247 to 280 ms; `Performance.MEMORY_STATIC`
+      30.9 MB before and after (it counts the engine's allocations only, not the Rust heap); the
+      process's resident memory 229.4 → 319.6 MB, +90.1 MB, 1.56 times the file (the payloads as
+      text, about the file, plus the model's per-chunk structs: about 220 000 chunks). After streaming:
+      MEMORY_STATIC 35.5 MB (+4.6), resident +56 MB over the loaded map; after a 30 s run (6 028
+      chunks loaded, 5 984 unloaded, 575 objects spawned, 570 freed; frames less the streamer's work
+      over the control: median +0.32, p95 +0.53, p99 +0.87 ms; budget stops 90 %) MEMORY_STATIC 38.0
+      MB, resident +66 MB. What grows is the engine's: a `TileMapLayer` keeps one object (about
+      1.3 KB) per 16 × 16 area it has ever shown, until it is freed (section 5). Streaming a window of
+      about 95 live chunks along the map headless for 3 200 steps: objects 3 777 → 8 446 and flat once
+      the window crosses ground it has crossed before, MEMORY_STATIC 32.4 → 38.2 MB and flat; the
+      same without the object layer. Chunks that leave are gone (their cells erased, their objects
+      freed, no orphan nodes: the leak test).
+  - **Tests**: `test/test_stream.gd` (headless, run by `test/run_all.sh` and CI): `load_all()` of 22
+    fixtures (finite, infinite TMX and JSON, isometric, staggered, hexagonal, templates, object
+    references, scenes and masks with their projects, parallax, animations...) equals
+    `TiledBuilder.build`'s tree with `always_wrap_root` (every node's path, class, child count,
+    position, metadata; every cell's source, atlas coordinates and alternative); a window over
+    `infinite.tmx` loads exactly the chunk it covers in both layers and erases it when it moves, the
+    hysteresis keeps a chunk within `keep_margin`; objects spawn and despawn with their chunks
+    (signals), a reference across chunks is an empty path until its target spawns, then resolves,
+    then is empty again when the target goes, `draworder="index"` order kept (`spread.tmx`, written by
+    the test); `keep_objects_resident`; a 1 µs budget takes 53 `step()`s (the TileSet's tiles first, a
+    gid per step, then one piece per step), `settled` fires once, the costs are measured (headless:
+    chunk about 30 µs + 1.3 to 2.0 µs per cell, 31 to 67 µs per object); y-sorted maps refused, then streamed when allowed;
+    world mode over `fixtures/world/test.world` (the hub only, then area_0_0 only with the hub's tree
+    freed, then `load_all()` with all four); `make_streamer` for a map path (asynchronous) and a world;
+    no leaks: 20 rounds of three maps and a world streamed in and out, objects 1654 → 1654, nodes and
+    orphan nodes unchanged (the baseline taken after two measured rounds: a few objects are created
+    once, on the third use, then stay flat over 60 rounds). `SUMMARY: 86 passed, 0 failed` (three
+    runs in a row; an earlier version failed the budget checks once under load: it stepped in a tight
+    loop with no frame between steps, so the finite map's decoding thread had not finished within
+    its 100 steps, and with frames between steps the streamer's own `_process` worked too, since
+    entering the tree turns processing on: the test now turns it off after `add_child`). Three
+    Rust unit tests (the fit recovers a linear cost and ignores bad samples, the value table).
+  - **Gates, measured**: `test/run_tests.gd` `SUMMARY: 103 passed, 0 failed (new_: 0, bug_: 0, other:
+    0) of 103` for `res://runtime` and for `res://addons/yati_native`, `test/run_all.sh` exits 0 for
+    both; `test/test_async.gd` `SUMMARY: 43 passed, 0 failed` (3 rounds; 45 with `--rounds=5`, as in
+    stage 3), worst frame before the build 1.78 to 1.84 ms; `tools/native_gate.gd`: leaks none
+    (objects 1900 → 1900, nodes 1 → 1, orphans 0 → 0 after 20 rounds of 57 maps), the small map 1.00
+    ms mean (min 0.91), its async import 12 to 40 frames, wall mean 1.19 ms; the engine floor 111.1 ms
+    import against 102.3 ms of `tile_map_data`; `cargo test --release --workspace` 56 passed (53 + 3),
+    clippy `-D warnings` and `fmt --check` clean. The facade benchmark: `total_ms` min 160.9 to 198.2
+    over five runs (stage 3's library, alternated with this one: min 161.9 to 175.5).
+  - **Decisions the plan left open**: the window's two modes are distinct properties (`window` cells,
+    or `follow` + `margin` around the followed node's chunk), with a separate hysteresis
+    (`keep_margin`) rather than reusing `margin` for both; world mode works in world pixels, its
+    window in cells of `world_cell_size`, each map converting to its own cells by its tile size (a
+    world's maps may have different tile sizes); `follow` converts through the first tile layer's
+    `local_to_map` (layer offsets and isometric projection included); an object's chunk is the cell of
+    its `x`, `y` (a tile object's bottom-left corner, as Tiled stores it), not its bounds;
+    `keep_objects_resident` keeps objects created with their chunk rather than creating all objects
+    at the start, and a world map that leaves still frees its objects; `load_all()` keeps the window
+    unbounded until `window` or `follow` is set; an unbounded `step(0)` waits for a finite map's
+    decoding thread but not for a map still loading; signals are emitted after the frame's work (a
+    handler may call back into the streamer; a `_tiled_import` hook, which runs during it, must not);
+    the TileSet's every tile is created up front (the builder creates only the tiles a map uses), so a
+    streamed map's TileSet can have more tiles than the one-shot build's; with `no_alternative_tiles`
+    off a flipped value's first appearance still creates an alternative tile (a TileSet change, so a
+    rebuild of the live layers): documented, not pre-scanned; one `TileMapLayer` per Tiled layer per
+    world map (not shared across maps), so a map's unload is its own; the collision cost is the
+    engine's own per-cell physics shapes, with no merged-polygon option yet (section 5).
 
 ## 7. Behaviour changes from the runtime improvement plan
 

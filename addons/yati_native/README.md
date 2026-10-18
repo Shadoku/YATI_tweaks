@@ -10,14 +10,15 @@ changing one preload path.
 The plan, the measurements behind it and the stages:
 [docs/native-importer-plan.md](../../docs/native-importer-plan.md).
 
-## Status: stage 3 (asynchronous loading and shared caches)
+## Status: stage 4 (the streamer)
 
 Maps import natively and the GDScript runtime's whole test suite (`test/run_tests.gd`, 103
 tests) passes against this facade, the runtime's 3.1 features included: object references as
 NodePaths, scenes for classes and node properties from custom properties, map bounds and world
 files, int and flag-enum layer masks. `import_async()` imports a map during play without a hitch
 (the parse on a worker thread, the build in one frame), and TileSets and textures are cached
-across imports. The streamer for infinite maps (stage 4) is not there yet.
+across imports. `TiledStreamer` streams an infinite (or large finite) map, or a whole Tiled world,
+chunk by chunk as a camera moves, within a per-frame budget ([Streaming](#streaming-tiledstreamer)).
 
 ## Requirements
 
@@ -114,10 +115,112 @@ collected in the next frames); freeing the `TiledMap` mid-load does the same. `l
 are emitted from the `poll()` that ends a load, so `await map.loaded` works while something else
 polls.
 
+### Streaming: `TiledStreamer`
+
+A map too large to build in one frame, an infinite map, or a world of maps is streamed: a
+`TiledStreamer` (a `Node2D`) shows the part of it around a window and keeps nothing else.
+
+```gdscript
+const Importer = preload("res://addons/yati_native/Importer.gd")
+
+func _ready() -> void:
+	var streamer: TiledStreamer = Importer.new().make_streamer("res://maps/overworld.tmx")
+	streamer.follow = $Player              # the window follows this node
+	streamer.margin = Vector2i(48, 32)     # cells around the player's chunk (cover the screen)
+	streamer.budget_us = 2000              # work per frame
+	add_child(streamer)
+	await streamer.settled                 # the first window is there
+```
+
+`make_streamer(map_or_world, options = null, project_file = "")` takes a map path (loaded with
+`TiledMap.load_async`: the streamer starts once it is loaded), a world path (`.world`), or a
+`TiledMap` / `TiledWorld`, and gives a streamer with the importer's options and the shared TileSet
+cache. The same with the class:
+
+```gdscript
+var map := TiledMap.new()
+map.load("res://maps/overworld.tmx", "")       # or load_async: the streamer polls it
+var streamer := TiledStreamer.new()
+streamer.map = map
+streamer.window = Rect2i(0, 0, 120, 70)        # cells; or follow + margin
+add_child(streamer)
+```
+
+**What it does each frame** (`_process`, or `step(budget_us)` by hand, after
+`set_process(false)` once the streamer is in the tree): the chunks (`chunk_size`,
+16 × 16 cells) of every tile layer that the window covers and that are not loaded are loaded,
+nearest first, with `set_cell` into one persistent `TileMapLayer` per Tiled tile layer (made and
+configured as `import()` makes it: names, parallax, tint, offsets, blend modes, visibility,
+properties); chunks outside the window grown by `keep_margin` (16 cells: a camera moving back and
+forth across a chunk border does not reload it) are erased with `erase_cell`. An infinite map's
+chunks are decoded from the file's payloads when they are wanted, so a loaded map costs about its
+file size in memory (1.6 times it for the 58 MB benchmark map); a finite map's layers are decoded
+once, on a thread. Image layers and the background colour are made with the tree, not streamed.
+
+**The budget.** The streamer measures its own work, from the first chunks on: µs per chunk, per
+cell, per cell whose tile has a collision polygon (collision bodies are the engine's dearest part),
+per y-sorted cell, per object, per erased cell and per freed object (`get_costs()`). Before each
+piece of work it estimates its cost and stops the frame's work when the next piece would exceed
+`budget_us` (one piece always runs, so a frame does at least that). The engine's work for a chunk
+(its rendering quadrant and physics bodies) is done in the streamer's frame
+(`TileMapLayer.update_internals()`), so what the budget counts is what the frame pays: on the
+benchmark map at a 4 ms budget, frames without the streamer's own work cost what frames with the
+streamer paused cost. `get_stats()` counts the work (`tile_chunks_loaded`, `objects_spawned`,
+`budget_stops`: frames that stopped at the budget, `max_work_us`...). A budget the window outruns
+shows as chunks appearing late, never as a long frame: at two screens per second over four dense
+layers of 16 px tiles, 4 ms per frame loads about 200 chunks a second here, about what that speed
+needs.
+
+**Objects** are indexed by the chunk their position (`x`, `y`) lies in and created when that
+chunk enters the window, by the same code as `import()` (classes, templates, scenes, properties,
+`_tiled_import`), under one node per object layer (`draworder="index"` layers keep their order);
+they are freed when the chunk leaves. Signals: `object_spawned(node, id)`,
+`object_despawned(id)`. An object property that names an object of another chunk is a NodePath
+to it while both exist and an empty NodePath otherwise (no warning), set again whenever the
+target comes or goes. `keep_objects_resident = true` keeps objects once created (for objects that
+carry game state); a world map that leaves still frees its objects.
+
+**World mode.** `streamer.world = world` (a loaded `TiledWorld`) or `make_streamer("....world")`:
+each map is placed at its rect, loaded with `TiledMap.load_async` when the window comes within
+`world_margin` cells of it, streamed like one map, and unloaded chunk by chunk, then entirely,
+once the window is `keep_margin` farther away (`map_loaded(path, root)`, `map_unloaded(path)`).
+In world mode `window` and the follow margin are in cells of `world_cell_size` (16 × 16 px);
+`project_file` is the project the maps load with. Maps with the same tilesets share one TileSet.
+
+**Everything at once.** `load_all()` loads the whole map (or every map of a world, loaded
+synchronously) in one call: the same tile and object content as `import()`, and the window stays
+unbounded until `window` or `follow` is set.
+
+**Y-sorted layers** (the tile layers of isometric and staggered maps) are refused by default, with
+an error: the engine draws their cells one by one and re-sorts all of a layer's cells in each frame
+that changes it, after the streamer's work, where no budget reaches (+4 ms over the idle frame for
+one chunk into a layer of 3 500 cells, +8 ms into 87 000, on this repository's software-rendered
+test machine). `allow_y_sorted_layers = true` streams them anyway, budgeted at their own measured
+cost (about 14 µs per cell, 8 times an ordinary cell's); `load_all()` always takes them. Object
+layers sorted by y (`draworder="topdown"`) stream normally.
+
+**Things to know.** Every tile of the map's TileSet is created before the first cell is set: the
+engine rebuilds every cell of every layer that uses a TileSet when the TileSet changes (40 to 60 ms
+with 30 000 cells). So keep `no_alternative_tiles` on (the default) when streaming: off, a flipped
+tile's first appearance creates an alternative tile, which is such a change. The engine's
+`TileMapLayer` keeps one object, about 1.3 KB, for every 16 × 16 area it has ever held cells in,
+even once they are erased, until the layer is freed (Godot 4.7.2, whatever the quadrant sizes): a
+layer streamed across all of a 4 000 × 4 000 map would hold about 80 MB. Most games cross a small
+part of such a map; world mode frees a map's layers with the map; a streamer freed and made again
+starts from nothing. The streamer's
+signals are emitted after its frame's work; a `_tiled_import` hook or a `godot_script` of an object
+runs during it and must not call the streamer. `get_layer(name)`, `get_object_layer(name)`,
+`get_map_root(path)`, `get_loaded_maps()`, `loaded_chunk_count()`, `get_loaded_chunks(layer)`,
+`get_spawned_object_count()`, `is_settled()`, `get_error_count()` and `get_warning_count()` tell
+what is there. `test/bench_stream.gd` is the benchmark (an infinite map of 4 000 × 4 000 cells
+scrolled at two screens per second, a world of 3 × 3 maps, an isometric map); the plan's section
+6, stage 4, has its numbers.
+
 ### Shared TileSets and textures
 
 With `share_tilesets` on (the default), every `Importer` uses one TileSet cache,
-`Importer.shared_tilesets()` (a `TiledTileSets`): a map whose tileset combination an earlier import
+`Importer.shared_tilesets()` (a `TiledTileSets`: `TiledTileSets.shared()`, which streamers use
+by default too): a map whose tileset combination an earlier import
 built gets that TileSet instead of a new one. The combination is the ordered list of tilesets with
 their first gids (paths of external tilesets, a hash of embedded ones), the map's tile size,
 orientation and stagger, the zip archive, the project file's types, and the options that shape a
@@ -174,16 +277,17 @@ message and returns `null`). `importer.make_options()` gives the options as a
 
 ### The native classes
 
-The facade is a thin layer over four classes, which a project can use directly (reach them
+The facade is a thin layer over these classes, which a project can use directly (reach them
 through `ClassDB` if the script must compile without the library):
 
 | Class | What |
 |---|---|
 | `TiledImportOptions` (Resource) | every option, same names and defaults as the facade's variables |
 | `TiledMap` | `load(path, project_file) -> Error`, `from_zip(zip, path_in_zip, project_in_zip) -> Error`; `load_async(...)`, `from_zip_async(...)`, then `poll() -> int` once per frame (`READING`, `PARSING`, `WAITING_FILES`, `READY`, `FAILED`), `get_status()`, `cancel()`, signals `loaded` and `failed`; `is_loaded()`, `get_path()`, `get_size()` (cells), `get_tile_size()`, `get_orientation()`, `is_infinite()`, `get_layers()` (`{name, type, id, depth}` per layer, depth first), `to_dictionary()` (the GDScript runtime's `DictionaryBuilder` dictionary of the map, custom types merged), `get_errors()`, `get_warnings()` |
-| `TiledTileSets` | the TileSet builder and its cache: `tileset_for(map, options) -> TileSet` (built on first use, then cached per tileset combination and shared by reference with every later map), `build_step(map, options, tiles_per_step) -> bool` (create a map's TileSets a few tiles per call; true when ready), `exclusive` (hand a TileSet only to a map no live tree shares it with), `clear()`, `clear_textures()` (the per-process texture cache), `get_cached_count()`, `get_created_count()`, `get_texture_count()`, `get_last_error_count()`, `get_last_warning_count()` |
+| `TiledTileSets` | the TileSet builder and its cache: `TiledTileSets.shared()` (the process-wide one, exclusive), `tileset_for(map, options) -> TileSet` (built on first use, then cached per tileset combination and shared by reference with every later map), `build_step(map, options, tiles_per_step) -> bool` (create a map's TileSets a few tiles per call; true when ready), `exclusive` (hand a TileSet only to a map no live tree shares it with), `clear()`, `clear_textures()` (the per-process texture cache), `get_cached_count()`, `get_created_count()`, `get_texture_count()`, `get_last_error_count()`, `get_last_warning_count()` |
 | `TiledBuilder` | `build(map, tilesets, options) -> Node`: the whole tree in one call, the root parentless; `get_error_count()`, `get_warning_count()`, `get_messages()` of that build |
 | `TiledWorld` | `load(world_file, zip_file) -> Error` (the world file, its directory and the maps its patterns need read on the main thread, or from the zip), `get_maps()` (`{path, rect}` per map), `get_errors()` |
+| `TiledStreamer` (Node2D) | `map` or `world`, `tilesets` (null: `TiledTileSets.shared()`), `options`, `project_file`; `window` (Rect2i, cells) or `follow` (Node2D) + `margin` (cells); `keep_margin`, `world_margin`, `world_cell_size`, `budget_us` (2000; `<= 0` unbounded), `keep_objects_resident`, `chunk_size` (16 × 16), `allow_y_sorted_layers`; `step(budget_us) -> bool`, `load_all()`, `is_settled()`, `loaded_chunk_count()`, `get_loaded_chunks(layer)`, `get_spawned_object_count()`, `get_layer(name)`, `get_object_layer(name)`, `get_map_root(path)`, `get_loaded_maps()`, `get_costs()`, `get_stats()`, `reset_stats()`, `get_error_count()`, `get_warning_count()`; signals `chunk_loaded(layer_name, coords)`, `chunk_unloaded(layer_name, coords)`, `object_spawned(node, id)`, `object_despawned(id)`, `map_loaded(path, root)`, `map_unloaded(path)`, `settled()` |
 | `TiledNative` | `version()`, and `sum()` for the smoke test |
 
 ```gdscript

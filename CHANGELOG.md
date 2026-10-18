@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Native importer, stage 4 of `docs/native-importer-plan.md`: `TiledStreamer` (a Node2D) streams a
+  map (infinite or finite) or a Tiled world chunk by chunk as a window moves (`window` in cells, or
+  `follow` a node with a `margin`), within a per-frame budget (`budget_us`, 2000 by default) that
+  it calibrates on its own work (µs per chunk, cell, collision cell, y-sorted cell, object, erased
+  cell, freed object: `get_costs()`). One persistent `TileMapLayer` per Tiled tile layer, chunks in
+  with `set_cell` and out with `erase_cell` (hysteresis `keep_margin`), payloads decoded on demand;
+  objects created with their chunk by the builder's own code and freed with it (or kept,
+  `keep_objects_resident`), references across chunks resolved whenever both exist; signals
+  `chunk_loaded`, `chunk_unloaded`, `object_spawned`, `object_despawned`, `map_loaded`,
+  `map_unloaded`, `settled`; `step(budget_us)`, `load_all()` (the whole map, equal to
+  `TiledBuilder.build`'s content), `get_layer(name)` and the other queries. World mode: each map
+  loaded with `TiledMap.load_async` when the window approaches and unloaded when it leaves.
+  Y-sorted tile layers (isometric, staggered) are refused unless `allow_y_sorted_layers` (the
+  engine re-sorts all of a y-sorted layer's cells in each frame that changes it, beyond any budget).
+  `Importer.make_streamer(map_or_world, options = null, project_file = "")`;
+  `TiledTileSets.shared()`, the process-wide cache behind `Importer.shared_tilesets()`.
+- `test/test_stream.gd` (run by `test/run_all.sh` and CI), `test/bench_stream.gd` (the streaming
+  benchmark, with a renderer) and `test/gen_stream_bench.gd` (its maps: 4 000 × 4 000 cells
+  infinite, an isometric twin, a world of 3 × 3 maps); `test/bench_materialize.gd -- --ysort`.
 - Native importer, stage 2b of `docs/native-importer-plan.md`: the native builder has the GDScript
   runtime's part B features, so the whole test suite (103 of 103) passes against
   `addons/yati_native/`. F2: object references become NodePaths in a second pass (`object_refs`,
