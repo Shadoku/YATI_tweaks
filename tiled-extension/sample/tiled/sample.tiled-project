@@ -1,0 +1,239 @@
+{
+    "automappingRulesFile": "",
+    "commands": [],
+    "compatibilityVersion": 1100,
+    "extensionsPath": "extensions",
+    "folders": [
+        "."
+    ],
+    "properties": [
+        {
+            "name": "godot_project",
+            "type": "string",
+            "value": "../godot"
+        },
+        {
+            "name": "yati_fixups",
+            "type": "string",
+            "value": "{\"flags\":[\"GodotPhysicsLayers\",\"GodotRenderLayers\"],\"floats\":{\"Slime\":[\"speed\"],\"Vector2\":[\"x\",\"y\"]}}"
+        },
+        {
+            "name": "yati_generated",
+            "type": "string",
+            "value": "{\"Chest\":[\"godot_scene\",\"locked\",\"loot\",\"material\"],\"Chest.material\":[],\"GodotNodeType\":[],\"GodotPhysicsLayers\":[],\"GodotRenderLayers\":[],\"MapRef\":[\"map\",\"object\"],\"Slime\":[\"drops\",\"godot_scene\",\"hits\",\"home\",\"hp\",\"mood\",\"patrol\",\"speed\",\"tint\"],\"Slime.Mood\":[],\"Vector2\":[\"x\",\"y\"]}"
+        }
+    ],
+    "propertyTypes": [
+        {
+            "id": 1,
+            "name": "GodotPhysicsLayers",
+            "storageType": "int",
+            "type": "enum",
+            "values": [
+                "World",
+                "Player",
+                "Enemies",
+                "Layer 4",
+                "Pickups"
+            ],
+            "valuesAsFlags": true
+        },
+        {
+            "id": 2,
+            "name": "GodotRenderLayers",
+            "storageType": "int",
+            "type": "enum",
+            "values": [
+                "Main"
+            ],
+            "valuesAsFlags": true
+        },
+        {
+            "id": 3,
+            "name": "GodotNodeType",
+            "storageType": "string",
+            "type": "enum",
+            "values": [
+                "collision",
+                "staticbody",
+                "characterbody",
+                "rigidbody",
+                "animatablebody",
+                "area",
+                "navigation",
+                "occluder",
+                "line",
+                "path",
+                "polygon",
+                "instance",
+                "parallax"
+            ],
+            "valuesAsFlags": false
+        },
+        {
+            "color": "#ffe69d73",
+            "drawFill": true,
+            "id": 4,
+            "members": [
+                {
+                    "name": "map",
+                    "type": "file",
+                    "value": ""
+                },
+                {
+                    "name": "object",
+                    "type": "int",
+                    "value": 0
+                }
+            ],
+            "name": "MapRef",
+            "type": "class",
+            "useAs": [
+                "property"
+            ]
+        },
+        {
+            "id": 5,
+            "name": "Chest.material",
+            "storageType": "string",
+            "type": "enum",
+            "values": [
+                "Wood",
+                "Iron",
+                "Gold"
+            ],
+            "valuesAsFlags": false
+        },
+        {
+            "id": 6,
+            "name": "Slime.Mood",
+            "storageType": "string",
+            "type": "enum",
+            "values": [
+                "CALM",
+                "ANGRY"
+            ],
+            "valuesAsFlags": false
+        },
+        {
+            "color": "#ffa1e673",
+            "drawFill": true,
+            "id": 7,
+            "members": [
+                {
+                    "name": "x",
+                    "type": "float",
+                    "value": 0
+                },
+                {
+                    "name": "y",
+                    "type": "float",
+                    "value": 0
+                }
+            ],
+            "name": "Vector2",
+            "type": "class",
+            "useAs": [
+                "property"
+            ]
+        },
+        {
+            "color": "#ff73e67e",
+            "drawFill": true,
+            "id": 8,
+            "members": [
+                {
+                    "name": "godot_scene",
+                    "type": "file",
+                    "value": "../godot/scenes/chest.tscn"
+                },
+                {
+                    "name": "locked",
+                    "type": "bool",
+                    "value": false
+                },
+                {
+                    "name": "loot",
+                    "type": "file",
+                    "value": "../godot/loot/gold.tres"
+                },
+                {
+                    "name": "material",
+                    "propertyType": "Chest.material",
+                    "type": "string",
+                    "value": "Wood"
+                }
+            ],
+            "name": "Chest",
+            "type": "class",
+            "useAs": [
+                "object",
+                "tile"
+            ]
+        },
+        {
+            "color": "#ff8ce673",
+            "drawFill": true,
+            "id": 9,
+            "members": [
+                {
+                    "name": "drops",
+                    "type": "string",
+                    "value": ""
+                },
+                {
+                    "name": "godot_scene",
+                    "type": "file",
+                    "value": "../godot/scenes/slime.tscn"
+                },
+                {
+                    "name": "hits",
+                    "propertyType": "GodotPhysicsLayers",
+                    "type": "int",
+                    "value": 2
+                },
+                {
+                    "name": "home",
+                    "propertyType": "Vector2",
+                    "type": "class",
+                    "value": {
+                        "x": 0,
+                        "y": 0
+                    }
+                },
+                {
+                    "name": "hp",
+                    "type": "int",
+                    "value": 3
+                },
+                {
+                    "name": "mood",
+                    "propertyType": "Slime.Mood",
+                    "type": "string",
+                    "value": "CALM"
+                },
+                {
+                    "name": "patrol",
+                    "type": "object",
+                    "value": 0
+                },
+                {
+                    "name": "speed",
+                    "type": "float",
+                    "value": 40
+                },
+                {
+                    "name": "tint",
+                    "type": "color",
+                    "value": "#ff66cc4d"
+                }
+            ],
+            "name": "Slime",
+            "type": "class",
+            "useAs": [
+                "object",
+                "tile"
+            ]
+        }
+    ]
+}

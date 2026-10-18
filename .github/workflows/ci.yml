@@ -16,6 +16,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The Tiled extension (tiled-extension/, docs/tiled-extension-plan.md): its pure modules,
+      # the glue against a fake of Tiled's documented API, the sample's generated project. No
+      # Godot, no Tiled.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test the Tiled extension
+        run: node --test tiled-extension/test
+
       - name: Cache Godot
         uses: actions/cache@v4
         with:

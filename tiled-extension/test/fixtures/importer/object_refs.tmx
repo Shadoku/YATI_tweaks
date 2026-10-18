@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- F2: object properties (references to other objects), top level, into a group layer, in lists,
+     into an instance's exported NodePath / Node / Array[NodePath], unset (0) and dangling (999). -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="16" height="16" tilewidth="16" tileheight="16" infinite="0" nextlayerid="5" nextobjectid="10">
+ <properties>
+  <property name="start" type="object" value="2"/>
+ </properties>
+ <objectgroup id="1" name="Things">
+  <object id="1" name="Door" class="area" x="16" y="16" width="16" height="32">
+   <properties>
+    <property name="missing" type="object" value="999"/>
+    <property name="target" type="object" value="2"/>
+    <property name="targets" type="list">
+     <item type="object" value="2"/>
+     <item type="object" value="3"/>
+    </property>
+    <property name="unset" type="object" value="0"/>
+   </properties>
+  </object>
+  <object id="2" name="Spawn" x="80" y="48">
+   <point/>
+  </object>
+  <object id="4" name="Switch" class="instance" x="120" y="40">
+   <properties>
+    <property name="res_path" type="file" value="ref_target.tscn"/>
+    <property name="target" type="object" value="2"/>
+    <property name="target_node" type="object" value="3"/>
+    <property name="waypoints" type="list">
+     <item type="object" value="2"/>
+     <item type="object" value="3"/>
+    </property>
+   </properties>
+  </object>
+  <object id="5" name="Mixed" x="160" y="16">
+   <point/>
+   <properties>
+    <property name="stuff" type="list">
+     <item type="object" value="3"/>
+     <item type="int" value="7"/>
+    </property>
+   </properties>
+  </object>
+ </objectgroup>
+ <group id="2" name="Group">
+  <objectgroup id="3" name="Inner">
+   <object id="3" name="Lever" class="polygon" x="48" y="96">
+    <polygon points="0,0 16,0 16,16"/>
+    <properties>
+     <property name="opens" type="object" value="1"/>
+    </properties>
+   </object>
+   <object id="6" name="Crate" x="96" y="96" width="16" height="16">
+    <properties>
+     <property name="sibling" type="object" value="3"/>
+    </properties>
+   </object>
+  </objectgroup>
+ </group>
+</map>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- B8: objects of classes that are no Godot node type (Door twice, Lever once). -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="8" height="8" tilewidth="16" tileheight="16" infinite="0" nextlayerid="2" nextobjectid="6">
+ <objectgroup id="1" name="Things">
+  <object id="1" name="FrontDoor" class="Door" x="16" y="32" width="32" height="16" rotation="90">
+   <properties>
+    <property name="locked" type="bool" value="true"/>
+   </properties>
+  </object>
+  <object id="2" name="BackDoor" class="Door" x="64" y="32" width="16" height="24"/>
+  <object id="3" name="DoorFrame" class="Door" x="96" y="32">
+   <polygon points="0,0 16,0 16,16"/>
+  </object>
+  <object id="4" name="Lever" class="Lever" x="16" y="96" width="8" height="8">
+   <ellipse/>
+  </object>
+  <object id="5" name="Wall" x="64" y="96" width="16" height="16"/>
+ </objectgroup>
+</map>

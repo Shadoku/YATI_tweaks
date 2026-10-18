@@ -1,0 +1,9 @@
+Godot Engine v4.7.stable.official.0123abc - https://godotengine.org
+
+ -- Unknown class 'Door' (3 objects). -> Using 'staticbody'
+YATI_CHECK warning 1 Unknown class 'Door' (3 objects). -> Using 'staticbody'
+YATI_CHECK warning - Option unknown_class_fallback 'instance' is not supported. -> Using 'staticbody'
+YATI_CHECK error 4 Object of class 'instance': Mandatory file property 'res_path' not found or invalid. -> Skipped
+YATI_CHECK warning 21   Property 'target' of 'Pointer': object 99 does not exist. -> Empty NodePath
+Import of 'res://maps/mistakes.tmx' finished with 1 error(s) and 3 warning(s).
+YATI_CHECK result 1 3 42 128 17.5

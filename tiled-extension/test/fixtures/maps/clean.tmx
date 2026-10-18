@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A map without mistakes (validate.test.mjs: no findings). -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="8" height="8" tilewidth="16" tileheight="16" infinite="0" nextlayerid="2" nextobjectid="4">
+ <objectgroup id="1" name="Things">
+  <object id="1" name="Wall" x="0" y="0" width="16" height="16"/>
+  <object id="2" name="Hero" class="characterbody" x="32" y="0" width="16" height="16">
+   <properties>
+    <property name="collision_layer" type="int" propertytype="GodotPhysicsLayers" value="2"/>
+    <property name="collision_mask" value="1,4"/>
+    <property name="buddy" type="object" value="3"/>
+   </properties>
+  </object>
+  <object id="3" name="Door" class="Door" x="64" y="0" width="16" height="16">
+   <properties>
+    <property name="target" type="object" value="2"/>
+   </properties>
+  </object>
+ </objectgroup>
+</map>

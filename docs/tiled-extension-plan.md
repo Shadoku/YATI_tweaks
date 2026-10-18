@@ -217,3 +217,70 @@ through the `.tiled-project` file, the maps and (for the check) the Godot binary
     `infinite.tmj`, where the importers already differed before this stage (the runtime warns
     about the object property `ref`, 11 nodes; the native importer about class `enemy`, 13 nodes;
     no test covers it), so the two scripts print different lines for it.
+- 2026-10-18, **stage 1 done**: `tiled-extension/` (commits `cd11811`, `b56c9c9`, `00bb75c`,
+  `249b60a` and the docs commit after them). The extension is `yati-godot/yati-godot.mjs` plus the
+  seven `lib/` modules of section 4. Its tests (`node --test tiled-extension/test`, 71 tests, in CI
+  with Node 22) cover the parsers on a fixture Godot project with every export form, the generated
+  types against expected `.tiled-project` fragments, the merge, the validator on fixture maps and
+  on copies of the importers' fixtures, the check output, and the glue against a fake of the
+  documented API. The sample's generated project equals `sample/tiled/sample.tiled-project`.
+  `node --check` passes on every module, and they parse as ECMAScript 2016. **No Tiled ran.** The
+  user's first steps are the README's manual checklist 1 to 3 (the module loads, the sync, a second
+  sync reports "Unchanged").
+  - **How the API was verified.** The reference pages were fetched live
+    (https://www.mapeditor.org/docs/scripting/). They are generated from `@mapeditor/tiled-api`
+    1.12.0's `index.d.ts` (published 2026-07-01), which was read whole. Tiled v1.12.0's sources were
+    read where the reference is silent: `scriptmanager.cpp`, `scriptmodule.cpp`,
+    `editableproject.cpp`, `scriptpropertytype.{h,cpp}`, `editableobject.cpp`, `propertytype.cpp`
+    and `project.cpp`. `tiled-extension/test/helpers/api_surface.mjs` lists the 89 members the
+    extension uses, each with its page and anchor. Every anchor was checked against the live pages,
+    and a test fails when the glue touches any other member or stops using one.
+  - **What section 1 had wrong or left open.** (1) `EnumPropertyType` has **no `valuesAsFlags`**,
+    in the reference or in the sources. As this plan said, the flag is written into the project
+    file with `TextFile` and the user is asked to reopen the project. (2) The same applies to
+    floats: `setMember` stores a whole JavaScript number (`0`, `40.0`) as an int, and there is no
+    float variant, so float members are fixed in the file too. (3) Every type or project-property
+    change saves the project at once (`applyPropertyChanges()` and the project document's undo
+    stack call `Project::save()`), from memory. That drops earlier file fixes, so they are kept in
+    a new project property `yati_fixups` and every action re-applies all of them. (4)
+    `tiled.extendMenu` takes only `action`, `before` and `separator`, with **no submenu**. The four
+    actions are at the end of the Map menu after a separator, named "YATI: ...". (5) The usage
+    constants (`MapObjectClass`, ...) are `Q_ENUM`s of the global `ClassPropertyType`; the extension
+    reads them there and falls back to 1.12's values. The reference documents a global
+    `StorageType`, but the sources register none; the extension uses it if present, else 0 and 1.
+    (6) `MapObject` exposes no template, so missing templates are read from the map file as last
+    saved. (7) Extensions: Tiled evaluates the `.js` and `.mjs` files at the top of each extensions
+    path and of each folder directly under it, `.mjs` through `QJSEngine::importModule`. So
+    `yati-godot/yati-godot.mjs` is the entry and `lib/` is reached by its imports; `lib/` is not
+    evaluated on its own. Project-local extensions need the user's "Enable Extensions". (8)
+    `promptOpenFile` is not needed; `promptDirectory`, `prompt` and `confirm` are used.
+  - **Decisions the plan left open.** A script enum is named `<declaring class>.<Enum>`
+    (`Enemy.Mood`; a script without `class_name` by its file name, `BaseUnit.Team`), and an
+    `@export_enum` `<class>.<variable>`. A `class_name` shared by several scenes names none of them:
+    they take their file names. A hand-made member whose name an export also has is kept, not
+    overwritten. An existing class's usage only gains flags. Types are never deleted. The scan skips
+    `addons/` when it scans the whole project, and also `.gdignore` folders and hidden ones. Exports
+    of `Dictionary`, `Rect2` and other types without a Tiled member type are skipped and reported,
+    as are `@export_storage` and the names `godot_scene`, `name` and `script`.
+    `@export_flags_2d_physics` / `_render` / `_navigation` become an int of the matching layer enum.
+    `@export_dir` is a string, and `user://` defaults are empty. The validator also checks
+    `godot_script` files, dangling (not only unset) object references, list items, and masks that
+    name layers without the enum type the importer needs. Settings paths are stored relative to the
+    project file when the two share a folder below the root. *Check map in Godot* offers to save a
+    modified map first and reads stdout and stderr.
+  - **For stages 2 and 3 to weigh.** Following section 2, an `Array` export becomes an empty
+    `string` member, and a `NodePath` or Node export an `object` member at 0. Since the importers
+    merge a class's members into every object, each object that does not override them gets an
+    importer warning: "does not fit Array", or F2's unset reference (the validator reports the
+    latter too, marked "its class's default"). Either the importers skip an empty string for an
+    `Array` property and an unset object reference that comes from a class default, or the
+    extension leaves such members out. `check_map.gd`'s output was not available. The parser
+    follows section 3's format, tested on a fixture written to it
+    (`tiled-extension/test/fixtures/check_output.txt`).
+  - **Only a real Tiled can confirm** (the README's list, in order): the module loads with its
+    relative imports; the usage constants on the global; assigning `color`, `values`,
+    `storageType` and `usageFlags`; what `setMember` saves for `tiled.filePath`,
+    `tiled.objectRef(0)` and `tiled.propertyValue`; type names with a dot; that member values read
+    back through `members` compare equal (else every run reports "Updated" and asks to reopen); a
+    `res://` file property's empty `localFile` and its `url`; `Process.exec` finding `godot` on
+    `PATH`.
