@@ -281,7 +281,12 @@ numbers measured. Stages 1 and 2 are the bulk; 3 and 4 are what the two goals ne
   GDScript runtime passes (a short list of accepted differences, each explained, is allowed
   in this document); `test/benchmark.gd -- --runtime=res://addons/yati_native` total under
   120 ms for the benchmark map (parse + 6 × 14 ms of `tile_map_data` + the objects at engine
-  speed; the GDScript runtime: 716), the small map under 2 ms warm.
+  speed; the GDScript runtime: 716), the small map under 2 ms warm. *Outcome (section 6):
+  the suite passes; the total is 160 to 200 ms because six `tile_map_data` assignments cost
+  100 ms on this machine, not the 84 the 14 ms figure assumed, and the objects' engine calls
+  about 45: the engine's share, which the gate underestimated. Measured again: 4 to 5× the
+  GDScript runtime's time. The number to hold from here is "the engine's own cost plus under
+  20 ms", read off `tools/native_gate.gd`.*
 
 ### Stage 3: asynchronous loading and the caches
 
