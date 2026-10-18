@@ -1,9 +1,12 @@
-// lib/check_output.mjs: the check's command line and its output (the format of the plan's
-// section 3; the fixture is written in that format, as stage 2's check_map.gd is to print it).
+// lib/check_output.mjs: the check's command line and its output. check_output.txt is written by
+// hand in the format of the plan's section 3; check_output_unknown_class.txt and
+// check_output_scenes.txt are the real check_map.gd's stdout (Godot 4.7.2, the native importer,
+// on the importers' fixtures test/fixtures/unknown_class.tmx --warn_unknown_classes=true and
+// test/fixtures/scenes.tmx), saved as captured, colour codes included.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { checkArguments, parseCheckOutput, summarize, CHECK_SCRIPT } from "../yati-godot/lib/check_output.mjs";
+import { checkArguments, parseCheckOutput, summarize, stripAnsi, CHECK_SCRIPT } from "../yati-godot/lib/check_output.mjs";
 import { parseImportOptions } from "../yati-godot/lib/settings.mjs";
 import { io, FIXTURES } from "./helpers/node_io.mjs";
 
@@ -38,4 +41,44 @@ test("output: CRLF, prefixes before the marker, unknown YATI_CHECK lines, no res
 	assert.equal(summarize(parsed, 134, "SCRIPT ERROR: oops\n\n"), "The check did not finish (no result line; exit code 134). Last output: SCRIPT ERROR: oops");
 	assert.equal(summarize(parseCheckOutput(""), 1, ""), "The check did not finish (no result line; exit code 1).");
 	assert.deepEqual(parseCheckOutput(undefined).messages, []);
+});
+
+const CLASS_TAIL = "is not a Godot node type -> using 'staticbody'. Set 'godot_node_type', map the class to a scene " +
+	"('class_scenes') or set the option 'unknown_class_fallback' (see Reference).";
+
+test("real output, unknown_class.tmx: the class warnings with their first objects, the result, the rest without colour codes", () => {
+	const text = io.readText(path.join(FIXTURES, "check_output_unknown_class.txt"));
+	assert.ok(text.indexOf("\u001b[") >= 0, "the fixture keeps Godot's colour codes");
+	const parsed = parseCheckOutput(text);
+	assert.deepEqual(parsed.messages, [
+		{ severity: "warning", objectId: 1, text: "Class 'Door' " + CLASS_TAIL },
+		{ severity: "warning", objectId: 4, text: "Class 'Lever' " + CLASS_TAIL },
+	]);
+	assert.deepEqual(parsed.result, { errors: 0, warnings: 2, nodes: 11, cells: 0, ms: 2 });
+	assert.equal(parsed.other.length, 5);
+	assert.match(parsed.other[0], /^Initialize godot-rust/);
+	assert.match(parsed.other[1], /^Godot Engine v4\.7/);
+	assert.equal(parsed.other[2], " -- Class 'Door' " + CLASS_TAIL);
+	assert.equal(parsed.other[4], "Import of 'res://test/fixtures/unknown_class.tmx' finished with 0 error(s) and 2 warning(s).");
+	assert.ok(parsed.other.every((l) => l.indexOf("\u001b") < 0));
+	assert.equal(summarize(parsed, 0, ""), "Godot imported the map with 0 error(s) and 2 warning(s): 11 nodes, 0 cells, 2 ms.");
+});
+
+test("real output, scenes.tmx: Enemy and enemy; cut short, the last line without colour codes", () => {
+	const text = io.readText(path.join(FIXTURES, "check_output_scenes.txt"));
+	const parsed = parseCheckOutput(text);
+	assert.deepEqual(parsed.messages.map((m) => m.severity + " " + m.objectId + " " + m.text), [
+		"warning 1 Class 'Enemy' " + CLASS_TAIL,
+		"warning 4 Class 'enemy' " + CLASS_TAIL,
+	]);
+	assert.deepEqual(parsed.result, { errors: 0, warnings: 2, nodes: 15, cells: 0, ms: 3 });
+	// Godot gone before the script's lines: the last line it printed, readable.
+	const lines = text.split("\n");
+	const cut = lines.slice(0, lines.findIndex((l) => l.indexOf("Import of") === 0)).join("\n");
+	const partial = parseCheckOutput(cut);
+	assert.equal(partial.result, null);
+	assert.deepEqual(partial.messages, []);
+	assert.equal(summarize(partial, 134, ""), "The check did not finish (no result line; exit code 134). Last output: -- Class 'enemy' " + CLASS_TAIL);
+	assert.equal(summarize(partial, 134, "\u001b[1;31mERROR:\u001b[0m boom\n"), "The check did not finish (no result line; exit code 134). Last output: ERROR: boom");
+	assert.equal(stripAnsi("\u001b[38;2;255;255;0m -- x\u001b[39m\u001b[0m"), " -- x");
 });

@@ -228,7 +228,8 @@ node --test tiled-extension/test
 
 Node 22 (CI uses it). `test/` holds the fixtures (`fixtures/godot_project/`, a Godot project with
 every export form; `fixtures/maps/`, maps with one of each mistake; `fixtures/importer/`, copies of
-the importers' fixtures from `test/fixtures/`), the expected `.tiled-project` fragments
+the importers' fixtures from `test/fixtures/`; `fixtures/check_output*.txt`, the check's output: one
+written by hand, two captured from the real `check_map.gd` with Godot's colour codes), the expected `.tiled-project` fragments
 (`expected/`; `UPDATE_EXPECTED=1` rewrites them and the sample's project, then review the diff),
 and the fake API (`helpers/fake_tiled.mjs`). `helpers/api_surface.mjs` lists every Tiled member the
 extension uses, each with the reference page that documents it. The tests fail when the glue uses

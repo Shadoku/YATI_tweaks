@@ -1,0 +1,9 @@
+Initialize godot-rust (API v4.7.stable.official, runtime v4.7.2.stable.official, safeguards balanced)
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+[38;2;255;255;0m -- Class 'Door' is not a Godot node type -> using 'staticbody'. Set 'godot_node_type', map the class to a scene ('class_scenes') or set the option 'unknown_class_fallback' (see Reference).[39m[0m
+[38;2;255;255;0m -- Class 'Lever' is not a Godot node type -> using 'staticbody'. Set 'godot_node_type', map the class to a scene ('class_scenes') or set the option 'unknown_class_fallback' (see Reference).[39m[0m
+Import of 'res://test/fixtures/unknown_class.tmx' finished with 0 error(s) and 2 warning(s).
+YATI_CHECK warning 1 Class 'Door' is not a Godot node type -> using 'staticbody'. Set 'godot_node_type', map the class to a scene ('class_scenes') or set the option 'unknown_class_fallback' (see Reference).
+YATI_CHECK warning 4 Class 'Lever' is not a Godot node type -> using 'staticbody'. Set 'godot_node_type', map the class to a scene ('class_scenes') or set the option 'unknown_class_fallback' (see Reference).
+YATI_CHECK result 0 2 11 0 2

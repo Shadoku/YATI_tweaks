@@ -8,7 +8,9 @@
 //
 //   YATI_CHECK result <errors> <warnings> <nodes> <cells> <ms>
 //
-// exiting with 0 when there was no error. Everything else it (or Godot) prints is kept as `other`.
+// exiting with 0 when there was no error. Everything else it (or Godot) prints is kept as `other`:
+// Godot's banner, the importer's own lines (its warnings in colour: ANSI escape sequences, which
+// are removed), "Import of ... finished with ...".
 
 export const CHECK_SCRIPT = "res://addons/yati_native/check_map.gd";
 export const CHECK_SCRIPT_LOCAL = "addons/yati_native/check_map.gd";
@@ -31,7 +33,7 @@ export function parseCheckOutput(text) {
 	let result = null;
 	const lines = String(text === undefined || text === null ? "" : text).split(/\r?\n/);
 	for (let i = 0; i < lines.length; i++) {
-		const line = lines[i].replace(/\s+$/, "");
+		const line = stripAnsi(lines[i]).replace(/\s+$/, "");
 		if (line === "")
 			continue;
 		const at = line.indexOf("YATI_CHECK ");
@@ -61,11 +63,17 @@ export function parseCheckOutput(text) {
 	return { messages: messages, result: result, other: other };
 }
 
+// A line without its ANSI escape sequences (Godot prints rich text in colour on a terminal and in
+// headless mode: the importer's warnings come as ESC[38;2;255;255;0m ... ESC[39mESC[0m).
+export function stripAnsi(line) {
+	return String(line).replace(/\u001b\[[0-9;?]*[ -\/]*[@-~]/g, "");
+}
+
 // One line for the log and the alert: what the check found, or why it did not finish.
 export function summarize(parsed, exitCode, stderrText) {
 	if (parsed.result === null) {
 		let why = "The check did not finish (no result line; exit code " + exitCode + ").";
-		const tail = String(stderrText || "").split(/\r?\n/).filter(function (l) { return l.trim() !== ""; });
+		const tail = stripAnsi(stderrText || "").split(/\r?\n/).filter(function (l) { return l.trim() !== ""; });
 		if (tail.length > 0)
 			why += " Last output: " + tail[tail.length - 1].trim();
 		else if (parsed.other.length > 0)
