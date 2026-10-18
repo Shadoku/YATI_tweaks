@@ -31,7 +31,8 @@ resources from this crate's model on the main thread.
 | `parse/` | `xml.rs` (recursive descent mirroring `DictionaryFromXml.gd`), `json.rs` (serde), `detect`, `document`, `map`/`tileset`/`template` |
 | `data.rs` | payload decoding to `u32` gids (flip flags kept), `Gid` |
 | `cells.rs` | `CellResolver` (gid → source id, tileset, local id, atlas coords, flips), `GidLookup`, `BlobWriter`, `tile_map_data`, `chunk_blobs`, `layer_blob`, `merge_blobs`, `layer_blobs(_parallel)` |
-| `load.rs` | `Loader`, `Status`, `load_from_fs` |
+| `load.rs` | `Loader`, `Status`, `load_from_fs`; `Loader::take_discovered_images` (images the parse found so far, for loading textures early) |
+| `worker.rs` | `Worker`: a `Loader` on a thread of its own, each batch of files answered with one `Event` (`Need { paths, images }`, `Done`, `Failed`), `try_event` never blocks; `running`, `join_detached` (what the native importer's `TiledMap.load_async` runs) |
 | `value.rs` | `Value` (Null, Bool, Int, Float, String, Array, Dict) and the model's dictionaries: `Map/Tileset/Template::to_value()`, `to_json()` |
 | `world.rs` | Tiled world files: `World::parse` (explicit `maps`, `patterns` as written), `WorldLoader` (patterns resolved through the request protocol: the world file, `WorldRequest::ListDir` for its directory, the matching maps; `from_zip`, `run`, `load_world_from_fs`), `WorldMap`, `WorldPattern`; `Map::tile_rect` / `map_rect` / `pixel_rect` (the runtime's `map_rect` metadata) |
 | `path.rs` | `cleanup` (`CommonUtils.cleanup_path` after a `res://`, `user://`, `/` or drive prefix), `resolve`, `base_dir`, `join` |
