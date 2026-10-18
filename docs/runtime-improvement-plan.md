@@ -2,7 +2,8 @@
      (3.0.0). How its items land here, now that a native (Rust) importer is being built beside
      the runtime, is in docs/native-importer-plan.md, section 7: Parts A and B are executed on the
      GDScript runtime (the reference, with a test per item) and then matched by the native
-     builder; F4 is superseded by the native plan's stages 3 and 4; Part C is set aside for now.
+     builder; F4 is superseded by the native plan's stages 3 and 4; Part C is planned in
+     docs/tiled-extension-plan.md (taken up 2026-10-18, with changes that plan explains).
      Status per item is tracked in the changelog and the test suite, not in this file. -->
 
 # YATI_tweaks — Improvement Plan

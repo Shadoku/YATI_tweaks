@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `docs/tiled-extension-plan.md`: the plan for the Tiled extension (part C of the runtime improvement
+  plan): what Tiled 1.12's API allows, what the importers already read, the decisions and stages.
+
 ## [3.1.0] — 2026-10-18
 
 The runtime improvement plan (`docs/runtime-improvement-plan.md`: bug fixes B1 to B10, features
