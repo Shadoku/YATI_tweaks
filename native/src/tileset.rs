@@ -10,7 +10,7 @@
 //! on the Rust side and never adds the layer.
 
 use crate::diag::Diag;
-use crate::files::{load_resource, Textures};
+use crate::files::{clear_texture_cache, load_resource, texture_cache_len, Textures};
 use crate::gd::{bitmask, get_basename, get_extension, get_file, to_int, typed_value, PV};
 use crate::map::TiledMap;
 use crate::options::{options_of, Options, TiledImportOptions};
@@ -138,11 +138,26 @@ enum LayerType {
     Occlusion,
 }
 
-/// `TilesetCreator`, one per TileSet built.
-struct Creator<'a> {
-    params: &'a BuildParams,
-    diag: &'a mut Diag,
-    textures: &'a mut Textures,
+/// Where a [`Creator`] stands in its list of tilesets.
+#[derive(Clone, Copy, Debug)]
+enum Cursor {
+    /// At a tileset of the list: `tile` is `None` before its header (atlas source, texture),
+    /// else the index of its next tile.
+    Slot { slot: usize, tile: Option<usize> },
+    /// Every tileset done; the animation strips are next.
+    Strips,
+    /// The TileSet is complete.
+    Done,
+}
+
+/// `TilesetCreator`, one per TileSet built. It owns what it builds and its messages (kept
+/// quietly, reported by every import that uses the TileSet), so a creation can be spread over
+/// several calls ([`Creator::step`], a budget of tiles each: `TiledTileSets.build_step`).
+struct Creator {
+    params: BuildParams,
+    diag: Diag,
+    textures: Textures,
+    cursor: Cursor,
     tileset: Option<Gd<TileSet>>,
     append: bool,
     atlas: Option<(Gd<TileSetAtlasSource>, i32)>,
@@ -171,12 +186,16 @@ struct Creator<'a> {
     internal: HashMap<(i32, i32, i32), i32>,
 }
 
-impl<'a> Creator<'a> {
-    fn new(params: &'a BuildParams, diag: &'a mut Diag, textures: &'a mut Textures) -> Self {
+impl Creator {
+    fn new(params: BuildParams, diag: Diag) -> Self {
         Creator {
             params,
             diag,
-            textures,
+            textures: Textures::default(),
+            cursor: Cursor::Slot {
+                slot: 0,
+                tile: None,
+            },
             tileset: None,
             append: false,
             atlas: None,
@@ -210,33 +229,90 @@ impl<'a> Creator<'a> {
         self.tileset.as_mut().expect("tileset created")
     }
 
-    /// `create_from_dictionary_array`.
-    fn create(mut self, slots: &[SlotRef]) -> Built {
-        for s in slots {
-            if s.skipped {
-                continue;
+    /// `create_from_dictionary_array`, resumable: works through `slots` (the same list on every
+    /// call) until `budget` (tiles, a tileset's header and end counting one each, the
+    /// animation strips one each) is spent. True once the TileSet is complete.
+    fn step(&mut self, slots: &[SlotRef], budget: &mut usize) -> bool {
+        loop {
+            match self.cursor {
+                Cursor::Done => return true,
+                _ if *budget == 0 => return false,
+                Cursor::Strips => {
+                    *budget = budget.saturating_sub(self.pending.len().max(1));
+                    self.create_animation_strips();
+                    self.cursor = Cursor::Done;
+                }
+                Cursor::Slot { slot, tile } => {
+                    let Some(s) = slots.get(slot) else {
+                        self.cursor = Cursor::Strips;
+                        continue;
+                    };
+                    let next = Cursor::Slot {
+                        slot: slot + 1,
+                        tile: None,
+                    };
+                    // Skipped, or a missing or unreadable file: the loader reported it.
+                    let Some(ts) = s.tileset.filter(|_| !s.skipped) else {
+                        self.cursor = next;
+                        continue;
+                    };
+                    match tile {
+                        None => {
+                            *budget -= 1;
+                            self.base_dir = s.base_dir.clone();
+                            if self.begin_tileset(ts, s.firstgid) {
+                                self.cursor = Cursor::Slot {
+                                    slot,
+                                    tile: Some(0),
+                                };
+                            } else {
+                                self.append = true;
+                                self.cursor = next;
+                            }
+                        }
+                        Some(i) => {
+                            let tiles = ts.tiles.as_deref().unwrap_or(&[]);
+                            if i < tiles.len() {
+                                let n = (*budget).min(tiles.len() - i);
+                                self.handle_tiles(&tiles[i..i + n]);
+                                *budget -= n;
+                                self.cursor = Cursor::Slot {
+                                    slot,
+                                    tile: Some(i + n),
+                                };
+                            } else {
+                                *budget -= 1;
+                                self.end_tileset(ts);
+                                self.append = true;
+                                self.cursor = next;
+                            }
+                        }
+                    }
+                }
             }
-            // A missing or unreadable file: the loader reported it.
-            let Some(ts) = s.tileset else { continue };
-            self.base_dir = s.base_dir.clone();
-            self.create_or_append(ts, s.firstgid);
-            self.append = true;
         }
-        self.create_animation_strips();
+    }
+
+    /// The finished TileSet and its registry, and the creation's messages.
+    fn finish(mut self) -> (Built, Diag) {
+        self.textures.close_zip();
         let tileset = self.tileset.take().unwrap_or_else(TileSet::new_gd);
         let mut sources = std::mem::take(&mut self.sources);
         sources.sort_by_key(|s| s.source_id);
-        Built {
+        let built = Built {
             tileset,
             sources,
             object_groups: std::mem::take(&mut self.object_groups),
             internal: std::mem::take(&mut self.internal),
-        }
+        };
+        (built, self.diag)
     }
 
-    fn create_or_append(&mut self, t: &Tileset, firstgid: i64) {
+    /// The first half of `create_or_append`: the tileset's atlas source and texture. False
+    /// when the rest of the tileset is skipped (AutoMap rules, or no texture).
+    fn begin_tileset(&mut self, t: &Tileset, firstgid: i64) -> bool {
         if t.name.as_deref() == Some("AutoMap Rules") {
-            return;
+            return false;
         }
         self.json = t.format() == Format::Json;
         if !self.append {
@@ -294,12 +370,10 @@ impl<'a> Creator<'a> {
             }
             self.atlas = Some((src.clone(), id));
             let base = self.base_dir.clone();
-            let Some(texture) =
-                self.textures
-                    .load(image, &base, &self.params.zip.clone(), self.diag)
-            else {
+            let zip = self.params.zip.clone();
+            let Some(texture) = self.textures.load(image, &base, &zip, &mut self.diag) else {
                 // Can't continue without texture
-                return;
+                return false;
             };
             src.set_texture(&texture);
             let (w, h) = (texture.get_width() as i64, texture.get_height() as i64);
@@ -311,11 +385,13 @@ impl<'a> Creator<'a> {
             let grid = src.get_atlas_grid_size();
             self.max = (grid.x - 1, grid.y - 1);
         }
+        true
+    }
 
+    /// The second half of `create_or_append`, after the tiles (`handle_tiles`): wang sets,
+    /// the tileset's properties and class.
+    fn end_tileset(&mut self, t: &Tileset) {
         let props = gprops(&t.properties, self.json);
-        if let Some(tiles) = &t.tiles {
-            self.handle_tiles(tiles);
-        }
         if let Some(w) = &t.wangsets {
             if self.params.map_wangset_to_terrain {
                 self.handle_wangsets_old_mapping(w);
@@ -420,7 +496,7 @@ impl<'a> Creator<'a> {
                 } else {
                     let base = self.base_dir.clone();
                     let zip = self.params.zip.clone();
-                    self.textures.load(image, &base, &zip, self.diag)
+                    self.textures.load(image, &base, &zip, &mut self.diag)
                 };
                 let Some(texture) = texture else {
                     continue;
@@ -953,7 +1029,7 @@ impl<'a> Creator<'a> {
                 td.set_modulate(crate::gd::color_from_string(&val));
             } else if lname == "material" && ty == "file" {
                 let base = self.base_dir.clone();
-                let m = load_resource(&val, &base, self.diag)
+                let m = load_resource(&val, &base, &mut self.diag)
                     .and_then(|r| r.try_cast::<godot::classes::Material>().ok());
                 td.set_material(m.as_ref());
             } else if lname == "z_index" && ty == "int" {
@@ -1363,16 +1439,132 @@ fn slots_key(slots: &[&TilesetSlot], embedded: &[Tileset]) -> String {
     key
 }
 
+/// What a TileSet is built from: the map's tileset list, or a template's.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Source {
+    Map,
+    Template(String),
+}
+
+impl Source {
+    fn slots<'m>(&self, map: &'m Map) -> Vec<SlotRef<'m>> {
+        match self {
+            Source::Map => map_slots(map),
+            Source::Template(p) => map
+                .templates()
+                .get(p)
+                .map(|t| {
+                    t.tileset_slots()
+                        .iter()
+                        .map(|s| slot_ref(s, t.slot_tileset(s)))
+                        .collect()
+                })
+                .unwrap_or_default(),
+        }
+    }
+}
+
+/// A TileSet being created, possibly over several `build_step` calls. It is continued with
+/// whichever map asks next for the same key (the key names the same tileset list), so it keeps
+/// no map of its own.
+struct Creation {
+    creator: Creator,
+}
+
+impl Creation {
+    /// Works on the TileSet of `source` in `map` until `budget` is spent; true when complete.
+    fn step(&mut self, map: &Map, source: &Source, budget: &mut usize) -> bool {
+        let slots = source.slots(map);
+        self.creator.step(&slots, budget)
+    }
+
+    /// The finished TileSet (a map's with its tile shape and layout) and its messages.
+    fn finish(self, map: &Map, source: &Source) -> (Built, Diag) {
+        let tile_size = self.creator.params.map_tile_size;
+        let (built, diag) = self.creator.finish();
+        if *source == Source::Map {
+            shape_for_map(&mut built.tileset.clone(), map, tile_size);
+        }
+        (built, diag)
+    }
+}
+
+/// The map's tile size, shape, layout and offset axis on its TileSet.
+fn shape_for_map(ts: &mut Gd<TileSet>, map: &Map, tile_size: Vector2i) {
+    ts.set_tile_size(tile_size);
+    let stagger_x = map.staggeraxis.as_deref().unwrap_or("y") == "x";
+    let odd = map.staggerindex.as_deref().unwrap_or("odd") == "odd";
+    let layout = if odd {
+        TileLayout::STACKED
+    } else {
+        TileLayout::STACKED_OFFSET
+    };
+    let axis = if stagger_x {
+        TileOffsetAxis::VERTICAL
+    } else {
+        TileOffsetAxis::HORIZONTAL
+    };
+    match map.orientation.as_deref() {
+        Some("isometric") => {
+            ts.set_tile_shape(TileShape::ISOMETRIC);
+            ts.set_tile_layout(TileLayout::DIAMOND_DOWN);
+        }
+        Some("staggered") => {
+            ts.set_tile_shape(TileShape::ISOMETRIC);
+            ts.set_tile_layout(layout);
+            ts.set_tile_offset_axis(axis);
+        }
+        Some("hexagonal") => {
+            ts.set_tile_shape(TileShape::HEXAGON);
+            ts.set_tile_layout(layout);
+            ts.set_tile_offset_axis(axis);
+        }
+        _ => {}
+    }
+}
+
+/// A cached TileSet and the messages its creation printed (reported again by every import
+/// that uses it, so an import's counts do not depend on what the cache holds).
+struct Entry {
+    built: Rc<Built>,
+    diag: Diag,
+}
+
+impl Entry {
+    /// Whether anything besides the cache holds the TileSet (a layer of a live tree, a build in
+    /// progress, a script's variable).
+    fn in_use(&self) -> bool {
+        Rc::strong_count(&self.built) > 1 || self.built.tileset.get_reference_count() > 1
+    }
+}
+
 /// The TileSet cache: one TileSet per tileset combination (the ordered tilesets with their
-/// first gids, the map's tile size and orientation, and the options that shape a TileSet),
-/// and the textures by path. A TileSet the builder fills (tiles created on demand) stays
-/// cached as it is; `clear()` forgets them all.
+/// first gids, the map's tile size, orientation and stagger, the zip archive, and the options
+/// that shape a TileSet: `custom_data_prefix`, `map_wangset_to_terrain`, `animation_mode`,
+/// `no_alternative_tiles`; and the project file's content, whose custom types and enums go into
+/// the tilesets),
+/// reused **by reference** by every later map with the same combination; templates' TileSets
+/// alike. A cached TileSet is what the maps that use it make of it: the builder adds the tiles
+/// and alternative tiles they need, and a change a game makes to it shows in every map that
+/// shares it. `clear()` forgets them all. With `exclusive` on, a TileSet is handed out only
+/// while no tree holds it, so two live trees never share one (a second one is built for the
+/// key meanwhile); a map loaded after the previous tree was freed still reuses it.
+///
+/// `build_step(map, options, tiles_per_step)` spreads the creation of a map's TileSets over
+/// calls (frames); `tileset_for` and `TiledBuilder.build` finish whatever is left. Textures are
+/// cached per process (`clear_textures()`).
 #[derive(GodotClass)]
 #[class(base = RefCounted, init)]
 pub struct TiledTileSets {
     base: Base<RefCounted>,
-    cache: HashMap<String, Rc<Built>>,
+    cache: HashMap<String, Vec<Entry>>,
+    creating: HashMap<String, Creation>,
     pub(crate) textures: Textures,
+    /// Hand a cached TileSet only to a map no live tree shares it with (default false: shared
+    /// by every map with the same tilesets, alive or not).
+    #[var]
+    exclusive: bool,
+    created: i64,
     last_errors: u32,
     last_warnings: u32,
 }
@@ -1380,7 +1572,8 @@ pub struct TiledTileSets {
 #[godot_api]
 impl TiledTileSets {
     /// The TileSet of a loaded map (built on first use, cached afterwards); `null` when the map
-    /// is not loaded.
+    /// is not loaded. Its messages are printed and counted (`get_last_error_count`) on every
+    /// call, cached or not.
     #[func]
     fn tileset_for(
         &mut self,
@@ -1400,26 +1593,92 @@ impl TiledTileSets {
         Some(built.tileset.clone())
     }
 
-    /// Forgets every cached TileSet and texture.
+    /// Works on the TileSets a loaded map needs (its own and its templates') for at most
+    /// `tiles_per_step` tiles (at least one), so a large TileSet is created over several frames.
+    /// True when every one is ready (cached), at once when they already were; then `build` or
+    /// `tileset_for` takes them from the cache. Messages are printed when the map's build uses
+    /// them, not here.
+    #[func]
+    fn build_step(
+        &mut self,
+        map: Gd<TiledMap>,
+        options: Option<Gd<TiledImportOptions>>,
+        tiles_per_step: i64,
+    ) -> bool {
+        let (inner, zip) = {
+            let m = map.bind();
+            (m.inner(), m.zip_file.clone())
+        };
+        let Some(inner) = inner else { return true };
+        let opts = options_of(options);
+        let mut budget = tiles_per_step.max(1) as usize;
+        let mut targets = vec![Source::Map];
+        for (p, t) in inner.templates() {
+            if !t.tilesets.is_empty() {
+                targets.push(Source::Template(p.clone()));
+            }
+        }
+        for source in targets {
+            let Some(key) = Self::key_for(&inner, &source, &zip, &opts) else {
+                continue;
+            };
+            if self.available(&key).is_some() {
+                continue;
+            }
+            let creation = self
+                .creating
+                .entry(key.clone())
+                .or_insert_with(|| Self::start(&inner, &source, &zip, &opts));
+            if !creation.step(&inner, &source, &mut budget) {
+                return false;
+            }
+            let c = self.creating.remove(&key).expect("in creation");
+            self.store(key, c, &inner, &source);
+        }
+        true
+    }
+
+    /// Forgets every cached TileSet (and those half created). The TileSets stay alive while
+    /// trees use them; later maps get new ones.
     #[func]
     fn clear(&mut self) {
         self.cache.clear();
+        self.creating.clear();
         self.textures.clear();
+    }
+
+    /// Forgets the per-process texture cache (every `TiledTileSets`' textures): later imports
+    /// load their images again, from files that may have changed.
+    #[func]
+    fn clear_textures(&mut self) {
+        clear_texture_cache();
     }
 
     /// The number of cached TileSets (maps' and templates').
     #[func]
     fn get_cached_count(&self) -> i64 {
-        self.cache.len() as i64
+        self.cache.values().map(|v| v.len() as i64).sum()
     }
 
-    /// Errors of the last `tileset_for` that built a TileSet.
+    /// The number of TileSets this cache has created so far (maps' and templates').
+    #[func]
+    fn get_created_count(&self) -> i64 {
+        self.created
+    }
+
+    /// The number of textures in the per-process cache.
+    #[func]
+    fn get_texture_count(&self) -> i64 {
+        texture_cache_len() as i64
+    }
+
+    /// Errors of the last `tileset_for`.
     #[func]
     fn get_last_error_count(&self) -> i64 {
         self.last_errors as i64
     }
 
-    /// Warnings of the last `tileset_for` that built a TileSet.
+    /// Warnings of the last `tileset_for`.
     #[func]
     fn get_last_warning_count(&self) -> i64 {
         self.last_warnings as i64
@@ -1464,7 +1723,120 @@ impl TiledTileSets {
         )
     }
 
-    /// The map's TileSet and registry, built (and its messages reported) on first use.
+    /// The cache key of a map's TileSet or a template's; `None` for a template without
+    /// tilesets (it has no TileSet).
+    fn key_for(map: &Map, source: &Source, zip: &str, opts: &Options) -> Option<String> {
+        // The builder adds alternative tiles to a TileSet when `no_alternative_tiles` is off,
+        // so a TileSet shared across imports differs by it too.
+        // The project file's custom types are merged into the tilesets (and its enums shape
+        // their properties), so maps loaded with different projects differ too: keyed by a hash
+        // of the project's content.
+        let key = Self::key_inner(map, source, zip, opts)?;
+        let project = map.project().map_or(0, |p| {
+            let mut h = DefaultHasher::new();
+            // The types only: the project's lookup index is a HashMap (no stable order).
+            format!("{:?}", p.property_types).hash(&mut h);
+            h.finish()
+        });
+        Some(format!(
+            "{key}|alt={}|project={project:x}",
+            !opts.no_alternative_tiles
+        ))
+    }
+
+    fn key_inner(map: &Map, source: &Source, zip: &str, opts: &Options) -> Option<String> {
+        match source {
+            Source::Map => {
+                let params = Self::params(map, zip, opts, false);
+                let slots: Vec<&TilesetSlot> = map.tileset_slots().iter().collect();
+                Some(Self::key(
+                    "map",
+                    map,
+                    &params,
+                    &slots_key(&slots, map.tilesets.as_deref().unwrap_or(&[])),
+                ))
+            }
+            Source::Template(p) => {
+                let t = map.templates().get(p)?;
+                if t.tilesets.is_empty() {
+                    return None;
+                }
+                let params = Self::params(map, zip, opts, true);
+                let slots: Vec<&TilesetSlot> = t.tileset_slots().iter().collect();
+                Some(Self::key(
+                    "template",
+                    map,
+                    &params,
+                    &slots_key(&slots, &t.tilesets),
+                ))
+            }
+        }
+    }
+
+    /// A cached entry of `key` that may be handed out (any, or one no tree holds when
+    /// `exclusive`).
+    fn available(&self, key: &str) -> Option<&Entry> {
+        let entries = self.cache.get(key)?;
+        entries.iter().find(|e| !self.exclusive || !e.in_use())
+    }
+
+    /// A new creation of a map's or a template's TileSet.
+    fn start(map: &Map, source: &Source, zip: &str, opts: &Options) -> Creation {
+        let template = *source != Source::Map;
+        let params = Self::params(map, zip, opts, template);
+        let mut diag = Diag::quiet();
+        if params.report_animation_mode && map.tilesets.is_some() {
+            diag.warn_ts(format!(
+                " -- Option animation_mode '{}' is not supported. -> Using 'strip'",
+                opts.animation_mode
+            ));
+        }
+        Creation {
+            creator: Creator::new(params, diag),
+        }
+    }
+
+    /// Caches a finished creation.
+    fn store(&mut self, key: String, creation: Creation, map: &Map, source: &Source) -> Rc<Built> {
+        let (built, diag) = creation.finish(map, source);
+        let built = Rc::new(built);
+        self.created += 1;
+        self.cache.entry(key).or_default().push(Entry {
+            built: built.clone(),
+            diag,
+        });
+        built
+    }
+
+    /// The TileSet of `key`: a cached one, else the creation `build_step` started, finished,
+    /// else a new one, created now. Its messages are reported into `diag` either way.
+    fn get_or_create(
+        &mut self,
+        key: String,
+        map: &Map,
+        source: Source,
+        zip: &str,
+        opts: &Options,
+        diag: &mut Diag,
+    ) -> Rc<Built> {
+        if let Some(e) = self.available(&key) {
+            diag.replay(&e.diag);
+            return e.built.clone();
+        }
+        let mut creation = match self.creating.remove(&key) {
+            Some(c) => c,
+            None => Self::start(map, &source, zip, opts),
+        };
+        let mut unbounded = usize::MAX;
+        creation.step(map, &source, &mut unbounded);
+        let built = self.store(key.clone(), creation, map, &source);
+        if let Some(e) = self.cache.get(&key).and_then(|v| v.last()) {
+            diag.replay(&e.diag);
+        }
+        built
+    }
+
+    /// The map's TileSet and registry, built on first use; its messages reported into `diag`.
     pub(crate) fn built_for_map(
         &mut self,
         map: &Map,
@@ -1472,68 +1844,8 @@ impl TiledTileSets {
         opts: &Options,
         diag: &mut Diag,
     ) -> Rc<Built> {
-        let params = Self::params(map, zip, opts, false);
-        let slots: Vec<&TilesetSlot> = map.tileset_slots().iter().collect();
-        let key = Self::key(
-            "map",
-            map,
-            &params,
-            &slots_key(&slots, map.tilesets.as_deref().unwrap_or(&[])),
-        );
-        if let Some(b) = self.cache.get(&key) {
-            return b.clone();
-        }
-        if params.report_animation_mode && map.tilesets.is_some() {
-            diag.warn_ts(format!(
-                " -- Option animation_mode '{}' is not supported. -> Using 'strip'",
-                opts.animation_mode
-            ));
-        }
-        let refs = map_slots(map);
-        let built = if map.tilesets.as_ref().is_some_and(|t| !t.is_empty()) {
-            Creator::new(&params, diag, &mut self.textures).create(&refs)
-        } else {
-            Built {
-                tileset: TileSet::new_gd(),
-                sources: Vec::new(),
-                object_groups: HashMap::new(),
-                internal: HashMap::new(),
-            }
-        };
-        let mut ts = built.tileset.clone();
-        ts.set_tile_size(params.map_tile_size);
-        let stagger_x = map.staggeraxis.as_deref().unwrap_or("y") == "x";
-        let odd = map.staggerindex.as_deref().unwrap_or("odd") == "odd";
-        let layout = if odd {
-            TileLayout::STACKED
-        } else {
-            TileLayout::STACKED_OFFSET
-        };
-        let axis = if stagger_x {
-            TileOffsetAxis::VERTICAL
-        } else {
-            TileOffsetAxis::HORIZONTAL
-        };
-        match map.orientation.as_deref() {
-            Some("isometric") => {
-                ts.set_tile_shape(TileShape::ISOMETRIC);
-                ts.set_tile_layout(TileLayout::DIAMOND_DOWN);
-            }
-            Some("staggered") => {
-                ts.set_tile_shape(TileShape::ISOMETRIC);
-                ts.set_tile_layout(layout);
-                ts.set_tile_offset_axis(axis);
-            }
-            Some("hexagonal") => {
-                ts.set_tile_shape(TileShape::HEXAGON);
-                ts.set_tile_layout(layout);
-                ts.set_tile_offset_axis(axis);
-            }
-            _ => {}
-        }
-        let built = Rc::new(built);
-        self.cache.insert(key, built.clone());
-        built
+        let key = Self::key_for(map, &Source::Map, zip, opts).expect("a map has a key");
+        self.get_or_create(key, map, Source::Map, zip, opts, diag)
     }
 
     /// A template's TileSet (`load_template`'s own TilesetCreator), `None` when the template has
@@ -1549,24 +1861,8 @@ impl TiledTileSets {
         if template.tilesets.is_empty() {
             return None;
         }
-        let params = Self::params(map, zip, opts, true);
-        let slots: Vec<&TilesetSlot> = template.tileset_slots().iter().collect();
-        let key = Self::key(
-            "template",
-            map,
-            &params,
-            &slots_key(&slots, &template.tilesets),
-        );
-        if let Some(b) = self.cache.get(&key) {
-            return Some(b.clone());
-        }
-        let refs: Vec<SlotRef> = template
-            .tileset_slots()
-            .iter()
-            .map(|s| slot_ref(s, template.slot_tileset(s)))
-            .collect();
-        let built = Rc::new(Creator::new(&params, diag, &mut self.textures).create(&refs));
-        self.cache.insert(key, built.clone());
-        Some(built)
+        let source = Source::Template(template.path().to_string());
+        let key = Self::key_for(map, &source, zip, opts)?;
+        Some(self.get_or_create(key, map, source, zip, opts, diag))
     }
 }

@@ -7,15 +7,19 @@
 //! - [`TiledNative`]: the library's version (the facade checks it once per process).
 //! - [`TiledImportOptions`](options::TiledImportOptions): every import option.
 //! - [`TiledMap`](map::TiledMap): a map loaded through the core, its files read on the main
-//!   thread with `FileAccess` (or from a zip archive); queries and `to_dictionary()`.
+//!   thread with `FileAccess` (or from a zip archive), synchronously or with the parse on a
+//!   worker thread (`load_async` + `poll()`); queries and `to_dictionary()`.
 //! - [`TiledTileSets`](tileset::TiledTileSets): the TileSet builder (the runtime's
-//!   `TilesetCreator`) and its cache.
+//!   `TilesetCreator`) and its cache, shared across imports; creation spread over frames with
+//!   `build_step`.
 //! - [`TiledBuilder`](builder::TiledBuilder): the node tree of a map in one call (the runtime's
 //!   `TilemapCreator`), tile layers filled through `tile_map_data`.
 //!
 //! Everything here runs on the main thread except the decoding of tile layer payloads, which
-//! runs on one thread per layer and touches no Godot object.
+//! runs on one thread per layer, and the asynchronous load's parse, which runs on a worker
+//! thread; both run `tiled_core` only (no Godot object; `experimental-threads` stays off).
 
+use godot::init::InitStage;
 use godot::prelude::*;
 
 mod builder;
@@ -33,7 +37,22 @@ struct YatiNative;
 /// The extension's entry point. godot-rust exports it as `gdext_rust_init`, the
 /// `entry_symbol` in `yati_native.gdextension`.
 #[gdextension]
-unsafe impl ExtensionLibrary for YatiNative {}
+unsafe impl ExtensionLibrary for YatiNative {
+    fn on_main_loop_frame() {
+        // Threaded texture requests of cancelled or freed maps, collected once loaded.
+        files::drain_orphans(false);
+    }
+
+    fn on_stage_deinit(stage: InitStage) {
+        if stage == InitStage::MainLoop {
+            // Before the engine goes: no texture request, cached texture or loader thread of
+            // ours outlives it.
+            files::drain_orphans(true);
+            files::clear_texture_cache();
+            tiled_core::worker::join_detached();
+        }
+    }
+}
 
 /// The native importer's handle for GDScript: its version, and a round trip of a packed array
 /// for the smoke test.
