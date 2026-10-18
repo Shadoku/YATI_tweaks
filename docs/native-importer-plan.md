@@ -326,6 +326,10 @@ numbers measured. Stages 1 and 2 are the bulk; 3 and 4 are what the two goals ne
 - The game that drove the 3.0 work switches its board loader to `Importer.import_async` and
   drops its PackedScene cache; its own tests are its gate.
 
+*Outcome (section 6): documentation done, the two loose ends of stages 3 and 4 closed, an option the
+game's adoption asked for added (`warn_unknown_classes`); the web build not made (no Emscripten on
+this machine): what it needs is written down. The game's switch is a change in its own repository.*
+
 ## 5. Risks and open questions
 
 - **godot-rust and threads.** The worker holds no Godot types, which sidesteps the
@@ -939,6 +943,101 @@ numbers measured. Stages 1 and 2 are the bulk; 3 and 4 are what the two goals ne
     rebuild of the live layers): documented, not pre-scanned; one `TileMapLayer` per Tiled layer per
     world map (not shared across maps), so a map's unload is its own; the collision cost is the
     engine's own per-cell physics shapes, with no merged-polygon option yet (section 5).
+
+- 2026-10-18, **stage 5 done** but for the web build (documentation, the loose ends, adoption):
+  - **Tile layers decoded on the worker** (stage 3's loose end). `tiled_core::prepare`
+    (`native/tiled/src/prepare.rs`): `PreparedCells::prepare(map)` turns every tile layer into a
+    `PreparedLayer`, a blob in `tile_map_data`'s format whose records hold the cell's x and y and, in
+    place of the four tile fields, the index of the cell's value in the layer's distinct values
+    (`values`, first-appearance order, the hexagonal rotation bit masked off); `PreparedLayer::patch`
+    fills the tile fields in place from the resolutions of those values and drops the cells of
+    values that resolve to nothing. `Worker::spawn_preparing` prepares the map on the worker after
+    the parse and sends the cells with `Event::Done(map, cells)` (the variant gained the field).
+    `TiledMap.prepare_tile_layers` (off by default; `load_async` prepares on the worker, `load` on the
+    main thread) and `has_prepared_tile_layers()`; the facade's `import_async` turns it on. The
+    builder (`builder/cells.rs`) takes the map's prepared layers or prepares them itself with the same
+    code, resolves each distinct value once (`resolve_cell`, unchanged: it creates the tiles in the
+    TileSet), copies the blob into a `PackedByteArray`, patches it there and assigns it. *Decision:*
+    placeholders patched on the main thread rather than resolving on the worker, because a cell's
+    source id, atlas coordinates and the tiles' existence depend on the TileSet the main thread
+    builds (source ids as `add_source` assigns them, atlas grids from the loaded textures, strips,
+    `godot_atlas_id`), which the worker would have to predict; the patch is one 8-byte write per cell
+    and both paths share all of the code, so the blob is the same byte for byte. Layers under 32 768
+    cells are prepared on the calling thread (a thread per tiny layer cost 3 ms of wall time on a busy
+    machine: the small map's async import went from 1.2 to 4 ms before this rule, and its synchronous
+    import is now 0.6 to 0.8 ms against 1.0). Memory: the map holds the prepared layers, 12 bytes
+    per non-empty cell (6.3 MB for the benchmark map), until it is freed; a streamer's map is never
+    prepared (an infinite map prepared whole would cost 12 bytes per cell of every chunk).
+    `TiledBuilder.get_timings()` (`prepare_us`, `cells_us`, `assign_us`) measures the build's tile
+    layers on the main thread. The streamer's on-demand chunk decode is unchanged.
+  - **Measured** (this machine, Godot 4.7.2, 4 cores shared with another agent's Rust builds:
+    frame times vary by ±30 ms; `test/test_async.gd -- --rounds=5`). Before (the stage 4 library
+    with the timings added): build frame median 186.2 and 247.0 ms (min 171.8, 178.2) in two runs; the
+    build's own tile work decode 4.8 to 7.5 ms plus resolve and blob 6.6 to 10.2 ms (the engine's
+    `tile_map_data` 108 to 169 ms). After: build frame median 189.7, 168.7 and 165.6 ms (min 167.7,
+    156.5, 155.9) in three runs; the prepared map's build decodes for 0.001 to 0.003 ms and resolves
+    and patches for 5.3 to 7.3 ms, of which resolving the 1 536 distinct values is 2.7 ms (almost all
+    the engine's `create_tile` and `set_texture_origin` for 192 tiles) and copy plus patch 0.3 to
+    0.4 ms per layer; `tile_map_data` 102 to 125 ms. So about 10 ms of main-thread work left the
+    build frame, less than this machine's noise in the frame itself; an A/B of the facade in one
+    session (prepare on, off, on, off) read 164.5, 191.5, 177.8, 174.0 ms. The worst frame before the
+    build stays 1.1 to 1.5 ms; the load takes more frames (2 000 to 4 000 instead of 900 to 2 500:
+    the worker decodes too, each frame about 5 µs). The small map: build frame 0.50 to 0.60 ms
+    (prepare off, same session: 0.80 to 1.02), async wall mean 0.9 to 1.4 ms. `test_async` checks
+    thirteen fixtures (encodings, infinite TMX and JSON, hexagonal, legacy XML, isometric, a missing
+    tileset, alternative tiles) and the benchmark map: every `TileMapLayer.tile_map_data` of a
+    prepared build (worker and main thread) equals the self-decoding build's. What is left in the
+    build frame for tiles is the resolution: creating the map's used tiles during the TileSet
+    phase, before the build frame, would take its 2.7 ms out too (a step API on the builder; not
+    done).
+  - **The benchmark's phases** (stage 3's loose end). `test/benchmark.gd` clears the shared TileSet
+    and texture caches before every timed step of the native runtime, so each phase is cold, as for
+    the GDScript runtime, and "tile layers" no longer subtracts a TileSet time the tiles-only import
+    did not spend; the warm-cache import is reported on its own (`cached import avg`). It also showed
+    that `Importer.shared_tilesets()` failed in a `SceneTree` script's `_init` (godot-rust's static
+    methods are registered after instance methods: `class_has_method("TiledTileSets", "shared")` is
+    false there, `clear` true); `TiledTileSets.get_shared()` is the instance route the facade falls
+    back to. Facade, two runs: `total_ms min=172.3 avg=175.3 | parse avg=7.1 | tilesets avg=1.7 |
+    tile layers avg=127.4 | objects avg=39.2 | cached import avg=187.6` and `min=163.8 avg=168.0 |
+    parse 7.1 | tilesets 1.6 | tile layers 115.7 | objects 43.6 | cached 171.5` (the cache saves the
+    TileSet's 1.5 ms, below the noise); the GDScript runtime `min=709.0 avg=728.5 | parse 151.6 |
+    tilesets 5.4 | tile layers 414.4 | objects 157.1` (another run min 756.6).
+  - **Documentation.** `Runtime.md`, "Native importer" (when to use it, installing, the shared API
+    and the two extra options, `import_async`, `import_world`, a follow-mode streamer, the shared
+    cache, the differences); `Reference.md`, "Differences between the GDScript and the native
+    importer" (every accepted difference of the entries above, with its reason, and the
+    streamer's own rules); `README.md`'s section and the two version lines; the addon's README
+    rewritten for someone who copies only that directory (features, platforms, installing, the API,
+    options, the streamer, the limits, building, the web build, versions). `CHANGELOG.md`: release
+    3.1.0 (2026-10-18), the breaking changes first, an empty `[Unreleased]` above. The crates
+    `yati_native` and `tiled_core` are 0.2.0; the library is released under `v<crate version>`
+    (`v0.2.0`), the repository under `v3.x.y`.
+  - **Adoption.** The game that drove the 3.0 work handles its Tiled classes itself and got B8's
+    warning once per class on every load: `warn_unknown_classes` (default true) in both importers
+    skips that warning and its count, the fallback unchanged; `test_new_warn_unknown_classes_off`.
+    The game's switch to `import_async` is its own repository's change.
+  - **Web build: not made.** No `emcc` on this machine (not installed, as agreed). What it needs:
+    godot-rust's `experimental-wasm` feature with `lazy-function-tables` (and
+    `experimental-wasm-nothreads` for Godot's nothreads export); the Emscripten Godot's web templates
+    are built with (4.0.11 for 4.7.2-stable, `EM_VERSION` in Godot's `web_builds.yml`), also for the
+    `zstd` feature's C code; the target `wasm32-unknown-emscripten` on nightly with `-Zbuild-std`,
+    linked as a side module (`-sSIDE_MODULE=2`); `-pthread` and the atomics target features for the
+    threads export and neither for the nothreads one; the export's "Extensions Support". Without
+    threads, the loader's worker, `PreparedCells::prepare`'s layer threads and the streamer's decode
+    thread must run their work in budgeted slices on the main thread (`poll()` stepping the loader a
+    round, a layer or a chunk per call): `std::thread::spawn` fails there, and `prepare` would panic
+    in `thread::scope` for maps with several large layers. The `.gdextension`'s web entries are left
+    as they are; no CI entry.
+  - **Gates, measured**: `test/run_tests.gd` `SUMMARY: 104 passed, 0 failed (new_: 0, bug_: 0, other:
+    0) of 104` for `res://runtime` and for `res://addons/yati_native`; `test/test_async.gd` `SUMMARY:
+    73 passed, 0 failed` (5 rounds; 71 with 3); `test/test_stream.gd` `SUMMARY: 86 passed, 0 failed`;
+    `tools/native_gate.gd` leaks none (objects 1900 → 1900, nodes 1 → 1, orphans 0 → 0 after 20
+    rounds of 57 maps), the small map 0.66 ms mean synchronously, its async import 18 to 67 frames,
+    wall mean 1.05 ms, build frame 0.60 ms, the engine floor 112.4 ms import against 99.4 ms of
+    `tile_map_data`; `cargo test --release --workspace` 59 passed (56 + 2 for `prepare` + 1 for the
+    preparing worker); clippy `-D warnings` and `fmt --check` clean; `test/run_all.sh` exits 0 for
+    both runtimes (its benchmark runs there: the GDScript runtime `min=753.4 avg=790.6`, the facade
+    `min=183.8 avg=208.6 | tile layers avg=146.5 | cached import avg=226.3`, a busy moment).
 
 ## 7. Behaviour changes from the runtime improvement plan
 
