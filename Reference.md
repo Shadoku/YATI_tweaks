@@ -304,6 +304,9 @@ i.e. "collision_layer" is equivalent to "collision_layer_0"
 
 Properties of type 'file' refer to previously saved Godot resources e.g. 'material' or a script file.  
 By specifing the property and setting its value to the resource file path the resource will be loaded.  
+A relative path is resolved like Tiled saves it: relative to the file that holds the property, i.e. the map, or the
+template (.tx) for the properties of a template object; a property that a template instance overrides is saved in the
+map and so is relative to the map.  
 **Please note:** The numerous resource-specific properties, e.g. for materials, can only be set by loading previously saved resources.  
 This seems to be convenient as providing all of these properties would greatly inflate the already extensive list.
 

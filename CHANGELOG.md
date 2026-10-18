@@ -102,6 +102,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   short; image collection animations did not work; tile objects of animated tiles were static Sprite2Ds.
   In `"atlas"` mode the sequence is now validated before the atlas is touched, and an animation that does
   not start with its tile, or belongs to an image collection, falls back to a strip with a warning.
+- B10b: file properties of template objects (`godot_script`, `material`, `physics_material_override`,
+  `navigation_polygon`, `tile_set`) were resolved relative to the map instead of the template (.tx) file
+  (only `res_path` was); `handle_properties()` takes the base directory now. A file property that the
+  instance overrides is resolved relative to the map, where Tiled saves it (an overridden `res_path` was
+  joined with the template's directory).
 
 ## [3.0.0] — runtime-only fork (2026-10-17)
 

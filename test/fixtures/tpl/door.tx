@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- B10b: file properties of a template are relative to the template file -->
+<template>
+ <object name="Door" class="staticbody" width="16" height="16">
+  <properties>
+   <property name="material" type="file" value="door_mat.tres"/>
+   <property name="physics_material_override" type="file" value="door_phys.tres"/>
+   <property name="godot_script" type="file" value="door.gd"/>
+  </properties>
+ </object>
+</template>

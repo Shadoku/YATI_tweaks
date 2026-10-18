@@ -1101,6 +1101,24 @@ func load_template(template_file: String) -> Dictionary:
 	return entry
 
 
+# A file path relative to dir (a path that is absolute or res:// / user:// stays as it is)
+static func join_file_path(dir: String, path: String) -> String:
+	if dir == "" or path == "" or path.is_absolute_path():
+		return path
+	return dir.path_join(path)
+
+
+# A property of a template instance as it goes into the template's object: a file property keeps
+# its path relative to the map (where Tiled saves it), joined with the map's directory, since the
+# template object's file properties are resolved relative to the template (B10b).
+func get_instance_property(prop: Dictionary) -> Dictionary:
+	if str(prop.get("type", "string")) != "file":
+		return prop
+	var ret := prop.duplicate()
+	ret["value"] = join_file_path(_base_path, str(prop.get("value", "")))
+	return ret
+
+
 func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: Vector2) -> void:
 	var obj_id = obj.get("id", 0)
 	var obj_x = obj.get("x", offset.x)
@@ -1160,18 +1178,22 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 						# and add any additional properties defined in instanced obj that are 
 						# not defined in template
 						for prop in obj["properties"]:
+							var inst_prop = get_instance_property(prop)
 							var found = false
 							for templ_prop in template_obj["properties"]:
 								if prop.name == templ_prop.name:
-									templ_prop.value = prop.value
+									templ_prop.value = inst_prop.value
 									found = true
 									break
 							if not found:
-								template_obj["properties"].append(prop)
+								template_obj["properties"].append(inst_prop)
 					else:
 						# template comes without properties, since obj has properties
 						# then merge them into the template
-						template_obj["properties"] = obj.properties
+						var inst_props = []
+						for prop in obj["properties"]:
+							inst_props.append(get_instance_property(prop))
+						template_obj["properties"] = inst_props
 
 				# Template obj needs id and obj class/type/name overrides template's class/type/name
 				template_obj["id"] = obj_id
@@ -1211,7 +1233,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 			CommonUtils.error_count += 1
 		else:
 			if obj.has("template_dir_path"):
-				res_path = obj.template_dir_path.path_join(res_path)
+				res_path = join_file_path(obj.template_dir_path, res_path)
 			var scene = DataLoader.load_resource_from_file(res_path, _base_path)
 			# Error check
 			if scene == null: return
@@ -1227,7 +1249,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 			if _add_id_as_metadata and obj_id != 0:
 				instance.set_meta("id", obj_id)
 			if obj.has("properties"):
-				handle_properties(instance, obj["properties"])
+				handle_properties(instance, obj["properties"], obj.get("template_dir_path", ""))
 		return
 
 	if obj.has("gid") and not obj.has("template"):
@@ -1334,7 +1356,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				CommonUtils.error_count += 1
 			else:
 				if obj.has("template_dir_path"):
-					res_path = obj.template_dir_path.path_join(res_path)
+					res_path = join_file_path(obj.template_dir_path, res_path)
 				var scene = DataLoader.load_resource_from_file(res_path, _base_path)
 				# Error check
 				if scene == null: return
@@ -1363,7 +1385,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				if _add_id_as_metadata and obj_id != 0:
 					instance.set_meta("id", obj_id)
 				if obj.has("properties"):
-					handle_properties(instance, obj["properties"])
+					handle_properties(instance, obj["properties"], obj.get("template_dir_path", ""))
 			return
 
 		# An animated tile is shown animated
@@ -1404,7 +1426,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				obj_sprite.owner = _base_node
 				add_collision_shapes(parent, get_object_group(idx), obj_width, obj_height, flippedH, flippedV, obj_sprite.scale)
 				if obj.has("properties"):
-					handle_properties(parent, obj["properties"])
+					handle_properties(parent, obj["properties"], obj.get("template_dir_path", ""))
 			
 		obj_sprite.flip_h = flippedH
 		obj_sprite.flip_v = flippedV
@@ -1414,7 +1436,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 		if _add_id_as_metadata and obj_id != 0:
 			obj_sprite.set_meta("id", obj_id)
 		if obj.has("properties"):
-			handle_properties(obj_sprite, obj["properties"])
+			handle_properties(obj_sprite, obj["properties"], obj.get("template_dir_path", ""))
 
 	elif obj.has("text") and not obj.has("template"):
 		var obj_text = Label.new()
@@ -1453,7 +1475,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 		obj_text.add_theme_font_size_override("font_size", txt.get("pixelsize", 16))
 		obj_text.add_theme_color_override("font_color", CommonUtils.tiled_color(str(txt.get("color", "#000000")), Color.BLACK))
 		if obj.has("properties"):
-			handle_properties(obj_text, obj["properties"])
+			handle_properties(obj_text, obj["properties"], obj.get("template_dir_path", ""))
 
 	elif not obj.has("template"):
 
@@ -1477,7 +1499,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 			if _add_id_as_metadata and obj_id != 0:
 				marker.set_meta("id", obj_id)		
 			if obj.has("properties"):
-				handle_properties(marker, obj["properties"])
+				handle_properties(marker, obj["properties"], obj.get("template_dir_path", ""))
 		elif obj.has("polygon"):
 			if godot_type in COLLISION_OBJECT_TYPES:
 				var co: CollisionObject2D = create_collision_object(godot_type, obj_name, layer_node)
@@ -1496,7 +1518,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				if _add_id_as_metadata and obj_id != 0:
 					co.set_meta("id", obj_id)
 				if obj.has("properties"):
-					handle_properties(co, obj["properties"])
+					handle_properties(co, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.NAVIGATION:
 				var nav_region = NavigationRegion2D.new()
 				layer_node.add_child(nav_region)
@@ -1522,7 +1544,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				if _add_id_as_metadata and obj_id != 0:
 					nav_region.set_meta("id", obj_id)
 				if obj.has("properties"):
-					handle_properties(nav_region, obj["properties"])
+					handle_properties(nav_region, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.OCCLUDER:
 				var light_occ = LightOccluder2D.new()
 				layer_node.add_child(light_occ)
@@ -1539,7 +1561,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				if _add_id_as_metadata and obj_id != 0:
 					light_occ.set_meta("id", obj_id)
 				if obj.has("properties"):
-					handle_properties(light_occ, obj["properties"])
+					handle_properties(light_occ, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.POLYGON:
 				var polygon = Polygon2D.new()
 				layer_node.add_child(polygon)
@@ -1554,7 +1576,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				if _add_id_as_metadata and obj_id != 0:
 					polygon.set_meta("id", obj_id)
 				if obj.has("properties"):
-					handle_properties(polygon, obj["properties"])	
+					handle_properties(polygon, obj["properties"], obj.get("template_dir_path", ""))	
 		elif obj.has("polyline"):
 			if godot_type == _godot_type.LINE:
 				var line = Line2D.new()
@@ -1571,7 +1593,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				if _add_id_as_metadata and obj_id != 0:
 					line.set_meta("id", obj_id)
 				if obj.has("properties"):
-					handle_properties(line, obj["properties"])
+					handle_properties(line, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.PATH:
 				var path = Path2D.new()
 				layer_node.add_child(path)
@@ -1589,7 +1611,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				if _add_id_as_metadata and obj_id != 0:
 					path.set_meta("id", obj_id)
 				if obj.has("properties"):
-					handle_properties(path, obj["properties"])
+					handle_properties(path, obj["properties"], obj.get("template_dir_path", ""))
 			else:
 				var co: CollisionObject2D = create_collision_object(godot_type, obj_name, layer_node)
 				co.owner = _base_node
@@ -1612,7 +1634,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				if _add_id_as_metadata and obj_id != 0:
 					co.set_meta("id", obj_id)
 				if obj.has("properties"):
-					handle_properties(co, obj["properties"])
+					handle_properties(co, obj["properties"], obj.get("template_dir_path", ""))
 		else:
 			if godot_type in COLLISION_OBJECT_TYPES:
 				var co: CollisionObject2D = create_collision_object(godot_type, obj_name, layer_node)
@@ -1669,7 +1691,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				if _add_id_as_metadata and obj_id != 0:
 					co.set_meta("id", obj_id)
 				if obj.has("properties"):
-					handle_properties(co, obj["properties"])
+					handle_properties(co, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.NAVIGATION:
 				if obj.has("capsule"):
 					print_rich("[color="+WARNING_COLOR+"] -- Capsule is unusable for NavigationRegion2D. -> Skipped[/color]")
@@ -1702,7 +1724,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 					if _add_id_as_metadata and obj_id != 0:
 						nav_region.set_meta("id", obj_id)		
 					if obj.has("properties"):
-						handle_properties(nav_region, obj["properties"])
+						handle_properties(nav_region, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.OCCLUDER:
 				if obj.has("capsule"):
 					print_rich("[color="+WARNING_COLOR+"] -- Capsule is unusable for LightOccluder2D. -> Skipped[/color]")
@@ -1726,7 +1748,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 					if _add_id_as_metadata and obj_id != 0:
 						light_occ.set_meta("id", obj_id)
 					if obj.has("properties"):
-						handle_properties(light_occ, obj["properties"])
+						handle_properties(light_occ, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.POLYGON:
 				if obj.has("capsule"):
 					print_rich("[color="+WARNING_COLOR+"] -- Capsule is unusable for Polygon2D. -> Skipped[/color]")
@@ -1748,7 +1770,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 					if _add_id_as_metadata and obj_id != 0:
 						polygon.set_meta("id", obj_id)		
 					if obj.has("properties"):
-						handle_properties(polygon, obj["properties"])	
+						handle_properties(polygon, obj["properties"], obj.get("template_dir_path", ""))	
 
 
 # Replaces a tile object's Sprite2D (already in layer_node) by an AnimatedSprite2D playing the tile's
@@ -1812,7 +1834,7 @@ func create_plain_node(obj: Dictionary, layer_node: Node, position: Vector2, cla
 	if _add_id_as_metadata and obj_id != 0:
 		node.set_meta("id", obj_id)
 	if obj.has("properties"):
-		handle_properties(node, obj["properties"])
+		handle_properties(node, obj["properties"], obj.get("template_dir_path", ""))
 
 
 # Creates the CollisionObject2D for a (non tile) shape object and adds it to layer_node.
@@ -2274,7 +2296,10 @@ static func property_color(type: String, val: String) -> Color:
 	return Color(val)
 
 
-func handle_properties(target_node: Node, properties: Array):
+# base_dir: the directory relative file properties are resolved against ("": the map's; a template
+# object's properties pass the template's)
+func handle_properties(target_node: Node, properties: Array, base_dir: String = ""):
+	var file_base: String = base_dir if base_dir != "" else _base_path
 	var has_children = false
 	if target_node is StaticBody2D or target_node is Area2D or target_node is CharacterBody2D or target_node is RigidBody2D or target_node is AnimatableBody2D:
 		has_children = target_node.get_child_count() > 0 
@@ -2302,7 +2327,7 @@ func handle_properties(target_node: Node, properties: Array):
 			var child_props = []
 			child_props.append(child_prop_dict)
 			for child in target_node.get_children():
-				handle_properties(child, child_props)
+				handle_properties(child, child_props, base_dir)
 		
 		# Node properties
 		# v1.5.4: godot_group property
@@ -2313,8 +2338,8 @@ func handle_properties(target_node: Node, properties: Array):
 		# v1.6.6: script resource and godot_script property
 		elif lname == GODOT_SCRIPT_PROPERTY and (type == "file" or type == "string"):
 			var path = val
-			if type == "file":
-				path = CommonUtils.cleanup_path(_base_path.replace("res://", "") + "/" + val)
+			if type == "file" and not val.is_absolute_path():
+				path = CommonUtils.cleanup_path(file_base.replace("res://", "") + "/" + val)
 			target_node.set_script(load(path))
 
 		# CanvasItem properties
@@ -2346,13 +2371,13 @@ func handle_properties(target_node: Node, properties: Array):
 			if int(val) < CanvasItem.TEXTURE_REPEAT_MAX:
 				target_node.texture_repeat = int(val)
 		elif lname == "material" and type == "file":
-			target_node.material = DataLoader.load_resource_from_file(val, _base_path)
+			target_node.material = DataLoader.load_resource_from_file(val, file_base)
 		elif lname == "use_parent_material" and type == "bool":
 			target_node.use_parent_material = val.to_lower() == "true"
 	
 		# TileMapLayer properties
 		elif lname == "tile_set" and type == "file" and target_node is TileMapLayer:
-			target_node.tile_set = DataLoader.load_resource_from_file(val, _base_path)
+			target_node.tile_set = DataLoader.load_resource_from_file(val, file_base)
 
 		# Experimental only! Not sure if properly functioning
 		elif lname == "tileset_resource_path" and type == "string" and target_node is TileMapLayer:
@@ -2486,7 +2511,7 @@ func handle_properties(target_node: Node, properties: Array):
 			
 		# StaticBody2D properties
 		elif lname == "physics_material_override" and type == "file" and target_node is StaticBody2D:
-			target_node.physics_material_override = DataLoader.load_resource_from_file(val, _base_path)
+			target_node.physics_material_override = DataLoader.load_resource_from_file(val, file_base)
 		elif lname == "constant_linear_velocity_x" and (type == "float" or type == "int") and target_node is StaticBody2D:
 			target_node.constant_linear_velocity = Vector2(float(val), target_node.constant_linear_velocity.y)
 		elif lname == "constant_linear_velocity_y" and (type == "float" or type == "int") and target_node is StaticBody2D:
@@ -2545,7 +2570,7 @@ func handle_properties(target_node: Node, properties: Array):
 			if int(val) < 2:
 				target_node.center_of_mass_mode = int(val)
 		elif lname == "physics_material_override" and type == "file" and target_node is RigidBody2D:
-			target_node.physics_material_override = DataLoader.load_resource_from_file(val, _base_path)
+			target_node.physics_material_override = DataLoader.load_resource_from_file(val, file_base)
 		elif lname == "gravity_scale" and  (type == "float" or type == "int") and target_node is RigidBody2D:
 			target_node.gravity_scale = float(val)
 		elif lname == "custom_integrator" and type == "bool" and target_node is RigidBody2D:
@@ -2593,7 +2618,7 @@ func handle_properties(target_node: Node, properties: Array):
 				
 		# NavigationRegion2D properties
 		elif lname == "navigation_polygon" and type == "file" and target_node is NavigationRegion2D:
-			target_node.navigation_polygon = DataLoader.load_resource_from_file(val, _base_path)
+			target_node.navigation_polygon = DataLoader.load_resource_from_file(val, file_base)
 		elif lname == "enabled" and type == "bool" and target_node is NavigationRegion2D:
 			target_node.enabled = val.to_lower() == "true"
 		elif lname == "navigation_layers" and type == "string" and target_node is NavigationRegion2D:

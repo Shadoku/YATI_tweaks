@@ -136,3 +136,4 @@ godot --headless -s test/run_tests.gd -- --runtime=res://baseline_runtime
 | `parallax.tmx` | B6: parallax origin, a group (offset, opacity) with a parallax tile layer (factor 1.2) and a repeated parallax image layer, a parallax group holding a parallax layer, a parallax object layer, background colour |
 | `animations.tmx` | B9: animations whose first frame is not the tile, a ping-pong sequence, an equidistant one with collision, metadata and custom data, an image collection animation, animated tile objects (plain and `staticbody`) |
 | `single_layer.tmx` | B10a: one layer, a map property and a property both map and layer set |
+| `template_files.tmx` + `tpl/door.tx`, `tpl/door_mat.tres`, `tpl/door_phys.tres`, `tpl/door.gd`, `map_mat.tres` | B10b: a template in a subdirectory with `material`, `physics_material_override` and `godot_script` file properties, one instance overriding `material` with a map-relative path |

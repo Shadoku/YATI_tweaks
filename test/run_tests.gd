@@ -1692,6 +1692,28 @@ func test_new_always_wrap_root() -> bool:
 	return done()
 
 
+func test_bug_template_file_properties() -> bool:
+	# B10b: file properties of a template object were resolved relative to the map, not to the
+	# .tx file (only res_path was adjusted); a property the instance overrides stays relative to
+	# the map, where Tiled saves it.
+	var n := _import("template_files.tmx")
+	if n == null: return done()
+	var a := need(n, "DoorA (SB)", "StaticBody2D") as StaticBody2D
+	if a:
+		if is_type(a.material, "CanvasItemMaterial", "DoorA material (tpl/door_mat.tres)"):
+			eq((a.material as CanvasItemMaterial).blend_mode, CanvasItemMaterial.BLEND_MODE_ADD, "DoorA material blend")
+		if is_type(a.physics_material_override, "PhysicsMaterial", "DoorA physics material (tpl/door_phys.tres)"):
+			eq(a.physics_material_override.friction, 0.25, "DoorA friction")
+		check(a.get_script() != null and a.get("IS_DOOR") == true, "DoorA script (tpl/door.gd) not set")
+	var b := need(n, "DoorB (SB)", "StaticBody2D") as StaticBody2D
+	if b:
+		if is_type(b.material, "CanvasItemMaterial", "DoorB material (map_mat.tres, map-relative override)"):
+			eq((b.material as CanvasItemMaterial).blend_mode, CanvasItemMaterial.BLEND_MODE_SUB, "DoorB material blend")
+		check(b.physics_material_override != null, "DoorB physics material (from the template) missing")
+	eq(_error_count(), 0, "errors")
+	return done()
+
+
 # ---------------------------------------------------------------------------
 # Zip (keep last: the pre-change runtime leaks zip mode, see _reset_zip_mode)
 

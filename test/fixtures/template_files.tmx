@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- B10b: a template in tpl/ with file properties; one instance overrides one with a map-relative path -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="4" height="4" tilewidth="16" tileheight="16" infinite="0" nextlayerid="2" nextobjectid="3">
+ <objectgroup id="1" name="Doors">
+  <object id="1" name="DoorA" template="tpl/door.tx" x="0" y="0"/>
+  <object id="2" name="DoorB" template="tpl/door.tx" x="32" y="0">
+   <properties>
+    <property name="material" type="file" value="map_mat.tres"/>
+   </properties>
+  </object>
+ </objectgroup>
+</map>
