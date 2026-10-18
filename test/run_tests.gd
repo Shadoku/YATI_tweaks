@@ -1776,15 +1776,20 @@ func _check_ref(from: Node, path: Variant, target_name: String, msg: String) -> 
 func test_new_object_ref_nodepath() -> bool:
 	# F2: an object property became the target's geometry. With object_refs = "nodepath" (the
 	# default) it is a NodePath from the node to the target's node, resolved after every layer is
-	# built; lists of objects become Array[NodePath]; an unset (0) or dangling id an empty
-	# NodePath with a warning.
+	# built; lists of objects become Array[NodePath]; a dangling id an empty NodePath with a
+	# warning; an unset one (0: Tiled's "no object", also a class member's default) an empty
+	# NodePath silently.
 	var imp := _new_importer()
 	if not _require_option(imp, "object_refs"): return done()
 	eq(imp.get("object_refs"), "nodepath", "default object_refs")
 	var n := _import_with(imp, "object_refs.tmx")
 	if n == null: return done()
-	eq(imp.get("last_warning_count"), 2, "warnings (unset and dangling reference)")
+	eq(imp.get("last_warning_count"), 1, "warnings (the dangling reference only)")
 	eq(imp.get("last_error_count"), 0, "errors")
+	var msgs: Variant = imp.get("last_messages")
+	if check(msgs is Array and (msgs as Array).size() == 1, "last_messages: " + str(msgs)):
+		var text := str((msgs as Array)[0].get("text", ""))
+		check(text.contains("'missing'") and text.contains("id 999"), "the warning is the dangling id's: " + text)
 	var door := need(n, "Door (Area)", "Area2D")
 	if door:
 		if door.has_meta("target"): _check_ref(door, door.get_meta("target"), "Spawn", "Door target")
@@ -1808,7 +1813,64 @@ func test_new_object_ref_nodepath() -> bool:
 	# The map's own properties resolve from the root
 	if n.has_meta("start"): _check_ref(n, n.get_meta("start"), "Spawn", "map start")
 	else: fail("root: meta 'start' missing")
+	_check_unset_object_refs()
 	return done()
+
+
+# Unset references (0) are silent wherever they come from: an object's own property, a class
+# member's default the object does not override, a list item; a dangling one (77) still warns
+func _check_unset_object_refs() -> void:
+	var proj_path := OUT + "unset_refs.tiled-project"
+	var pf := FileAccess.open(proj_path, FileAccess.WRITE)
+	pf.store_string(JSON.stringify({"propertyTypes": [{"id": 1, "name": "Linked", "type": "class",
+		"useAs": ["object"], "members": [{"name": "link", "type": "object", "value": 0}]}]}, "    "))
+	pf.close()
+	var path := OUT + "unset_refs.tmx"
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_string("""<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="8" height="8" tilewidth="16" tileheight="16" infinite="0" nextlayerid="2" nextobjectid="5">
+ <objectgroup id="1" name="Things">
+  <object id="1" name="Holder" class="Linked" x="16" y="16"><point/></object>
+  <object id="2" name="Target" x="48" y="16"><point/></object>
+  <object id="3" name="Lister" x="80" y="16">
+   <properties>
+    <property name="own" type="object" value="0"/>
+    <property name="items" type="list">
+     <item type="object" value="0"/>
+     <item type="object" value="2"/>
+     <item type="object" value="0"/>
+    </property>
+   </properties>
+   <point/>
+  </object>
+  <object id="4" name="Dangler" x="112" y="16">
+   <properties>
+    <property name="items" type="list">
+     <item type="object" value="77"/>
+    </property>
+   </properties>
+   <point/>
+  </object>
+ </objectgroup>
+</map>
+""")
+	f.close()
+	var imp := _new_importer({"warn_unknown_classes": false})
+	var m := _import_with(imp, path, proj_path)
+	if m == null: return
+	eq(imp.get("last_warning_count"), 1, "unset refs: warnings (Dangler's 77 only)")
+	var msgs: Variant = imp.get("last_messages")
+	if check(msgs is Array and (msgs as Array).size() == 1, "unset refs: last_messages " + str(msgs)):
+		check(str((msgs as Array)[0].get("text", "")).contains("id 77"), "unset refs: the warning is 77's")
+	meta(need(m, "Holder"), "link", NodePath())
+	var lister := need(m, "Lister", "Marker2D")
+	if lister:
+		meta(lister, "own", NodePath())
+		var items: Variant = lister.get_meta("items", null)
+		if check(items is Array and (items as Array).size() == 3, "Lister items: " + str(items)):
+			eq(items[0], NodePath(), "Lister items[0]")
+			_check_ref(lister, items[1], "Target", "Lister items[1]")
+			eq(items[2], NodePath(), "Lister items[2]")
 
 
 func test_new_object_ref_in_group_layer() -> bool:

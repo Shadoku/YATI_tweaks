@@ -187,11 +187,10 @@ function checkProperties(props, holder, ctx, where, push, isTileset, objectIds, 
 
 function checkObjectRefs(p, ctx, where, push, objectIds) {
 	if (p.type === "object") {
+		// An unset reference (0) is Tiled's "no object": the importers give an empty NodePath
+		// silently, so it is no finding (a class's NodePath member defaults to it).
 		const id = Number(p.value);
-		if (!id) {
-			push("warning", "unset-object-ref", where + ": object property '" + p.name + "' is not set" +
-				(p.fromClass ? " (its class's default)" : "") + "; the importer gives an empty NodePath.");
-		} else if (objectIds !== null && objectIds[id] !== true) {
+		if (id && objectIds !== null && objectIds[id] !== true) {
 			push("warning", "dangling-object-ref", where + ": object property '" + p.name + "' names object " + id +
 				", which this map does not have; the importer gives an empty NodePath.");
 		}

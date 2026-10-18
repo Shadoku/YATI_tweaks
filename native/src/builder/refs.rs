@@ -108,21 +108,18 @@ impl Build<'_> {
             .cloned()
     }
 
-    /// `get_object_ref_path`: the NodePath from `node` to the node of object `id` (an empty
-    /// one, with a warning, for an unset reference or an id no imported object has).
+    /// `get_object_ref_path`: the NodePath from `node` to the node of object `id`: an empty one
+    /// for an unset reference (id 0, Tiled's "no object", e.g. a class member's default),
+    /// silently; also for an id no imported object has, with a warning.
     fn ref_path(&mut self, node: &Gd<Node>, name: &str, id: i64) -> NodePath {
         match self.object_node(id) {
             Some(t) => node.get_path_to(&t),
+            None if id == 0 => NodePath::default(),
             // A streamer's target may simply not be spawned yet: resolved when it is
             None if self.skel.is_some() => NodePath::default(),
             None => {
-                let what = if id == 0 {
-                    "is not set".to_string()
-                } else {
-                    format!("names no imported object (id {id})")
-                };
                 self.diag.warn(format!(
-                    " -- Object property '{name}' of '{}' {what}. -> Empty NodePath",
+                    " -- Object property '{name}' of '{}' names no imported object (id {id}). -> Empty NodePath",
                     node.get_name()
                 ));
                 NodePath::default()

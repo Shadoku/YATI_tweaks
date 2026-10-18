@@ -67,10 +67,10 @@ YATI_CHECK result 0 2 15 0" -- "$FIX/scenes.tmx"
 check scenes_project 0 "YATI_CHECK warning 6 Property 'hp' of 'Broken': a Tiled 'string' value does not fit its type int. -> Stored as metadata
 YATI_CHECK result 0 1 10 0" -- "$FIX/scenes.tmx" --project=$FIX/scenes.tiled-project '--class_scenes={"enemy": "res://test/fixtures/enemy.tscn"}'
 
-# Object references: two warnings on Door (Area), id 1
+# Object references: a warning on Door (Area), id 1, for its dangling reference (its unset one,
+# 0, is silent)
 check object_refs 0 "YATI_CHECK warning 1 Object property 'missing' of 'Door (Area)' names no imported object (id 999). -> Empty NodePath
-YATI_CHECK warning 1 Object property 'unset' of 'Door (Area)' is not set. -> Empty NodePath
-YATI_CHECK result 0 2 12 0" -- "$FIX/object_refs.tmx"
+YATI_CHECK result 0 1 12 0" -- "$FIX/object_refs.tmx"
 
 # An error: exit code 1
 check missing_tileset 1 "YATI_CHECK error - Tileset file 'does_not_exist.tsx' not found. -> Continuing but result may be unusable

@@ -104,7 +104,7 @@ tiles. Its members:
 | `bool` | `bool` |
 | `String`, `StringName`, `@export_multiline`, `@export_placeholder`, `@export_dir` | `string` |
 | `Color`, `@export_color_no_alpha` | `color` (`Color()` without a default: opaque black) |
-| `NodePath`, `@export_node_path(...)`, a Node type (`Node2D`, a `class_name` extending a node) | `object`: the importer turns it into a `NodePath` or the node (F2) |
+| `NodePath`, `@export_node_path(...)`, a Node type (`Node2D`, a `class_name` extending a node) | `object` (0, unset): the importer turns it into a `NodePath` or the node (F2); left unset, an empty `NodePath` without a warning |
 | a Resource type (`Texture2D`, `PackedScene`, a `class_name` extending `Resource`), `@export_file` | `file`: the importer loads it (F1); a `res://` default becomes a path relative to the project file, `user://` none |
 | a script enum (`Mood`, `Other.Mood`) | an enum named `<declaring class>.<Enum>` (`Enemy.Mood`; a script without `class_name` by its file name, `BaseUnit.Team`), stored as string, values the constant names: the importer matches them by name |
 | `@export_enum("A", "B:5")` | an enum `<class>.<variable>` (`Enemy.gait`), values `A`, `B` |
@@ -141,8 +141,7 @@ When a map or tileset is saved (and `yati_validate` is not `false`), each findin
 | an object class that is no mapping-table class, no class of the project and has no `godot_node_type` (with a hint when only the case differs: the project's classes are case-sensitive) | warning | B8: the importer makes it `unknown_class_fallback` (a StaticBody2D), unless the game's `class_scenes` maps it, which the extension cannot see |
 | class `instance` without `res_path` | error | the importer skips the object |
 | `res_path`, `godot_scene` or `godot_script` naming a file that does not exist (`res://` against the Godot project, a class's default against the project file, else against the map) | error | the import fails for that object |
-| an `object` property left at 0, also a class's default the object does not override | warning | F2: an empty `NodePath` and a warning |
-| an `object` property (or list item) naming an id the map does not have | warning | F2: the same |
+| an `object` property (or list item) naming an id the map does not have | warning | F2: an empty `NodePath` and a warning (one left at 0, unset, is no finding: the importers give an empty `NodePath` silently) |
 | a template file that does not exist | error | read from the map file as last saved: the API does not expose an object's template |
 | a layer mask (`collision_layer`, `collision_mask`, `navigation_layers`, `light_mask`, `visibility_layer`, `platform_floor_layers`, `platform_wall_layers`, `parsed_collision_mask`, `occluder_light_mask`, the tileset's `_n` forms and `layers_n`) whose string names a layer its enum does not have, or names layers without being of the enum's type (the importer then reads layer numbers) | warning | F5 |
 | a `godot_node_type` outside `GodotNodeType` | warning | the importer warns and falls back |

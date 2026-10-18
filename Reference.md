@@ -637,8 +637,10 @@ layer is built, to the node created for that object:
 - **Lists:** a property of type `list` whose items are objects becomes an `Array[NodePath]`; a list mixing
   objects with other items an untyped Array with a `NodePath` for each object item. A property of the same
   name typed `Array[NodePath]` or `Array[Node]` (or a Node class) gets it as that array.
-- **Unset or dangling:** an object property that is not set (id 0) or names an id no imported object has (a
-  deleted object, one on a layer with `no_import`) gives an empty `NodePath()` and a warning.
+- **Unset or dangling:** an object property that is not set (id 0, Tiled's "no object", also a class member's
+  default the object does not override, or a list item of 0) gives an empty `NodePath()` silently. One that
+  names an id no imported object has (a deleted object, one on a layer with `no_import`) gives an empty
+  `NodePath()` and a warning.
 - The map's own object properties resolve from the root node; on a single-layer map without
   `always_wrap_root` from the layer that is returned.
 

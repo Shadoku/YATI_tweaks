@@ -33,6 +33,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against a fake of Tiled's documented API, with a sample Godot project and the `.tiled-project`
   it produces. No Tiled ran yet: its README has the manual checklist.
 
+### Changed
+- F2, both importers: an unset object reference (id 0, Tiled's "no object": an object property left empty, a
+  class member's default the object does not override, a list item of 0) resolves to an empty `NodePath()`
+  silently, no longer with a warning; a dangling id (no imported object has it) still warns. The Tiled extension
+  generates an `object` member for every `NodePath` or Node export of a scene, so every object leaving one
+  unset warned. The extension's validation on save no longer reports unset references either.
+
 ## [3.1.0] — 2026-10-18
 
 The runtime improvement plan (`docs/runtime-improvement-plan.md`: bug fixes B1 to B10, features

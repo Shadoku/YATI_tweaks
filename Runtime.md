@@ -338,7 +338,8 @@ step with the game:
   member (read with `read_godot_scene_from_custom_types`) and one member per `@export`, typed so
   that `assign_node_properties` can assign it.
 - Saving a map reports the mistakes an import would warn about (unknown classes, `instance`
-  without `res_path`, missing files, unset object references, mask names no layer enum has).
+  without `res_path`, missing files, object references to ids the map does not have, mask names no
+  layer enum has).
 - *YATI: Check map in Godot* runs `addons/yati_native/check_map.gd` on the map headless with the
   project's options (`yati_import_options`) and lists each message as an Issue that selects its
   object.

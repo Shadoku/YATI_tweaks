@@ -133,7 +133,7 @@ in pixels), `map_size_tiles`, `tile_size` and `orientation`. `WorldLoader.gd`:
 | `class_scenes` | `{}` | Tiled class (case-insensitive) to a scene path: its objects become instances |
 | `read_godot_scene_from_custom_types` | `true` | a project class's `godot_scene` member maps the class to that scene |
 | `assign_node_properties` | `true` | custom properties named like a node property set it (typed; a class of members `x` and `y` fits a `Vector2` / `Vector2i`); `_tiled_import(info)` is called |
-| `object_refs` | `"nodepath"` | object properties: a NodePath to the target's node; `"geometry"`: its points; `"both"` |
+| `object_refs` | `"nodepath"` | object properties: a NodePath to the target's node (an unset one, 0, an empty NodePath silently; a dangling id an empty one with a warning); `"geometry"`: its points; `"both"` |
 | `share_tilesets` | `true` | native only: use the shared TileSet cache (below); off, every import builds its own |
 | `async_tiles_per_frame` | `256` | native only: `import_async`'s TileSet tiles created per frame |
 

@@ -19,7 +19,6 @@ const brief = (f) => f.severity + " " + f.code + " #" + f.objectId;
 test("mistakes.tmx: each mistake found once, fine objects not", () => {
 	const findings = check(path.join(MAP_FIXTURES, "mistakes.tmx"), path.join(MAP_FIXTURES, "game.tiled-project"), GODOT_FIXTURE);
 	assert.deepEqual(findings.map(brief), [
-		"warning unset-object-ref #0",		// the map's "start"
 		"warning mask-unknown-name #0",		// layer Units: collision_layer "Bogus"
 		"warning unknown-class #2",			// Gohst
 		"warning unknown-class #3",			// enemy (case)
@@ -32,8 +31,6 @@ test("mistakes.tmx: each mistake found once, fine objects not", () => {
 		"warning mask-unknown-name #20",		// visibility_layer Lights,Nope
 		"warning dangling-object-ref #21",	// 99
 		"warning dangling-object-ref #21",	// many[1] = 98
-		"warning unset-object-ref #21",		// unset
-		"warning unset-object-ref #22",		// Door's target, the class's default
 		"error missing-template #10",
 	]);
 	const text = (code, id) => findings.find((f) => f.code === code && f.objectId === id).text;
@@ -41,9 +38,11 @@ test("mistakes.tmx: each mistake found once, fine objects not", () => {
 	assert.match(text("unknown-class", 2), /^Object 'Ghost' \(id 2, layer Units\): class 'Gohst'/);
 	assert.match(text("missing-file", 5), /res_path names \/.*\/maps\/chest\.tscn, which does not exist/);
 	assert.match(text("missing-template", 10), /template 'missing\.tx' does not exist/);
-	assert.match(text("unset-object-ref", 22), /its class's default/);
-	assert.match(findings[1].text, /^Layer 'Units': mask 'collision_layer' names 'Bogus', which GodotPhysicsLayers does not have/);
-	assert.equal(findings[1].layerId, 1);
+	// Unset references (the map's "start", Pointer's "unset", FrontDoor's target from its class's
+	// default) are no findings: the importers give an empty NodePath silently.
+	assert.equal(findings.filter((f) => /object-ref/.test(f.code) && f.objectId !== 21).length, 0);
+	assert.match(findings[0].text, /^Layer 'Units': mask 'collision_layer' names 'Bogus', which GodotPhysicsLayers does not have/);
+	assert.equal(findings[0].layerId, 1);
 	const masks = findings.filter((f) => f.objectId === 20).map((f) => f.text);
 	assert.match(masks[0], /names 'Ghosts', which GodotPhysicsLayers does not have/);
 	assert.match(masks[1], /give it the type GodotPhysicsLayers/);
@@ -77,9 +76,9 @@ test("the importer's fixtures: what the importers would warn about", () => {
 	// unknown_class.tmx (B8): Door three times, Lever once; Wall has no class.
 	const unknown = check(path.join(IMPORTER_FIXTURES, "unknown_class.tmx"));
 	assert.deepEqual(unknown.map(brief), ["warning unknown-class #1", "warning unknown-class #2", "warning unknown-class #3", "warning unknown-class #4"]);
-	// object_refs.tmx (F2): the dangling 999 and the unset 0 of Door.
+	// object_refs.tmx (F2): the dangling 999 of Door; its unset 0 is silent, as in the importers.
 	const refs = check(path.join(IMPORTER_FIXTURES, "object_refs.tmx"));
-	assert.deepEqual(refs.map(brief), ["warning dangling-object-ref #1", "warning unset-object-ref #1"]);
+	assert.deepEqual(refs.map(brief), ["warning dangling-object-ref #1"]);
 	// masks.tmx (F5) with its project: every mask is fine (ints, names of its enums, numbers).
 	assert.deepEqual(check(path.join(IMPORTER_FIXTURES, "masks.tmx"), path.join(IMPORTER_FIXTURES, "masks.tiled-project")), []);
 	// scenes.tmx (F1) with its project: "enemy" is not the project's "Enemy"; Elite's godot_scene

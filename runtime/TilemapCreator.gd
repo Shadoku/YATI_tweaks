@@ -2530,13 +2530,15 @@ func resolve_object_refs() -> void:
 			assign_object_ref(node, name, path, _nodes_by_object_id.get(target_id))
 
 
-# The NodePath from node to the node of the object target_id (an empty NodePath, with a warning,
-# for an unset reference or an id no imported object has)
+# The NodePath from node to the node of the object target_id: an empty NodePath for an unset
+# reference (id 0, Tiled's "no object", e.g. a class member's default), silently; also for an id
+# no imported object has, with a warning
 func get_object_ref_path(node: Node, name: String, target_id: int) -> NodePath:
-	var target = _nodes_by_object_id.get(target_id) if target_id != 0 else null
+	if target_id == 0:
+		return NodePath()
+	var target = _nodes_by_object_id.get(target_id)
 	if target == null or not is_instance_valid(target):
-		var what := "is not set" if target_id == 0 else "names no imported object (id " + str(target_id) + ")"
-		CommonUtils.report_warning(" -- Object property '" + name + "' of '" + str(node.name) + "' " + what + ". -> Empty NodePath", WARNING_COLOR)
+		CommonUtils.report_warning(" -- Object property '" + name + "' of '" + str(node.name) + "' names no imported object (id " + str(target_id) + "). -> Empty NodePath", WARNING_COLOR)
 		return NodePath()
 	return node.get_path_to(target)
 

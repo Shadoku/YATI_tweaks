@@ -206,7 +206,7 @@ test("save hook: the validator's findings as Issues; activation selects the obje
 	const map = s.fake.openFile(path.join(s.maps, "mistakes.tmx"));
 	s.fake.emitAboutToBeSaved(map);
 	const issues = s.fake.out.issues;
-	assert.equal(issues.length, 16);
+	assert.equal(issues.length, 13);
 	assert.ok(issues.every((i) => i.text.indexOf("YATI: mistakes.tmx: ") === 0));
 	assert.equal(issues.filter((i) => i.severity === "error").length, 4);
 	const ghost = issues.find((i) => i.text.indexOf("'Gohst'") >= 0);
@@ -215,12 +215,12 @@ test("save hook: the validator's findings as Issues; activation selects the obje
 	const layer = issues.find((i) => i.text.indexOf("Layer 'Units'") >= 0);
 	layer.activate();
 	assert.equal(s.fake.api.tiled.activeAsset.currentLayer.name, "Units");
-	assert.ok(s.fake.out.logs.indexOf("YATI: mistakes.tmx: 16 finding(s), see the Issues view.") >= 0);
+	assert.ok(s.fake.out.logs.indexOf("YATI: mistakes.tmx: 13 finding(s), see the Issues view.") >= 0);
 	// The tileset of the map, saved on its own.
 	const ts = s.fake.openFile(path.join(s.maps, "mistakes.tsx"));
 	s.fake.emitAboutToBeSaved(ts);
-	assert.equal(issues.length, 18);
-	assert.match(issues[17].text, /^YATI: mistakes\.tsx: Tileset 'mistake_tiles'/);
+	assert.equal(issues.length, 15);
+	assert.match(issues[14].text, /^YATI: mistakes\.tsx: Tileset 'mistake_tiles'/);
 });
 
 test("save hook: yati_validate = false turns it off; a clean map files nothing; no project still validates", () => {
