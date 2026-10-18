@@ -1,5 +1,6 @@
 #!/bin/sh
-# Runs the native importer's smoke test, the YATI runtime test suite and the benchmark headless.
+# Runs the native importer's smoke test, the YATI runtime test suite, the benchmark and (with the
+# native library) the native importer's async test headless.
 # Usage: GODOT=/path/to/godot test/run_all.sh [--runtime=res://runtime]
 #        (--runtime=res://addons/yati_native tests the native importer's facade)
 set -e
@@ -41,4 +42,10 @@ fi
 
 "$GODOT" --headless -s test/run_tests.gd -- "$RUNTIME" || status=$?
 "$GODOT" --headless -s test/benchmark.gd -- "$RUNTIME"
+
+# The native importer's asynchronous import and shared TileSet cache (stage 3 of
+# docs/native-importer-plan.md), on the benchmark's map: needs the library, not a runtime.
+if [ "$HAVE_NATIVE" = true ]; then
+	"$GODOT" --headless -s test/test_async.gd || status=$?
+fi
 exit $status

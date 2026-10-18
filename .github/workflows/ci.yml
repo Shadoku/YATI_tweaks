@@ -62,7 +62,10 @@ jobs:
           echo "res://addons/yati_native/yati_native.gdextension" > .godot/extension_list.cfg
           "$GODOT" --headless --path . -s tools/smoke_native.gd
 
-      - name: Test the GDScript runtime (smoke test, test suite, benchmark)
+      # Also runs test/test_async.gd: the native importer's asynchronous import of the benchmark
+      # map (no frame before the build above 5 ms, the tree equal to the synchronous import's),
+      # the shared TileSet cache and cancellation without leaks (stage 3).
+      - name: Test the GDScript runtime (smoke test, test suite, benchmark) and the native async import
         run: sh test/run_all.sh --runtime=res://runtime
 
       # The same suite against the native importer's facade (stage 2's gate).

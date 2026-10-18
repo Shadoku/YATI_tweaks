@@ -28,8 +28,8 @@ it names the native importer's GDExtension in `.godot/extension_list.cfg` when t
 is in place (Godot loads an extension only when that file names it, and a fresh `.godot/`'s first import
 that discovers one mid-scan aborts at shutdown with exit code 134 on Godot 4.7.2), imports the project
 (the fixtures' images are imported textures, so a fresh clone needs it), runs the native smoke test,
-then the tests and the benchmark. Without the library the smoke test is skipped, unless the runtime
-under test is the native one.
+then the tests, the benchmark and, with the library, `test/test_async.gd` (below). Without the
+library the smoke test and the async test are skipped, unless the runtime under test is the native one.
 
 ```sh
 # 4. What the engine itself charges for a map's tile layers (no importer involved): assigning
@@ -117,9 +117,23 @@ godot --headless -s test/run_tests.gd -- --runtime=res://addons/yati_native
 # classes (parse = TiledMap.load, tilesets = TiledTileSets.tileset_for)
 godot --headless -s test/benchmark.gd -- --runtime=res://addons/yati_native
 
-# Leaks (every fixture imported and freed 20 times), the small map's time, the engine's floor
+# Leaks (every fixture imported and freed 20 times), the small map's time (synchronous and with
+# import_async), the engine's floor
 godot --headless -s tools/native_gate.gd          # -- --runtime=res://runtime for the GDScript one
+
+# The asynchronous import and the shared TileSet cache (stage 3): the benchmark map imported with
+# Importer.import_async() while every frame's main-thread time is measured (no frame before the
+# build above 5 ms, the build frame against the synchronous build, the same tree), a second map on
+# the same tilesets creating no TileSet, the exclusive shared cache, the project file in the key,
+# cancelling mid-parse and mid-texture-load without leaks, TiledMap's signals, zip and failures.
+# Generates the benchmark map (test/benchmark.gd) when it is missing. Options: --rounds=N (3).
+godot --headless -s test/test_async.gd
 ```
+
+`test_async.gd` turns the engine's headless frame sleep off (`OS.low_processor_usage_mode_sleep_usec
+= 0`; headless Godot otherwise pads every frame to 6.9 ms, since it cannot draw), so the wall time of
+a frame is the main thread's work in it. `test/run_all.sh` runs it after the benchmark whenever this
+platform's library is in place.
 
 The facade has no `DataLoader.gd` (the zip archive is per call), so the suite's zip mode reset
 skips it; its `CommonUtils.gd` holds the error and warning counters of the last import, which

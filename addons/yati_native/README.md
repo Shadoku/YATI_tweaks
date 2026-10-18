@@ -10,11 +10,12 @@ changing one preload path.
 The plan, the measurements behind it and the stages:
 [docs/native-importer-plan.md](../../docs/native-importer-plan.md).
 
-## Status: stage 2 (the one-shot builder and the facade)
+## Status: stage 3 (asynchronous loading and shared caches)
 
 Maps import natively and the GDScript runtime's test suite (`test/run_tests.gd`) passes against
-this facade. Asynchronous loading (stage 3) and the streamer for infinite maps (stage 4) are not
-there yet: an import is one synchronous call on the main thread.
+this facade. `import_async()` imports a map during play without a hitch (the parse on a worker
+thread, the build in one frame), and TileSets and textures are cached across imports. The
+streamer for infinite maps (stage 4) is not there yet.
 
 ## Requirements
 
@@ -56,6 +57,90 @@ if map != null:
 print(importer.last_error_count, " errors, ", importer.last_warning_count, " warnings")
 ```
 
+### Importing during play: `import_async`
+
+```gdscript
+const Importer = preload("res://addons/yati_native/Importer.gd")
+
+var importer := Importer.new()
+
+func enter_room(path: String) -> void:
+	var room: Node = await importer.import_async(path)   # the game keeps running meanwhile
+	if room != null:
+		add_child(room)
+```
+
+`import_async(map, project = "")` and `import_from_zip_async(zip, map_in_zip, project_in_zip = "")`
+are coroutines with the results of `import()` / `import_from_zip()` (the same tree, the same
+`last_error_count` / `last_warning_count` and summary line). Frame by frame:
+
+1. `TiledMap.load_async`: the map, its tilesets, templates and project file are parsed on a worker
+   thread. Each frame the main thread polls it once: it reads the files the parse asks for (two or
+   three rounds) with `FileAccess` and hands them over, which costs about a millisecond per
+   megabyte read; the frames in between cost nothing.
+2. The map's imported (`res://`) textures load in the engine's threads
+   (`ResourceLoader.load_threaded_request`) from the moment the parse names them.
+3. The TileSets the map needs are created `async_tiles_per_frame` tiles per frame (default 256),
+   unless the cache has them already.
+4. The tree is built in one frame: the same work as `import()` without the parse, mostly the
+   engine's own `tile_map_data` assignment and node creation (section 1.3 of the plan). That frame
+   is the hitch that is left, and only a large map makes it long: the benchmark map's 522 358 cells
+   and 2 720 objects take about 170 ms in it; a small map (60 × 33 cells) about 1 ms. Larger maps
+   are what the streamer (stage 4) is for.
+
+On the benchmark map no frame before the build costs more than 2 to 3 ms of main-thread time (the
+first one, which reads the 2 MB file). The coroutine keeps its importer alive
+(`await Importer.new().import_async(path)` works); await it from an object that outlives it.
+
+The same steps by hand, with the classes (for a loading screen with progress, say):
+
+```gdscript
+var map = ClassDB.instantiate("TiledMap")
+map.load_async("res://maps/level.tmx", "")
+while map.poll() < map.READY:      # READING, PARSING, WAITING_FILES, then READY or FAILED
+	await get_tree().process_frame
+if map.get_status() == map.READY:
+	var tilesets: RefCounted = Importer.shared_tilesets()
+	while not tilesets.build_step(map, null, 256):
+		await get_tree().process_frame
+	add_child(ClassDB.instantiate("TiledBuilder").build(map, tilesets, null))
+```
+
+`map.cancel()` stops a load (its thread ends on its own, texture requests already made are
+collected in the next frames); freeing the `TiledMap` mid-load does the same. `loaded` and `failed`
+are emitted from the `poll()` that ends a load, so `await map.loaded` works while something else
+polls.
+
+### Shared TileSets and textures
+
+With `share_tilesets` on (the default), every `Importer` uses one TileSet cache,
+`Importer.shared_tilesets()` (a `TiledTileSets`): a map whose tileset combination an earlier import
+built gets that TileSet instead of a new one. The combination is the ordered list of tilesets with
+their first gids (paths of external tilesets, a hash of embedded ones), the map's tile size,
+orientation and stagger, the zip archive, the project file's types, and the options that shape a
+TileSet (`custom_data_prefix`, `map_wangset_to_terrain`, `animation_mode`, `no_alternative_tiles`).
+
+- **Shared by reference.** A cached TileSet is the very object a previous map used: the builder
+  adds the tiles and alternative tiles each map needs to it, and a change a game makes to it (a
+  tile's modulate, a custom data value) shows in every later map that gets it.
+- **Exclusive.** The shared cache hands a TileSet only to a map no live tree shares it with: while
+  a tree holds it, an import of a map with the same tilesets gets a second one (cached too), so
+  two trees alive at once never share a TileSet, as with the GDScript runtime. A map loaded after
+  the previous one's tree was freed reuses it: no TileSet creation. Set
+  `Importer.shared_tilesets().exclusive = false` to share one TileSet between live trees as well
+  (one TileSet per combination, whatever is alive).
+- **Messages.** A cached TileSet's warnings and errors are printed and counted by every import that
+  uses it, so the counts of an import do not depend on what the cache holds.
+- **`save_tileset_to`** makes an import build its own TileSet (the saved file is that map's).
+- **Files that change.** The cache keys on paths, not on file contents: after a tileset or image
+  changed on disk (a mod, a generated `user://` file), call `Importer.shared_tilesets().clear()`
+  (TileSets) and `.clear_textures()` (the per-process texture cache, which every `TiledTileSets`
+  uses). Cached TileSets and textures stay in memory until then.
+
+`share_tilesets = false` gives every import its own fresh cache (stage 2's behaviour).
+
+### The other methods
+
 `import(map, project = "")`, `import_from_zip(zip, map_in_zip, project_in_zip = "")`,
 `import_with_post_processing(map, script, project = "")` and
 `import_from_zip_with_post_processing(...)` behave as the GDScript runtime's
@@ -72,8 +157,8 @@ through `ClassDB` if the script must compile without the library):
 | Class | What |
 |---|---|
 | `TiledImportOptions` (Resource) | every option, same names and defaults as the facade's variables |
-| `TiledMap` | `load(path, project_file) -> Error`, `from_zip(zip, path_in_zip, project_in_zip) -> Error`; `is_loaded()`, `get_path()`, `get_size()` (cells), `get_tile_size()`, `get_orientation()`, `is_infinite()`, `get_layers()` (`{name, type, id, depth}` per layer, depth first), `to_dictionary()` (the GDScript runtime's `DictionaryBuilder` dictionary of the map, custom types merged), `get_errors()`, `get_warnings()` |
-| `TiledTileSets` | the TileSet builder and its cache: `tileset_for(map, options) -> TileSet` (built on first use, then cached per tileset combination), `clear()`, `get_cached_count()`, `get_last_error_count()`, `get_last_warning_count()`; textures cached per path |
+| `TiledMap` | `load(path, project_file) -> Error`, `from_zip(zip, path_in_zip, project_in_zip) -> Error`; `load_async(...)`, `from_zip_async(...)`, then `poll() -> int` once per frame (`READING`, `PARSING`, `WAITING_FILES`, `READY`, `FAILED`), `get_status()`, `cancel()`, signals `loaded` and `failed`; `is_loaded()`, `get_path()`, `get_size()` (cells), `get_tile_size()`, `get_orientation()`, `is_infinite()`, `get_layers()` (`{name, type, id, depth}` per layer, depth first), `to_dictionary()` (the GDScript runtime's `DictionaryBuilder` dictionary of the map, custom types merged), `get_errors()`, `get_warnings()` |
+| `TiledTileSets` | the TileSet builder and its cache: `tileset_for(map, options) -> TileSet` (built on first use, then cached per tileset combination and shared by reference with every later map), `build_step(map, options, tiles_per_step) -> bool` (create a map's TileSets a few tiles per call; true when ready), `exclusive` (hand a TileSet only to a map no live tree shares it with), `clear()`, `clear_textures()` (the per-process texture cache), `get_cached_count()`, `get_created_count()`, `get_texture_count()`, `get_last_error_count()`, `get_last_warning_count()` |
 | `TiledBuilder` | `build(map, tilesets, options) -> Node`: the whole tree in one call, the root parentless; `get_error_count()`, `get_warning_count()`, `get_messages()` of that build |
 | `TiledNative` | `version()`, and `sum()` for the smoke test |
 
@@ -85,7 +170,10 @@ if map.load("res://maps/desert.tmx", "") == OK:
 ```
 
 Files are read on the main thread through `FileAccess`, so `res://` paths inside an exported
-.pck work; images through `ResourceLoader` (imported textures) or `Image.load_from_file`.
+.pck work; images through `ResourceLoader` (imported textures; in the engine's threads during an
+asynchronous load) or `Image.load_from_file`. The worker thread of an asynchronous load runs
+the pure-Rust core only (`native/tiled/`, which does not depend on Godot); godot-rust's
+`experimental-threads` is not used.
 `TiledMap.load` prints the load's errors and warnings as the runtime words them; `build` prints
 its own. The facade adds both counts up and prints the runtime's summary line.
 

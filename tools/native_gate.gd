@@ -6,7 +6,11 @@ extends SceneTree
 ##   must be back at their values after the warm-up round. Exit code 1 if not. A few frames run
 ##   before each count: the servers release what freed nodes handed them (navigation regions'
 ##   polygons, for one) only on their next iteration.
-## - small map: test/fixtures/layers.tmx imported 10 times warm, the mean and the minimum.
+## - small map: test/fixtures/layers.tmx imported 10 times warm, the mean and the minimum; and
+##   10 times with import_async() (stage 3; a runtime without it is skipped): the frames it
+##   takes, its wall time from the call to the tree, and the main thread's worst frame and build
+##   frame (the engine's headless frame sleep turned off meanwhile, so a frame's wall time is
+##   its work).
 ## - engine floor (when test/benchmark.gd has generated its map): the benchmark's tiles-only map
 ##   imported, against the engine assigning the same six layers' tile_map_data blobs to fresh
 ##   layers (what no importer can go below), each the best of 3.
@@ -43,6 +47,7 @@ func _initialize() -> void:
 func main(script: GDScript) -> void:
 	var ok: bool = await check_leaks(script)
 	small_map(script)
+	await small_map_async(script)
 	engine_floor(script)
 	quit(0 if ok else 1)
 
@@ -111,6 +116,48 @@ func small_map(script: GDScript) -> void:
 		total += v
 		lo = minf(lo, v)
 	print("native_gate: small map layers.tmx, %d warm imports: mean %.2f ms, min %.2f ms" % [times.size(), total / times.size(), lo])
+
+
+func small_map_async(script: GDScript) -> void:
+	if not script.new().has_method("import_async"):
+		print("native_gate: small map async skipped (the runtime has no import_async)")
+		return
+	var path := FIX + "layers.tmx"
+	var sleep := OS.low_processor_usage_mode_sleep_usec
+	OS.low_processor_usage_mode_sleep_usec = 0
+	var stamps: PackedInt64Array = []
+	var on_frame := func() -> void: stamps.append(Time.get_ticks_usec())
+	process_frame.connect(on_frame)
+	var walls: Array[float] = []
+	var frames: Array[int] = []
+	var worst := 0.0
+	var builds: Array[float] = []
+	for i in range(11):
+		var imp: Object = script.new()
+		await process_frame
+		stamps.clear()
+		var t := Time.get_ticks_usec()
+		stamps.append(t)
+		var n: Node = await imp.call("import_async", path, "")
+		var t_done := Time.get_ticks_usec()
+		if n != null:
+			n.free()
+		if i == 0:
+			continue
+		walls.append((t_done - t) / 1000.0)
+		frames.append(stamps.size())
+		for k in range(stamps.size() - 1):
+			worst = maxf(worst, (stamps[k + 1] - stamps[k]) / 1000.0)
+		builds.append((t_done - stamps[stamps.size() - 1]) / 1000.0)
+	process_frame.disconnect(on_frame)
+	OS.low_processor_usage_mode_sleep_usec = sleep
+	var wall_sum := 0.0
+	var build_sum := 0.0
+	for k in range(walls.size()):
+		wall_sum += walls[k]
+		build_sum += builds[k]
+	print("native_gate: small map layers.tmx, %d warm async imports: %d to %d frames, wall mean %.2f ms (min %.2f), worst frame before the build %.2f ms, build frame mean %.2f ms" % [
+		walls.size(), frames.min(), frames.max(), wall_sum / walls.size(), walls.min(), worst, build_sum / builds.size()])
 
 
 func engine_floor(script: GDScript) -> void:
