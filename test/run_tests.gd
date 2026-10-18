@@ -1360,6 +1360,36 @@ func test_bug_layer_class_meta() -> bool:
 	return done()
 
 
+func test_bug_template_flipped_gid() -> bool:
+	# B2: a template instance that saves its own gid (flipped in Tiled) or text fell through
+	# to the gid / text branches after the template's object was created: a second node
+	# (a "_tile" Sprite2D at scale 0.00001, or a second Label).
+	var n := _import("templates.tmx")
+	if n == null: return done()
+	var objs := n # a single layer: the object layer is the root
+	var sprites := children_of_type(objs, "Sprite2D")
+	eq(sprites.size(), 2, "Sprite2D count (Flipped, Plain)")
+	check(find(n, "terrain_tile") == null and find(n, "tiles_tile") == null, "extra '_tile' sprite created")
+	var f := need(objs, "Flipped", "Sprite2D") as Sprite2D
+	if f:
+		check(f.flip_h, "Flipped: flip_h not set from the instance's gid")
+		check(not f.flip_v, "Flipped: flip_v set")
+		eq(f.region_rect, Rect2(32, 0, 16, 16), "Flipped region (gid 3)")
+		eq(f.position, Vector2(16, 32), "Flipped position")
+		meta(f, "kind", "probe")
+	var p := need(objs, "Plain", "Sprite2D") as Sprite2D
+	if p: check(not p.flip_h, "Plain flipped")
+	var labels := children_of_type(objs, "Label")
+	eq(labels.size(), 1, "Label count")
+	var l := need(objs, "SignB", "Label") as Label
+	if l:
+		eq(l.text, "Instance text", "instance text overrides the template's")
+		eq(l.get_theme_color("font_color"), Color(1, 0, 0, 1), "instance text colour")
+		eq(l.get_theme_font_size("font_size"), 12, "template pixel size kept")
+		eq(l.horizontal_alignment, HORIZONTAL_ALIGNMENT_CENTER, "template halign kept")
+	return done()
+
+
 # ---------------------------------------------------------------------------
 # Zip (keep last: the pre-change runtime leaks zip mode, see _reset_zip_mode)
 

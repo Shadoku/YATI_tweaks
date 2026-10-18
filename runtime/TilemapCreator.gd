@@ -1085,8 +1085,21 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 					template_obj["name"] = obj["name"]
 				if obj.has("opacity"):
 					template_obj["opacity"] = obj["opacity"]
+				# An instance's own text (TMX spec: attributes saved on the instance override the template's)
+				if obj.has("text") and obj["text"] is Dictionary:
+					if template_obj.has("text") and template_obj["text"] is Dictionary:
+						template_obj["text"].merge(obj["text"], true)
+					else:
+						template_obj["text"] = obj["text"]
+				# An instance's own gid (a flipped instance saves one) is a gid of the map's tilesets
+				var obj_tileset = template_tileset
+				if obj.has("gid"):
+					template_obj["gid"] = obj["gid"]
+					obj_tileset = tileset
 
-				handle_object(template_obj, layer_node, template_tileset, Vector2(obj_x, obj_y))
+				handle_object(template_obj, layer_node, obj_tileset, Vector2(obj_x, obj_y))
+		# Everything the instance defines went into the template's object(s) above
+		return
 
 	# v1.2: New class 'instance'
 	if godot_type == _godot_type.INSTANCE and not obj.has("template") and not obj.has("text") and not obj.has("gid"):
@@ -1115,7 +1128,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				handle_properties(instance, obj["properties"])
 		return
 
-	if obj.has("gid"):
+	if obj.has("gid") and not obj.has("template"):
 		# gid refers to a tile in a tile set and object is created as sprite
 		var int_id: int = obj["gid"]
 		var flippedH = (int_id & FLIPPED_HORIZONTALLY_FLAG) > 0
@@ -1288,7 +1301,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 		if obj.has("properties"):
 			handle_properties(obj_sprite, obj["properties"])
 
-	elif obj.has("text"):
+	elif obj.has("text") and not obj.has("template"):
 		var obj_text = Label.new()
 		layer_node.add_child(obj_text)
 		obj_text.owner = _base_node

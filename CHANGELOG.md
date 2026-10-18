@@ -57,6 +57,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - B7: every tile layer without a class got metadata `class = "tilelayer"`: the class fell back to
   the `type` key, which pre-1.9 files use for an object's or tile's class but which on a layer is its
   kind. The fallback (`TilemapCreator.get_class_string()`) now applies to objects and tiles only.
+- B2: a template instance that saves its own `gid` (one flipped in Tiled) or its own `text` got a
+  second node besides the template's (a `_tile` Sprite2D at scale 0.00001, or a second Label), and the
+  template's node ignored the override. The instance's gid (a gid of the map's tilesets) and text
+  (merged over the template's) now go into the template's object, and nothing else is created.
 
 ## [3.0.0] — runtime-only fork (2026-10-17)
 

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="8" height="8" tilewidth="16" tileheight="16" infinite="0" nextlayerid="2" nextobjectid="4">
+ <tileset firstgid="1" source="terrain.tsx"/>
+ <objectgroup id="1" name="Instances">
+  <!-- B2: a flipped instance saves its own gid (h-flip flag + gid 3) -->
+  <object id="1" name="Flipped" template="probe_tpl.tx" gid="2147483651" x="16" y="32"/>
+  <!-- B2: an instance with its own text -->
+  <object id="2" name="SignB" template="probe_text.tx" x="0" y="64">
+   <text pixelsize="12" halign="center" color="#ffff0000">Instance text</text>
+  </object>
+  <!-- unchanged instance -->
+  <object id="3" name="Plain" template="probe_tpl.tx" x="48" y="32"/>
+ </objectgroup>
+</map>
