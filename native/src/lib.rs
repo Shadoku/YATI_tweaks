@@ -8,6 +8,8 @@
 //! - [`TiledImportOptions`](options::TiledImportOptions): every import option.
 //! - [`TiledMap`](map::TiledMap): a map loaded through the core, its files read on the main
 //!   thread with `FileAccess` (or from a zip archive); queries and `to_dictionary()`.
+//! - [`TiledTileSets`](tileset::TiledTileSets): the TileSet builder (the runtime's
+//!   `TilesetCreator`) and its cache.
 //!
 //! Everything here runs on the main thread except the decoding of tile layer payloads, which
 //! runs on one thread per layer and touches no Godot object.
@@ -21,6 +23,7 @@ mod gd;
 mod map;
 mod options;
 mod props;
+mod tileset;
 
 struct YatiNative;
 
