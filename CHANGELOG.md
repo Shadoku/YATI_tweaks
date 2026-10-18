@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   maps and tilesets on save. Tested under Node (`node --test tiled-extension/test`, also in CI)
   against a fake of Tiled's documented API, with a sample Godot project and the `.tiled-project`
   it produces. No Tiled ran yet: its README has the manual checklist.
+- `tools/install_tiled.sh` and `.tiled-version`: Tiled 1.12.0 from its Linux AppImage, extracted into
+  `~/.cache/tiled/` (no FUSE), for `tiled-extension/test/real_tiled.test.mjs`, which runs the extension
+  inside that Tiled headless (`tiled --project ... --evaluate test/helpers/real_tiled_harness.mjs`, under
+  `xvfb-run`): the sample's sync and scenes actions, "Unchanged" on a second run, the project file equal
+  to the committed one, the save hook's findings, and the no-project case. Skipped without a Tiled; CI
+  installs one.
 
 ### Changed
 - F2, both importers: an unset object reference (id 0, Tiled's "no object": an object property left empty, a
@@ -39,6 +45,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   silently, no longer with a warning; a dangling id (no imported object has it) still warns. The Tiled extension
   generates an `object` member for every `NodePath` or Node export of a scene, so every object leaving one
   unset warned. The extension's validation on save no longer reports unset references either.
+
+### Fixed
+- Tiled extension: without an open project every map or tileset save, and every action, failed with
+  "YATI: Cannot read property 'fileName' of null" (`tiled.project` is null in Tiled 1.12 when no
+  project is loaded, not a project with blank properties as the reference says). The actions now say
+  that no project is open; a saved map or tileset is validated without custom types. Without an
+  editor (`tiled --evaluate`) the Map menu cannot be extended: logged, the actions stay registered.
 
 ## [3.1.0] — 2026-10-18
 

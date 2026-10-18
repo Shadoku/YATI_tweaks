@@ -326,11 +326,10 @@ class FakeProject {
 	_json() {
 		const dir = this._dir();
 		const props = Object.keys(this._props).sort().map((k) => {
+			// Tiled writes "propertytype" for every project property, "" when it has none
+			// (src/libtiled/properties.cpp, propertiesToJson); a class member gets it only when set.
 			const e = this._exportValue(this._props[k], dir);
-			const p = { name: k, type: e.type, value: e.value };
-			if (e.propertyType !== undefined)
-				p.propertytype = e.propertyType;
-			return p;
+			return { name: k, propertytype: e.propertyType === undefined ? "" : e.propertyType, type: e.type, value: e.value };
 		});
 		return Object.assign({}, this._other, {
 			properties: props,
@@ -837,7 +836,9 @@ export function createFakeTiled(options) {
 	const mapEditor = { get currentMapView() { return rec.wrap(mapView, "MapView"); } };
 
 	const tiledModule = {
-		get project() { return rec.wrap(fake._project, "Project"); },
+		// null without a project, as in Tiled 1.12 (ProjectModel::editableProject() is nullptr when
+		// no project document is loaded: at startup without one, after Project > Close Project).
+		get project() { return fake._project._fileName === "" ? null : rec.wrap(fake._project, "Project"); },
 		get activeAsset() { return activeAsset === null ? null : fake._wrapAsset(activeAsset); },
 		set activeAsset(a) { activeAsset = a === null ? null : (a.__fake || a); },
 		get openAssets() { return openAssets.map((a) => fake._wrapAsset(a)); },

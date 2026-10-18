@@ -47,6 +47,25 @@ test("configure: refuses without a project, stops on cancel, checks for project.
 	assert.match(s.fake.out.alerts[0], /holds no project\.godot/);
 });
 
+// Tiled starts without a project unless its session restores one, and tiled.project is null then
+// (the first real Tiled reported "Cannot read property 'fileName' of null" on every save).
+test("without a project (tiled.project is null): the actions say so, a save still validates, nothing throws", () => {
+	const s = make({ noProject: true });
+	assert.equal(s.fake.api.tiled.project, null);
+	const map = s.fake.openFile(path.join(s.root, "importer", "unknown_class.tmx"));
+	s.fake.trigger(ACTIONS.configure);
+	s.fake.trigger(ACTIONS.sync);
+	s.fake.trigger(ACTIONS.scenes);
+	s.fake.trigger(ACTIONS.check);
+	assert.equal(s.fake.out.alerts.length, 4);
+	for (const a of s.fake.out.alerts)
+		assert.match(a, /^No Tiled project is open\. Open or create one/);
+	s.fake.emitAboutToBeSaved(map);
+	assert.equal(s.fake.out.issues.length, 4);
+	assert.ok(s.fake.out.issues.every((i) => i.severity === "warning"));
+	assert.deepEqual(s.fake.out.errors, []);
+});
+
 test("configure: stores the settings relative to the project file; empty keeps, '-' clears", () => {
 	const s = make();
 	const a = s.fake.answers;

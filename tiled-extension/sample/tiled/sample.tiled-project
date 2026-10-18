@@ -9,16 +9,19 @@
     "properties": [
         {
             "name": "godot_project",
+            "propertytype": "",
             "type": "string",
             "value": "../godot"
         },
         {
             "name": "yati_fixups",
+            "propertytype": "",
             "type": "string",
             "value": "{\"flags\":[\"GodotPhysicsLayers\",\"GodotRenderLayers\"],\"floats\":{\"Slime\":[\"speed\"],\"Vector2\":[\"x\",\"y\"]}}"
         },
         {
             "name": "yati_generated",
+            "propertytype": "",
             "type": "string",
             "value": "{\"Chest\":[\"godot_scene\",\"locked\",\"loot\",\"material\"],\"Chest.material\":[],\"GodotNodeType\":[],\"GodotPhysicsLayers\":[],\"GodotRenderLayers\":[],\"MapRef\":[\"map\",\"object\"],\"Slime\":[\"godot_scene\",\"hits\",\"home\",\"hp\",\"mood\",\"patrol\",\"speed\",\"tint\"],\"Slime.Mood\":[],\"Vector2\":[\"x\",\"y\"]}"
         }

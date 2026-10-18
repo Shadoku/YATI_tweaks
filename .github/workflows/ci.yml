@@ -17,11 +17,25 @@ jobs:
       - uses: actions/checkout@v4
 
       # The Tiled extension (tiled-extension/, docs/tiled-extension-plan.md): its pure modules,
-      # the glue against a fake of Tiled's documented API, the sample's generated project. No
-      # Godot, no Tiled.
+      # the glue against a fake of Tiled's documented API, the sample's generated project, and
+      # the sample inside a real Tiled, headless (test/real_tiled.test.mjs: the AppImage of
+      # .tiled-version under xvfb, since it has only Qt's xcb platform plugin). No Godot.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Cache Tiled
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/tiled
+          key: tiled-${{ runner.os }}-${{ hashFiles('.tiled-version') }}
+
+      - name: Install Tiled
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends xvfb libegl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-xkb1 libxcb-image0 libxcb-render-util0 >/dev/null
+          bash tools/install_tiled.sh
 
       - name: Test the Tiled extension
         run: node --test tiled-extension/test

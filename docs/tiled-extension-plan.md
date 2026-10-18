@@ -304,3 +304,26 @@ through the `.tiled-project` file, the maps and (for the check) the Godot binary
   classes, so the sync adds the Godot enums and `MapRef` and the validator knows its classes; no
   scene becomes a class. **Still to do by the user, in Tiled 1.12:** open the project, enable its
   extensions, and run the README's checklist; the first run anywhere.
+- 2026-10-18, **the first real Tiled** (branch `claude/busy-knuth-axwavq`): a map saved in Tiled
+  1.12.0 without a project failed with "YATI: Cannot read property 'fileName' of null".
+  `tiled.project` is **null** without a project (`ProjectModel::editableProject()` is nullptr when
+  no project document is loaded: at startup unless the session restores one, and after *Project >
+  Close Project*); the reference's "the properties of the project will be blank" is not what 1.12
+  does. The glue reads no settings then: the actions report "No Tiled project is open", the save
+  hook validates without custom types, and the fake returns null too (a glue test covers the four
+  actions and a save). Found and fixed with Tiled itself: `tools/install_tiled.sh` extracts the
+  1.12.0 AppImage (GitHub release downloads work from the cloud container; the AppImage has only
+  the xcb platform plugin, so `xvfb-run`), and `tiled --project <file> --evaluate <script> <args>`
+  runs a script with the project loaded and no editor. `tiled-extension/test/real_tiled.test.mjs`
+  runs `helpers/real_tiled_harness.mjs` that way: the module's own installation runs against the
+  real globals, then the harness installs it again through `install(api)` with the dialogs stubbed
+  and drives sync, scenes, configure and the save hook (a map read through
+  `tiled.mapFormat("tmx").read`). Confirmed on the sample: the checklist's steps 2 and 3 to the
+  letter, "Unchanged" on a second run, the three findings of step 5, and the project file equal to
+  the committed one after one correction to the fake: Tiled writes `"propertytype": ""` on every
+  project property (`propertiesToJson`), the fake wrote it only when set. Two more findings:
+  `extendMenu("Map", ...)` throws "Unknown menu" without the editor (the glue logs that and keeps
+  the actions registered), and a map read through a format has no `fileName` (the save hook says
+  "unsaved map"). Still for the editor only: an Issue's activation, the dialogs, *Check map in
+  Godot* on the active map, the reopen. Five Tiled runs take under two seconds; CI installs Tiled
+  (cached by `.tiled-version`) and runs the test.

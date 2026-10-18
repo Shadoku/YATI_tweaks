@@ -98,8 +98,10 @@ brings a Godot project's layer names (as flags enums), node types and scenes (on
 with a member per export) into the Tiled project. It validates maps on save, and *YATI: Check map
 in Godot* runs the native importer on the map from Tiled. Copy the folder into Tiled's extensions
 folder or the project's `extensions/`. It was written and tested under Node against a fake of
-Tiled's documented API; no Tiled ran yet. Its [README](tiled-extension/README.md) has the manual
-checklist to try first, and [docs/tiled-extension-plan.md](docs/tiled-extension-plan.md) the plan.
+Tiled's documented API, and the sample inside a real Tiled 1.12, headless (`tools/install_tiled.sh`
+downloads it; the test is skipped without one). Its [README](tiled-extension/README.md) has the
+manual checklist for what needs the editor, and
+[docs/tiled-extension-plan.md](docs/tiled-extension-plan.md) the plan.
 
 ## Credits
 

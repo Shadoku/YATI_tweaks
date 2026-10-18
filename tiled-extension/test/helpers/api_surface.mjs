@@ -12,7 +12,7 @@ export const API_SURFACE = {
 	"tiled.registerAction": "modules/tiled.html#registerAction",
 	"tiled.extendMenu": "modules/tiled.html#extendMenu",
 	"tiled.assetAboutToBeSaved": "modules/tiled.html#assetAboutToBeSaved",
-	"tiled.project": "modules/tiled.html#project (since 1.10.1)",
+	"tiled.project": "modules/tiled.html#project (since 1.10.1; null without a project: src/tiled/projectmodel.cpp's editableProject())",
 	"tiled.activeAsset": "modules/tiled.html#activeAsset",
 	"tiled.openAssets": "modules/tiled.html#openAssets",
 	"tiled.open": "modules/tiled.html#open",

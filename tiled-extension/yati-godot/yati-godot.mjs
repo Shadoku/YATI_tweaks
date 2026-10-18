@@ -61,7 +61,13 @@ export function install(api) {
 		action.text = ACTION_TEXTS[keys[i]];
 		items.push({ action: ACTIONS[keys[i]] });
 	}
-	t.extendMenu("Map", items);
+	// Without the editor (tiled --evaluate, where a test can run the extension) there is no Map menu
+	// and extendMenu throws "Unknown menu"; the actions are registered all the same.
+	try {
+		t.extendMenu("Map", items);
+	} catch (e) {
+		t.log("YATI: the Map menu was not extended (" + (e && e.message ? e.message : String(e)) + "): no editor; the actions are registered.");
+	}
 	t.assetAboutToBeSaved.connect(function (asset) {
 		guarded(api, function () { validateOnSave(api, asset); });
 	});
@@ -104,8 +110,20 @@ function listDir(api, dir) {
 	};
 }
 
-function currentSettings(api) {
+// The settings, from the Tiled project's properties. Without a project (Tiled starts without one
+// unless the session restores it, and Project > Close Project closes it) tiled.project is null:
+// Tiled 1.12's ProjectModel::editableProject() returns nullptr when it holds no project document
+// (the reference's "the properties of the project will be blank" is no longer so). The settings
+// are then empty, settingsProblem() names the cause, and the save hook validates without types.
+function currentProject(api) {
 	const project = api.tiled.project;
+	return project === null || project === undefined ? null : project;
+}
+
+function currentSettings(api) {
+	const project = currentProject(api);
+	if (project === null)
+		return readSettings(function () { return undefined; }, "");
 	return readSettings(function (name) { return project.property(name); }, project.fileName);
 }
 
@@ -405,9 +423,10 @@ function validateOnSave(api, asset) {
 		findings = validateTileset(tilesetModel(api, asset), ctx);
 	}
 	const fileName = asset.fileName;
+	const label = fileName !== "" ? baseName(fileName) : "unsaved " + (asset.isTileMap ? "map" : "tileset");
 	for (let i = 0; i < findings.length; i++) {
 		const f = findings[i];
-		const text = "YATI: " + baseName(fileName) + ": " + f.text;
+		const text = "YATI: " + label + ": " + f.text;
 		const activate = asset.isTileMap ? selector(api, fileName, f.objectId, f.layerId) : function () {};
 		if (f.severity === "error")
 			api.tiled.error(text, activate);
@@ -415,13 +434,16 @@ function validateOnSave(api, asset) {
 			api.tiled.warn(text, activate);
 	}
 	if (findings.length > 0)
-		api.tiled.log("YATI: " + baseName(fileName) + ": " + findings.length + " finding(s), see the Issues view.");
+		api.tiled.log("YATI: " + label + ": " + findings.length + " finding(s), see the Issues view.");
 }
 
-// The project's types as the validator reads them.
+// The project's types as the validator reads them (none without a project).
 function projectTypes(api) {
 	const out = [];
-	const types = api.tiled.project.propertyTypes;
+	const project = currentProject(api);
+	if (project === null)
+		return out;
+	const types = project.propertyTypes;
 	for (let i = 0; i < types.length; i++) {
 		const t = types[i];
 		if (t.isEnum) {
@@ -463,7 +485,8 @@ export function propFromValue(api, name, v) {
 	if (typeof v === "object") {
 		if (v.typeName !== undefined) {
 			// A PropertyValue: an enum's value (an index, or a mask of flags) or a class value.
-			const et = api.tiled.project.findTypeByName(v.typeName);
+			const project = currentProject(api);
+			const et = project === null ? null : project.findTypeByName(v.typeName);
 			if (et !== null && et.isEnum && typeof v.value === "number") {
 				// Stored as a string (as the importers read it): the value's name, or the flags' names.
 				if (et.storageType === storageTypeValue(api, "int"))

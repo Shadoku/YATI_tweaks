@@ -6,11 +6,15 @@ their exported properties as classes. It checks a map on save for the mistakes t
 only report at run time, and it runs the import in Godot from Tiled. It talks to the game only
 through the `.tiled-project` file, the maps, and (for the check) the Godot binary.
 
-> **Status: written and tested without Tiled.** No Tiled ran while it was developed. The logic is
-> tested under Node, and the Tiled glue against a fake of Tiled 1.12's documented scripting API.
-> Before relying on it, go through the [manual checklist](#manual-checklist-in-a-real-tiled-112)
-> in your Tiled 1.12. Start with steps 1 to 3: the extension loads, the sync works, and a second
-> sync reports "Unchanged". Report what differs in `docs/tiled-extension-plan.md` (section 5).
+> **Status: tested in a real Tiled 1.12, headless.** The logic is tested under Node, the glue
+> against a fake of Tiled 1.12's documented scripting API, and `test/real_tiled.test.mjs` runs the
+> sample through a real Tiled (`tools/install_tiled.sh`, `tiled --evaluate`, no editor): the module
+> loads, the sync and the scenes action write the committed project file, a second run reports
+> "Unchanged", the save hook files the sample map's mistakes. What a headless run cannot reach is
+> the editor: the Issues' double-click, the dialogs, *Check map in Godot* on the active map, the
+> reopen. Go through the [manual checklist](#manual-checklist-in-a-real-tiled-112)'s steps 4 to 8
+> in your Tiled 1.12 before relying on those, and report what differs in
+> `docs/tiled-extension-plan.md` (section 5).
 
 - Requires **Tiled 1.12** or newer (the custom-type API is new in 1.12).
 - The check action also needs **Godot 4.7** and the game's `addons/yati_native/` with
@@ -38,7 +42,10 @@ reloads an extension when its files change. *Help > Show Log* should show
 ## Settings
 
 The settings are custom properties of the Tiled project (*Project > Project Properties*), so they
-are saved in the `.tiled-project` and shared with everyone who opens it. *YATI: Configure…* asks
+are saved in the `.tiled-project` and shared with everyone who opens it. So the extension needs an
+open project: without one (Tiled starts without a project unless its session restores one; see
+*Project > Recent Projects*) the actions say so, and a saved map or tileset is validated without
+the project's custom types. *YATI: Configure…* asks
 for the first four. Paths are relative to the project file unless they are absolute.
 
 | Property | Default | Meaning |
@@ -171,6 +178,8 @@ printed.
 
 `tiled-extension/sample/` has a tiny Godot project (`godot/`) and the project file the sync and
 the scenes action are expected to make from it (`tiled/sample.tiled-project`; a test asserts it).
+Steps 1 to 3 and the findings of step 5 are what `test/real_tiled.test.mjs` runs headless; the
+rest needs the editor, so do it by hand.
 
 1. Copy `tiled-extension/sample/` somewhere, and `yati-godot/` into its `tiled/extensions/`. Rename
    `tiled/sample.tiled-project` to `expected.tiled-project`, and copy
@@ -200,15 +209,16 @@ the scenes action are expected to make from it (`tiled/sample.tiled-project`; a 
 8. Set `yati_validate` to `false` in the project properties and save `demo.tmx` again: no new
    Issues.
 
-Things only a real Tiled can confirm, in the order to try them: the ES module loads with its
-relative imports; `ClassPropertyType.MapObjectClass` and the other constants exist on the global
-(else Tiled 1.12's values are used); the global `StorageType` the reference documents (its absence
-is handled: Tiled's sources register none); assigning `color`, `values`, `storageType` and
-`usageFlags`; `setMember` with `tiled.filePath(...)`, `tiled.objectRef(0)` and
-`tiled.propertyValue(...)` saving what the tests expect; type names with a dot (`Enemy.Mood`);
-the comparison of member values read back through `members` (if it fails, every run reports
-"Updated" and asks to reopen); a `res://` file property read as an empty `localFile` with the URL
-in `url`; `Process.exec` finding `godot` on `PATH`.
+The headless run (`test/real_tiled.test.mjs`) confirmed in Tiled 1.12.0: the ES module loads with
+its relative imports; `ClassPropertyType` and its constants exist on the global, and the global
+`StorageType` the reference documents does not (both handled); assigning `color`, `values`,
+`storageType` and `usageFlags`; `setMember` with `tiled.filePath(...)`, `tiled.objectRef(0)` and
+`tiled.propertyValue(...)` saving what the tests expect; type names with a dot (`Slime.Mood`);
+member values read back through `members` comparing equal ("Unchanged" on a second run); the
+project file Tiled writes equal to the fake's. Not confirmed yet, for the editor: a `res://` file
+property read as an empty `localFile` with the URL in `url`; `Process.exec` finding `godot` on
+`PATH`; an Issue's activation; `tiled.extendMenu` (headless there is no Map menu, and the
+extension logs that instead of failing).
 
 ## Limits
 
@@ -237,6 +247,17 @@ another member or stops using one of them. With `acorn` installed (or `YATI_ACOR
 acorn.mjs>`), a test also parses the modules as ECMAScript 2016, the language of Tiled's
 JavaScript engine.
 
+`real_tiled.test.mjs` runs the extension inside a real Tiled. `tools/install_tiled.sh` downloads
+the release pinned in `.tiled-version` (the Linux x86_64 AppImage, extracted into `~/.cache/tiled/`,
+so no FUSE is needed) and prints a `tiled` wrapper; the test runs it as `tiled --project <file>
+--evaluate helpers/real_tiled_harness.mjs <steps>`, under `xvfb-run` when there is no display (the
+AppImage has only Qt's xcb platform plugin) and with a config directory of its own (no user
+extensions, no session). The harness installs the extension through `install(api)` with the dialogs
+stubbed (a confirmation is yes, a prompt keeps the setting) and drives the actions and the save hook
+(a map read through Tiled's own format). Each run is a fresh Tiled, so "reopen the project" is the
+next run. Without a Tiled the test is skipped; on another platform install Tiled 1.12 and set
+`TILED=<binary>`. CI installs Tiled and runs it.
+
 | File | What |
 |------|------|
 | `yati-godot/yati-godot.mjs` | the glue: actions, menu, save hook, Issues, the API read into plain models |
@@ -247,3 +268,5 @@ JavaScript engine.
 | `yati-godot/lib/apply.mjs` | the types applied through the API, merged; the project file patch |
 | `yati-godot/lib/validate.mjs` | the validation |
 | `yati-godot/lib/check_output.mjs` | the check's command line and output |
+| `test/real_tiled.test.mjs` | the sample inside a real Tiled, headless (skipped without one) |
+| `test/helpers/real_tiled_harness.mjs` | runs inside Tiled under `--evaluate`: the actions and the save hook, the dialogs stubbed |
