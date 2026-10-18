@@ -25,6 +25,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`object_refs.tmx`, `scenes.tmx`, `masks.tmx`, `world/*`, with their project files);
   `tools/native_gate.gd` checks them for leaks too, and a world import. CI requires the native suite
   again.
+- Native importer, stage 3 of `docs/native-importer-plan.md`: asynchronous loading and shared
+  caches. `Importer.import_async(path, project = "")` and `import_from_zip_async(...)` (coroutines:
+  `await` them) import a map without a hitch: the parse runs on a worker thread
+  (`TiledMap.load_async` / `from_zip_async`, `poll()` once per frame returning `READING`,
+  `PARSING`, `WAITING_FILES`, `READY` or `FAILED`, signals `loaded` and `failed`, `cancel()`), the
+  main thread only reads the files the parse asks for (`FileAccess`, so `res://` in a .pck works);
+  the map's `res://` textures load in the engine's threads (`ResourceLoader.load_threaded_request`)
+  while it parses; TileSets are created a few tiles per frame (`TiledTileSets.build_step`) and the
+  tree is built in one frame. On the benchmark map no frame before the build takes more than about
+  2 to 3 ms of main-thread time, and the build frame equals the synchronous build. TileSets are
+  shared across imports (`Importer.share_tilesets`, on by default, through `Importer.shared_tilesets()`,
+  an exclusive cache: two live trees never share a TileSet, a later map reuses a freed tree's;
+  `TiledTileSets.exclusive` off shares one by reference between live trees too), so a second map on
+  the same tilesets creates no TileSet; textures are cached per process
+  (`TiledTileSets.clear_textures()`). The cache key now also holds `no_alternative_tiles` and the
+  project file's types. `TiledTileSets.get_created_count()`, `get_texture_count()`;
+  `TiledMap.get_status()`. A cached TileSet's messages are reported by every import that uses it.
+- `test/test_async.gd` (run by `test/run_all.sh` with the native library): the async import's
+  frame times and tree, the shared cache, cancellation without leaks; `tools/native_gate.gd` times
+  the small map's async import.
 - Native importer, stage 2 of `docs/native-importer-plan.md`: maps import natively.
   `addons/yati_native/Importer.gd` (the GDScript runtime's API) now imports through the native
   classes `TiledImportOptions`, `TiledMap` (load from the file system or a zip, queries,

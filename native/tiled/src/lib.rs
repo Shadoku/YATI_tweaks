@@ -14,6 +14,8 @@
 //! - [`load`]: the [`Loader`], driven by a file-request protocol (the caller reads files, the
 //!   loader says which), with templates and custom types merged as the GDScript runtime merges
 //!   them; zip archives read directly.
+//! - [`worker`]: the [`Loader`] on a thread of its own, the protocol's rounds as messages (what
+//!   the native importer's asynchronous load runs; nothing Godot crosses the thread).
 //! - [`value`]: [`Value`], the model as the dictionary the GDScript runtime's
 //!   `DictionaryBuilder.gd` produces (the parity target).
 //!
@@ -31,6 +33,7 @@ pub mod model;
 pub mod parse;
 pub mod path;
 pub mod value;
+pub mod worker;
 pub mod world;
 
 pub use error::{Error, ErrorKind};

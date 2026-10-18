@@ -1,16 +1,99 @@
 //! `TiledMap`: a parsed map, loaded through the core's file-request protocol with the files
 //! read on the main thread through Godot (`FileAccess`, so `res://` inside a .pck works).
+//!
+//! One state machine serves both ways of loading. `load_async` / `from_zip_async` run the
+//! core's [`Loader`] on a worker thread ([`tiled_core::worker`]: only `tiled_core` and `std`
+//! types cross it) and `poll()` advances the protocol one round per call on the main thread:
+//! it reads the files the worker asks for and hands them over, starts the map's `res://`
+//! textures through `ResourceLoader.load_threaded_request` as soon as the parse names them, and
+//! collects them when they are loaded; `loaded` (or `failed`) is emitted from the `poll()` that
+//! finishes. `load` / `from_zip` pump the same machine to the end in one call, with the loader on
+//! the main thread and no texture requests (the builder loads them, as before).
 
+use crate::files::{
+    orphan_count, orphan_requests, request_threaded, threaded_get, threaded_loadable,
+    threaded_status, THREAD_LOAD_IN_PROGRESS,
+};
 use crate::gd::value_to_variant;
 use godot::classes::FileAccess;
 use godot::global::{print_rich, printerr, Error as GdError};
 use godot::prelude::*;
+use std::collections::HashSet;
 use std::sync::Arc;
-use tiled_core::{Loader, Map};
+use tiled_core::worker::{Event, File, Worker};
+use tiled_core::{Loader, Map, Status as LoadStatus};
+
+/// Where a load stands (`poll()`'s value; the class constants `READING` ... `FAILED`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum State {
+    /// Files are to be read: the next `poll()` reads them.
+    Reading,
+    /// The worker is parsing.
+    Parsing,
+    /// The map is parsed; textures are loading in the engine's threads.
+    WaitingFiles,
+    /// The map is loaded.
+    Ready,
+    /// The map could not be loaded, the load was cancelled, or none was started.
+    #[default]
+    Failed,
+}
+
+impl State {
+    fn code(self) -> i32 {
+        match self {
+            State::Reading => TiledMap::READING,
+            State::Parsing => TiledMap::PARSING,
+            State::WaitingFiles => TiledMap::WAITING_FILES,
+            State::Ready => TiledMap::READY,
+            State::Failed => TiledMap::FAILED,
+        }
+    }
+}
+
+/// Who runs the core's loader.
+enum Driver {
+    /// `from_zip*` before the archive's bytes are read: the loader needs them to exist.
+    Zip {
+        zip: String,
+        path_in_zip: String,
+        project: Option<String>,
+    },
+    /// The loader on the main thread (a synchronous load, or an asynchronous one before its
+    /// first files are read).
+    Main(Box<Loader>),
+    /// The loader on its worker thread.
+    Worker(Worker),
+    /// The loader is done.
+    Done,
+}
+
+/// One load in progress.
+struct Job {
+    threaded: bool,
+    driver: Driver,
+    /// The files the next round reads.
+    to_read: Vec<String>,
+    /// Threaded texture requests not collected yet.
+    requested: Vec<String>,
+    /// Every image path considered for a request.
+    seen: HashSet<String>,
+}
+
+impl Drop for Job {
+    fn drop(&mut self) {
+        // Requests nobody collects keep their texture in the engine's loader: the per-frame
+        // drain collects them once they are done (`files::drain_orphans`). Dropping the worker
+        // ends its thread without waiting.
+        orphan_requests(std::mem::take(&mut self.requested));
+    }
+}
 
 /// A Tiled map (`.tmx` / `.tmj`) with its external tilesets, templates and custom types,
-/// parsed by the native core. `load()` or `from_zip()` it, then hand it to
-/// `TiledTileSets.tileset_for` and `TiledBuilder.build`, or read it with the queries.
+/// parsed by the native core. `load()` or `from_zip()` it, or `load_async()` /
+/// `from_zip_async()` and `poll()` it once per frame until `READY` (or `await` its `loaded`
+/// signal while something polls it); then hand it to `TiledTileSets.tileset_for` and
+/// `TiledBuilder.build`, or read it with the queries.
 #[derive(GodotClass)]
 #[class(base = RefCounted, init)]
 pub struct TiledMap {
@@ -20,21 +103,47 @@ pub struct TiledMap {
     pub(crate) zip_file: String,
     errors: Vec<String>,
     warnings: Vec<String>,
+    state: State,
+    job: Option<Job>,
+    /// The textures an asynchronous load collected (kept alive, so the build finds them in the
+    /// engine's resource cache).
+    textures: Vec<Gd<Resource>>,
 }
 
 #[godot_api]
 impl TiledMap {
+    /// `poll()`: the main thread reads files for the parse on the next `poll()`.
+    #[constant]
+    pub const READING: i32 = 0;
+    /// `poll()`: the worker thread is parsing.
+    #[constant]
+    pub const PARSING: i32 = 1;
+    /// `poll()`: parsed; the map's textures are loading in the engine's threads.
+    #[constant]
+    pub const WAITING_FILES: i32 = 2;
+    /// `poll()`: the map is loaded.
+    #[constant]
+    pub const READY: i32 = 3;
+    /// `poll()`: the load failed (or was cancelled, or none was started).
+    #[constant]
+    pub const FAILED: i32 = 4;
+
+    /// Emitted by the `poll()` that finishes an asynchronous load.
+    #[signal]
+    fn loaded();
+
+    /// Emitted by the `poll()` in which an asynchronous load fails (not by `cancel()`).
+    #[signal]
+    fn failed();
+
     /// Loads a map from the file system (`res://`, `user://` or an absolute path), with an
     /// optional `.tiled-project` file for custom types. Errors and warnings are printed with the
     /// GDScript runtime's wording and kept (`get_errors`, `get_warnings`). Returns `OK`, or
     /// `FAILED` when the map could not be loaded at all.
     #[func]
     fn load(&mut self, path: GString, project_file: GString) -> GdError {
-        let path = path.to_string();
-        let project = project_file.to_string();
-        let loader = Loader::new(&path, (!project.is_empty()).then_some(project.as_str()));
-        self.zip_file.clear();
-        self.finish(loader.run(read_file))
+        self.start_fs(path.to_string(), project_file.to_string(), false);
+        self.pump()
     }
 
     /// Loads a map from a zip archive: `path_in_zip` and `project_in_zip` are paths inside the
@@ -47,29 +156,105 @@ impl TiledMap {
         path_in_zip: GString,
         project_in_zip: GString,
     ) -> GdError {
-        let zip = zip_file.to_string();
-        self.zip_file = zip.clone();
-        self.map = None;
-        self.errors.clear();
-        self.warnings.clear();
-        let bytes = if FileAccess::file_exists(zip.as_str()) {
-            Some(FileAccess::get_file_as_bytes(zip.as_str()).to_vec())
-        } else {
-            None
-        };
-        let Some(bytes) = bytes.filter(|b| !b.is_empty()) else {
-            let msg = format!("ERROR: Unable to open zip file '{zip}'.");
-            printerr(&[msg.to_variant()]);
-            self.errors.push(msg);
-            return GdError::FAILED;
-        };
-        let project = project_in_zip.to_string();
-        let loader = Loader::from_zip(
-            bytes,
-            &path_in_zip.to_string(),
-            (!project.is_empty()).then_some(project.as_str()),
+        self.start_zip(
+            zip_file.to_string(),
+            path_in_zip.to_string(),
+            project_in_zip.to_string(),
+            false,
         );
-        self.finish(loader.run(|_| None))
+        self.pump()
+    }
+
+    /// Starts loading a map as `load` does, the parse on a worker thread: `poll()` it once per
+    /// frame. Returns `OK` (failures show in `poll()`). A load in progress is cancelled first.
+    #[func]
+    fn load_async(&mut self, path: GString, project_file: GString) -> GdError {
+        self.start_fs(path.to_string(), project_file.to_string(), true);
+        GdError::OK
+    }
+
+    /// Starts loading a map from a zip archive as `from_zip` does, asynchronously (the archive
+    /// is read by the first `poll()`, the whole parse runs on the worker thread).
+    #[func]
+    #[allow(clippy::wrong_self_convention)] // as from_zip
+    fn from_zip_async(
+        &mut self,
+        zip_file: GString,
+        path_in_zip: GString,
+        project_in_zip: GString,
+    ) -> GdError {
+        self.start_zip(
+            zip_file.to_string(),
+            path_in_zip.to_string(),
+            project_in_zip.to_string(),
+            true,
+        );
+        GdError::OK
+    }
+
+    /// Advances an asynchronous load by at most one round of the file protocol (reads the
+    /// files the parse asked for and hands them over, requests and collects textures) and
+    /// returns the status: `READING`, `PARSING`, `WAITING_FILES`, `READY` or `FAILED`. Never
+    /// waits for the worker. Emits `loaded` or `failed` when the load ends in this call. Call it
+    /// once per frame; after the end it only returns the status.
+    #[func]
+    fn poll(&mut self) -> i32 {
+        let before = self.state;
+        self.advance();
+        let after = self.state;
+        if after != before {
+            match after {
+                State::Ready => {
+                    self.base_mut().emit_signal("loaded", &[]);
+                }
+                State::Failed => {
+                    self.base_mut().emit_signal("failed", &[]);
+                }
+                _ => {}
+            }
+        }
+        // A handler may have started another load: report what is now.
+        self.state.code()
+    }
+
+    /// The status `poll()` returned last (`READY` after a successful `load`, `FAILED` before
+    /// any load).
+    #[func]
+    fn get_status(&self) -> i32 {
+        self.state.code()
+    }
+
+    /// Stops an asynchronous load: its worker thread ends on its own (never waited for),
+    /// texture requests already made are collected by the engine's next frames. The map stays
+    /// unloaded; `poll()` returns `FAILED` from now on, no signal is emitted.
+    #[func]
+    fn cancel(&mut self) {
+        if matches!(self.state, State::Ready | State::Failed) {
+            return;
+        }
+        self.job = None;
+        self.map = None;
+        self.textures.clear();
+        self.state = State::Failed;
+    }
+
+    /// The number of loader threads still running in this process (for tests and tools).
+    #[func]
+    fn get_running_loaders(&self) -> i64 {
+        tiled_core::worker::running() as i64
+    }
+
+    /// The number of threaded texture requests of cancelled or freed maps not collected yet
+    /// (for tests and tools; the engine's frames collect them).
+    #[func]
+    fn get_orphaned_texture_requests(&self) -> i64 {
+        orphan_count() as i64
+    }
+
+    /// The number of textures an asynchronous load collected and holds.
+    #[func]
+    fn get_texture_count(&self) -> i64 {
+        self.textures.len() as i64
     }
 
     /// True after a successful `load` or `from_zip`.
@@ -178,28 +363,254 @@ impl TiledMap {
 }
 
 impl TiledMap {
-    fn finish(&mut self, result: Result<Map, Vec<tiled_core::Error>>) -> GdError {
+    fn reset(&mut self, zip: &str) {
+        self.job = None;
+        self.map = None;
+        self.textures.clear();
         self.errors.clear();
         self.warnings.clear();
-        match result {
-            Ok(map) => {
-                for e in map.errors() {
-                    self.errors.push(e.message.clone());
-                }
-                for w in map.warnings() {
-                    self.warnings.push(w.clone());
-                }
-                self.print_messages();
-                self.map = Some(Arc::new(map));
-                GdError::OK
+        self.zip_file = zip.to_string();
+    }
+
+    fn start_fs(&mut self, path: String, project: String, threaded: bool) {
+        self.reset("");
+        let mut loader = Loader::new(&path, (!project.is_empty()).then_some(project.as_str()));
+        // The first step only asks for the map and the project file.
+        let to_read = match loader.step() {
+            LoadStatus::NeedFiles => loader.needs().to_vec(),
+            LoadStatus::Done(m) => {
+                // Not reached: a loader of the file system needs its map.
+                self.job = Some(Self::job(threaded, Driver::Done, Vec::new()));
+                self.got_map(*m);
+                return;
             }
-            Err(errors) => {
-                self.map = None;
-                self.errors = errors.into_iter().map(|e| e.message).collect();
-                self.print_messages();
-                GdError::FAILED
+            LoadStatus::Failed(e) => {
+                self.fail(e.into_iter().map(|e| e.message).collect());
+                return;
+            }
+        };
+        self.job = Some(Self::job(threaded, Driver::Main(Box::new(loader)), to_read));
+        self.state = State::Reading;
+    }
+
+    fn start_zip(&mut self, zip: String, path_in_zip: String, project: String, threaded: bool) {
+        self.reset(&zip);
+        let driver = Driver::Zip {
+            zip: zip.clone(),
+            path_in_zip,
+            project: (!project.is_empty()).then_some(project),
+        };
+        self.job = Some(Self::job(threaded, driver, vec![zip]));
+        self.state = State::Reading;
+    }
+
+    fn job(threaded: bool, driver: Driver, to_read: Vec<String>) -> Job {
+        Job {
+            threaded,
+            driver,
+            to_read,
+            requested: Vec::new(),
+            seen: HashSet::new(),
+        }
+    }
+
+    /// Runs a synchronous load to its end.
+    fn pump(&mut self) -> GdError {
+        while matches!(self.state, State::Reading | State::Parsing) {
+            self.advance();
+        }
+        if self.state == State::Ready {
+            GdError::OK
+        } else {
+            GdError::FAILED
+        }
+    }
+
+    /// One round: what `poll()` does, without the signals.
+    fn advance(&mut self) {
+        match self.state {
+            State::Reading => self.read_round(),
+            State::Parsing => {
+                let event = match self.job.as_mut().map(|j| &mut j.driver) {
+                    Some(Driver::Worker(w)) => w.try_event(),
+                    _ => None,
+                };
+                match event {
+                    None => {}
+                    Some(Event::Need { paths, images }) => {
+                        for i in images {
+                            self.request_texture(i);
+                        }
+                        if let Some(job) = self.job.as_mut() {
+                            job.to_read = paths;
+                        }
+                        self.read_round();
+                    }
+                    Some(Event::Done(map)) => self.got_map(*map),
+                    Some(Event::Failed(errors)) => {
+                        self.fail(errors.into_iter().map(|e| e.message).collect())
+                    }
+                }
+                if self.state == State::Parsing {
+                    // Collect textures that arrived early.
+                    self.collect_textures();
+                }
+            }
+            State::WaitingFiles => {
+                self.collect_textures();
+                if self.job.as_ref().is_some_and(|j| j.requested.is_empty()) {
+                    self.job = None;
+                    self.state = State::Ready;
+                }
+            }
+            State::Ready | State::Failed => {}
+        }
+    }
+
+    /// Reads the files the loader asked for (on the main thread, through `FileAccess`) and
+    /// hands them over: to the loader here (synchronous), or to the worker, started with them
+    /// if it is not running yet.
+    fn read_round(&mut self) {
+        let Some(job) = self.job.as_mut() else {
+            self.state = State::Failed;
+            return;
+        };
+        let threaded = job.threaded;
+        let files: Vec<File> = std::mem::take(&mut job.to_read)
+            .into_iter()
+            .map(|p| {
+                let b = read_file(&p);
+                (p, b)
+            })
+            .collect();
+        let (loader, files) = match std::mem::replace(&mut job.driver, Driver::Done) {
+            Driver::Zip {
+                zip,
+                path_in_zip,
+                project,
+            } => {
+                let bytes = files
+                    .into_iter()
+                    .next()
+                    .and_then(|(_, b)| b)
+                    .filter(|b| !b.is_empty());
+                let Some(bytes) = bytes else {
+                    self.fail(vec![format!("ERROR: Unable to open zip file '{zip}'.")]);
+                    return;
+                };
+                (
+                    Box::new(Loader::from_zip(bytes, &path_in_zip, project.as_deref())),
+                    Vec::new(),
+                )
+            }
+            Driver::Main(loader) => (loader, files),
+            Driver::Worker(w) => {
+                w.supply(files);
+                job.driver = Driver::Worker(w);
+                self.state = State::Parsing;
+                return;
+            }
+            Driver::Done => {
+                self.state = State::Failed;
+                return;
+            }
+        };
+        if threaded {
+            match Worker::spawn(*loader, files) {
+                Ok(w) => {
+                    job.driver = Driver::Worker(w);
+                    self.state = State::Parsing;
+                }
+                Err(e) => {
+                    self.fail(vec![format!(
+                        "ERROR: yati_native: could not start the loader thread ({e})."
+                    )]);
+                }
+            }
+            return;
+        }
+        let mut loader = loader;
+        for (p, b) in files {
+            match b {
+                Some(b) => loader.supply(&p, b),
+                None => loader.missing(&p),
             }
         }
+        match loader.step() {
+            LoadStatus::NeedFiles => {
+                job.to_read = loader.needs().to_vec();
+                job.driver = Driver::Main(loader);
+                self.state = State::Reading;
+            }
+            LoadStatus::Done(map) => self.got_map(*map),
+            LoadStatus::Failed(errors) => {
+                self.fail(errors.into_iter().map(|e| e.message).collect())
+            }
+        }
+    }
+
+    /// The parsed map: its messages printed and kept; an asynchronous load requests the
+    /// textures it has not requested yet and waits for them.
+    fn got_map(&mut self, map: Map) {
+        self.errors = map.errors().iter().map(|e| e.message.clone()).collect();
+        self.warnings = map.warnings().to_vec();
+        self.print_messages();
+        let images = map.images().to_vec();
+        self.map = Some(Arc::new(map));
+        let threaded = self.job.as_ref().is_some_and(|j| j.threaded);
+        if let Some(job) = self.job.as_mut() {
+            job.driver = Driver::Done;
+        }
+        if threaded {
+            for i in images {
+                self.request_texture(i);
+            }
+            self.collect_textures();
+        }
+        if self.job.as_ref().is_some_and(|j| !j.requested.is_empty()) {
+            self.state = State::WaitingFiles;
+        } else {
+            self.job = None;
+            self.state = State::Ready;
+        }
+    }
+
+    fn fail(&mut self, errors: Vec<String>) {
+        self.job = None;
+        self.map = None;
+        self.textures.clear();
+        self.errors = errors;
+        self.warnings.clear();
+        self.print_messages();
+        self.state = State::Failed;
+    }
+
+    /// Starts an imported `res://` texture loading in the engine's threads (each path once).
+    fn request_texture(&mut self, path: String) {
+        let Some(job) = self.job.as_mut() else { return };
+        if !job.threaded || !job.seen.insert(path.clone()) {
+            return;
+        }
+        if threaded_loadable(&path) && request_threaded(&path) {
+            job.requested.push(path);
+        }
+    }
+
+    /// Collects the requested textures the engine has finished (loaded or failed: a failure
+    /// is reported by the builder's own load).
+    fn collect_textures(&mut self) {
+        let Some(job) = self.job.as_mut() else { return };
+        let mut got = Vec::new();
+        job.requested.retain(|p| {
+            if threaded_status(p) == THREAD_LOAD_IN_PROGRESS {
+                return true;
+            }
+            if let Some(r) = threaded_get(p) {
+                got.push(r);
+            }
+            false
+        });
+        self.textures.extend(got);
     }
 
     fn print_messages(&self) {

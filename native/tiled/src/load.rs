@@ -100,6 +100,10 @@ pub struct Loader {
     errors: Vec<Error>,
     warnings: Vec<String>,
     finished: bool,
+    /// Image references found by the parse so far (resolved), for [`Loader::take_discovered_images`].
+    discovered: Vec<String>,
+    /// How many of `discovered` were taken.
+    taken: usize,
 }
 
 impl Loader {
@@ -122,6 +126,8 @@ impl Loader {
             errors: Vec::new(),
             warnings: Vec::new(),
             finished: false,
+            discovered: Vec::new(),
+            taken: 0,
         }
     }
 
@@ -167,6 +173,41 @@ impl Loader {
             }
         }
         self.needs.retain(|p| p != path);
+    }
+
+    /// The images the parse has found since the last call (resolved paths, each listed once over
+    /// the loader's life): the embedded tilesets' and image layers' of the map, and those of every
+    /// external tileset parsed so far. A caller that loads textures asynchronously starts on
+    /// them before the map is done; the complete list is [`Map::images`] once it is. Empty in zip
+    /// mode, whose images are members of the archive.
+    pub fn take_discovered_images(&mut self) -> Vec<String> {
+        let new = self.discovered[self.taken..].to_vec();
+        self.taken = self.discovered.len();
+        new
+    }
+
+    fn discover(&mut self, base: &str, reference: &Option<String>) {
+        if self.zip.is_some() {
+            return;
+        }
+        let Some(r) = reference.as_deref() else {
+            return;
+        };
+        let ext = path::extension(r);
+        if ext == "tmx" || ext == "tmj" {
+            return;
+        }
+        let resolved = path::resolve(base, r);
+        if !self.discovered.contains(&resolved) {
+            self.discovered.push(resolved);
+        }
+    }
+
+    fn discover_tileset(&mut self, base: &str, ts: &Tileset) {
+        self.discover(base, &ts.image);
+        for tile in ts.tiles.iter().flatten() {
+            self.discover(base, &tile.image);
+        }
     }
 
     /// Runs the loader to completion with a file reader (`None`: the file does not exist).
@@ -316,6 +357,16 @@ impl Loader {
         for t in refs {
             self.request(path::resolve(&base, &t), Kind::Template, &t);
         }
+        for ts in map.tilesets.iter().flatten() {
+            if ts.source.is_none() {
+                self.discover_tileset(&base, ts);
+            }
+        }
+        for l in map.all_layers() {
+            if l.kind.as_deref() == Some("imagelayer") {
+                self.discover(&base, &l.image);
+            }
+        }
         self.map = Some(map);
         Ok(())
     }
@@ -356,7 +407,10 @@ impl Loader {
                 None
             }
             Some(b) => match parse::tileset(&b, path) {
-                Ok(t) => Some(t),
+                Ok(t) => {
+                    self.discover_tileset(&path::base_dir(path), &t);
+                    Some(t)
+                }
                 Err(e) => {
                     self.errors.push(e);
                     None

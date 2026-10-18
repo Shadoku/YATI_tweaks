@@ -615,6 +615,103 @@ numbers measured. Stages 1 and 2 are the bulk; 3 and 4 are what the two goals ne
     resolves (the runtime warns about a dangling one in `infinite.tmj`); property lists cached per
     process (above); `TilemapCreator.create` prints the import's summary line.
 
+- 2026-10-18, **stage 3 done** (asynchronous loading and the caches):
+  - **The worker** (`native/tiled/src/worker.rs`, in the pure-Rust core): `Worker::spawn(loader,
+    first_files)` runs the core's `Loader` on a thread named `tiled-loader`; each batch of files
+    the main thread hands over (`supply`) is answered with one `Event` (`Need { paths, images }`,
+    `Done(Box<Map>)`, `Failed(errors)`), read without blocking (`try_event`). The thread function
+    takes and returns only `tiled_core` and `std` types, and `tiled_core` does not depend on Godot,
+    so no engine type can reach the thread (the compiler would refuse: it is not in the crate's
+    dependency graph); `experimental-threads` stays off. A dropped worker is never waited for: its
+    channel closes, the thread ends at its next message, and its handle is joined when the engine
+    shuts down (`join_detached`, from the extension's `MainLoop` deinit). The loader learned
+    `take_discovered_images()`: the images of the map's embedded tilesets and image layers and of
+    every external tileset parsed so far, sent with each `Need`, so textures start loading before
+    the map is done. 5 Rust tests (the threaded load equals the synchronous one on four fixtures,
+    images found early, a missing map, a zip parsed entirely on the worker, a worker dropped mid-load).
+  - **`TiledMap`** (`map.rs`): one state machine for both ways of loading. `load_async(path,
+    project)` / `from_zip_async(zip, path_in_zip, project_in_zip)`, then `poll() -> int` once per
+    frame (constants `READING` 0, `PARSING` 1, `WAITING_FILES` 2, `READY` 3, `FAILED` 4): each poll
+    does at most one round, reading the requested files with `FileAccess` and handing them over (the
+    first poll reads the map and project, a zip archive whole; the loader's first step, which only
+    asks for them, runs in `load_async`), requests the map's imported `res://` images with
+    `ResourceLoader.load_threaded_request` as soon as the parse names them (the rest of `Map::images()`
+    when the map arrives) and collects them with `load_threaded_get` once their status is no longer
+    `IN_PROGRESS`, so the build never waits on a texture; the map holds the collected textures, and
+    the build's `ResourceLoader.load` finds them in the engine's cache. Non-`res://` images are left
+    to the build (`Image.load_from_file`, as before). Signals `loaded` and `failed`, emitted through
+    `base_mut()` from the `poll()` that ends the load (a handler may call back into the map; tested);
+    `get_status()`, `cancel()` (no signal; `poll()` then returns `FAILED`). `load` / `from_zip` pump
+    the same machine with the loader on the main thread and no texture requests. Cancelling or freeing
+    a map with texture requests in flight hands them to a per-frame drain (`ExtensionLibrary::
+    on_main_loop_frame`, `files::drain_orphans`), which collects each once loaded; at shutdown the
+    rest are collected waiting. godot-rust hides the three `load_threaded_*` methods without
+    `experimental-threads`; they are called on the main thread through the engine's dynamic call
+    (`Object::call`), the loading threads being the engine's own and running no code of ours.
+  - **`TiledTileSets`** (`tileset.rs`): the cache holds a list of TileSets per key and is shared
+    across imports. The key gained `no_alternative_tiles` (the builder adds alternative tiles to a
+    TileSet: `test_new_option_no_alternative_tiles` failed with a shared cache until it was in) and a
+    hash of the project file's `propertyTypes` (custom types are merged into tilesets; stage 2b's
+    enums shape their properties). The creator (`TilesetCreator`'s port) now owns its parameters,
+    messages and zip reader and is resumable: `build_step(map, options, tiles_per_step) -> bool`
+    creates the map's TileSet and its templates' a budget of tiles per call (a tileset's header and
+    end count one each, the animation strips one each) and returns true when all are cached;
+    `tileset_for` and `build` finish a creation `build_step` left half done. A creation records its
+    messages quietly; every use of a cached TileSet replays them (printed and counted), so an
+    import's counts do not depend on the cache. `exclusive` (default false): hand a cached TileSet
+    only while nothing but the cache holds it (its reference count is 1 and no build holds its
+    registry), otherwise build another for the key. `clear()` (TileSets and half-made creations),
+    `clear_textures()`, `get_created_count()`, `get_texture_count()`. Textures are cached per
+    process (`files.rs`, a main-thread `thread_local`, cleared at the extension's `MainLoop` deinit),
+    by resolved path or `zip::member`.
+  - **Facade**: `import_async(path, project = "")` and `import_from_zip_async(...)` (coroutines):
+    `load_async`, one `poll()` per `process_frame` until `READY`/`FAILED`, `build_step` with
+    `async_tiles_per_frame` (256) per frame (the frame that finishes a TileSet is not the build's),
+    then `build` in one frame; `last_error_count` / `last_warning_count` and the summary line as for
+    `import`. `share_tilesets` (default true): every import, synchronous or not, uses one static
+    `TiledTileSets` (`Importer.shared_tilesets()`) with `exclusive` on; off, or with
+    `save_tileset_to` set, an import gets a fresh one (stage 2's behaviour).
+  - **Gate, measured** (this machine, Godot 4.7.2, 4 cores, another build running at times; the
+    async test turns the engine's headless frame sleep off, `OS.low_processor_usage_mode_sleep_usec
+    = 0`, since headless Godot pads every frame to 6.9 ms and a frame's wall time is then its
+    main-thread work): `test/test_async.gd -- --rounds=5`, both paths warmed up once, caches cold
+    each round: **worst main-thread frame before the build frame 1.08 ms and 2.77 ms** in two runs
+    (3 rounds in `run_all.sh`: 1.62 ms; before the warm-up covered the async path, up to 2.9 ms),
+    over 1 072 to 3 109 frames per import (the first poll, reading the 2 MB map, costs 2.4 to 2.7 ms
+    when timed alone, every later poll 0.01 to 0.2 ms). **Build frame median 166.3 ms and 171.1 ms
+    (min 159.7, 160.7) against the synchronous build's median 175.6 and 175.4 ms (min 159.3,
+    160.8)**: the same; the synchronous import's total median 184.5 and 183.0 ms (load 6.2, TileSets
+    1.9 to 2.1). The async tree equals the synchronous one (4 562 nodes: names, classes, child counts,
+    metadata keys, 522 358 cells), as do six fixtures' and the zip's. **A second map on the same
+    tilesets** (`bench_tiles_only.tmx` after `bench.tmx`): `tileset_for` 0.03 to 0.07 ms against
+    0.4 to 0.6 ms for the first (textures cached), created and cached counts unchanged (1 -> 1);
+    through the facade, after the first tree was freed, created 11 -> 11, cached 2 -> 2. **Cancel**:
+    mid-parse, dropped mid-parse, and with texture loads in flight: `OBJECT_COUNT` 1498 -> 1498, no
+    loader thread and no texture request left. `SUMMARY: 45 passed, 0 failed`. `tools/native_gate.gd`:
+    leaks none (objects 1839 -> 1839 after 20 rounds of 24 maps); the small map 0.87 ms mean (min
+    0.78) synchronously, the shared TileSet cache taking its 0.6 ms TileSet out (stage 2: 1.6 to 2.4);
+    `import_async` of it: 22 to 51 frames, wall mean 1.35 ms (min 0.99), worst frame before the build
+    0.47 ms, build frame mean 0.98 ms. With `share_tilesets` off the small map takes what it took
+    before (an A/B against stage 2's code: medians 1.3 to 1.9 ms against 1.7 to 2.4, same session).
+    `test/run_tests.gd`: the GDScript runtime `SUMMARY: 103 passed, 0 failed ... of 103`, the facade
+    `SUMMARY: 90 passed, 13 failed (new_: 13, bug_: 0, other: 0) of 103` (the 13 part B tests stage 2b
+    fixes, as before); `cargo test --release --workspace` 53 passed; clippy `-D warnings` and `fmt
+    --check` clean. The benchmark (`test/benchmark.gd`, facade): `total_ms min=185.4 avg=208.6 | parse
+    avg=7.7 | tilesets avg=0.5 | tile layers avg=152.2 | objects avg=48.2`; its tile layer phase now
+    subtracts a TileSet time the shared cache no longer spends (the tiles-only import reuses the full
+    map's TileSet), about 1.5 ms too little.
+  - **Decisions the plan left open**: the facade shares by default but exclusively, since
+    `test_import_twice_independent` (two live imports of one map must not share a TileSet) is the
+    GDScript runtime's contract; `exclusive = false` gives the plan's one-TileSet-per-combination
+    sharing. `save_tileset_to` builds unshared. Textures are prefetched for `res://` images only and
+    collected before `READY` rather than when the build needs them, so the build never blocks;
+    `WAITING_FILES` is that wait. A cached TileSet's messages are replayed on every use. The cache
+    key hashes the project's types rather than its path (the project's content is what shapes the
+    tilesets). `poll()` reads a round's files in the poll that receives the request (one round per
+    poll); `READING` is the status between `load_async` and the first poll. The build frame keeps the
+    builder's own per-layer decoding (`builder/cells.rs`); moving the decode onto the worker would
+    take about 10 ms off the build frame of the benchmark map and is left for later.
+
 ## 7. Behaviour changes from the runtime improvement plan
 
 `docs/runtime-improvement-plan.md` (brought in 2026-10-18) reviews the GDScript runtime and
