@@ -133,9 +133,10 @@ func import_from_zip_with_post_processing(zip_file: String, source_file_in_zip: 
 
 # Imports a Tiled map like import(), without a hitch: a coroutine, so `await` it. The map and its
 # files are parsed on a worker thread while the game runs (TiledMap.load_async, one poll() per
-# frame: the main thread only reads the files and hands them over), its textures load in the
-# engine's threads, its TileSets are created a few tiles per frame (async_tiles_per_frame), and
-# the tree is built in one frame at the end. Returns the root node (no parent) or null.
+# frame: the main thread only reads the files and hands them over; the worker also decodes the
+# tile layers, TiledMap.prepare_tile_layers), its textures load in the engine's threads, its
+# TileSets are created a few tiles per frame (async_tiles_per_frame), and the tree is built in
+# one frame at the end. Returns the root node (no parent) or null.
 #
 #     var map: Node = await importer.import_async("res://maps/level.tmx")
 func import_async(source_file: String, project_file: String = "") -> Node:
@@ -305,6 +306,8 @@ func _import_async(source_file: String, project_file: String, zip_file: String) 
 	else:
 		var tree := Engine.get_main_loop() as SceneTree
 		var map: RefCounted = ClassDB.instantiate("TiledMap")
+		# The worker also decodes the tile layers, so the build frame only resolves and assigns
+		map.set("prepare_tile_layers", true)
 		if zip_file == "":
 			map.call("load_async", source_file, project_file)
 		else:

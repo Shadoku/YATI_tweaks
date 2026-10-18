@@ -12,6 +12,9 @@ extends SceneTree
 ##   TileSet only while the first tree is alive;
 ## - cancelling (or dropping) a load mid-parse and mid-texture-load leaks nothing
 ##   (Performance.OBJECT_COUNT back at its baseline after a few frames, no loader thread left);
+## - tile layers prepared by the load (TiledMap.prepare_tile_layers: on the worker for load_async)
+##   give every TileMapLayer the tile_map_data a build that decodes them itself gives, and the
+##   build then decodes nothing;
 ## - TiledMap's signals (a handler may call back into the map), zip, failures, counts.
 ##
 ##   godot --headless -s test/test_async.gd [-- --rounds=3]
@@ -76,6 +79,7 @@ func main() -> void:
 	await settle(3)
 
 	await test_bench_async_frames()
+	await test_prepared_tile_layers()
 	await test_second_import_skips_tilesets()
 	await test_exclusive_shared_cache()
 	await test_project_in_key()
@@ -213,14 +217,17 @@ func test_bench_async_frames() -> void:
 		var opts: Resource = imp.call("make_options")
 		tilesets.call("tileset_for", map, opts)
 		var t_ts := Time.get_ticks_usec()
-		var s: Node = ClassDB.instantiate("TiledBuilder").call("build", map, tilesets, opts)
+		var builder: RefCounted = ClassDB.instantiate("TiledBuilder")
+		var s: Node = builder.call("build", map, tilesets, opts)
 		var t_build := Time.get_ticks_usec()
+		var tm: Dictionary = builder.call("get_timings")
 		sync_loads.append((t_load - t) / 1000.0)
 		sync_tilesets.append((t_ts - t_load) / 1000.0)
 		sync_builds.append((t_build - t_ts) / 1000.0)
 		sync_totals.append((t_build - t) / 1000.0)
-		print("  sync round %d: load %.1f ms, TileSets %.1f ms, build %.1f ms, total %.1f ms" % [
-			r, sync_loads[r], sync_tilesets[r], sync_builds[r], sync_totals[r]])
+		print("  sync round %d: load %.1f ms, TileSets %.1f ms, build %.1f ms (tile layers: decode %.1f, cells %.1f, tile_map_data %.1f), total %.1f ms" % [
+			r, sync_loads[r], sync_tilesets[r], sync_builds[r], tm.prepare_us / 1000.0, tm.cells_us / 1000.0,
+			tm.assign_us / 1000.0, sync_totals[r]])
 		if r == 0:
 			sync_tree = describe(s)
 			sync_cells = cell_count(s)
@@ -242,6 +249,88 @@ func test_bench_async_frames() -> void:
 				print("    first difference: async %s | sync %s" % [async_tree[i], sync_tree[i]])
 				break
 	check(async_cells == sync_cells and sync_cells > 0, "async cells %d == sync cells %d" % [async_cells, sync_cells])
+
+
+## Every TileMapLayer's tile_map_data by node path.
+func layer_blobs(n: Node) -> Dictionary:
+	var out := {}
+	for l in n.find_children("*", "TileMapLayer", true, false):
+		out[str(n.get_path_to(l))] = (l as TileMapLayer).tile_map_data
+	if n is TileMapLayer:
+		out["."] = (n as TileMapLayer).tile_map_data
+	return out
+
+
+## Loads a map (asynchronously when `threaded`, polling once per frame), builds it with a fresh
+## TileSet cache and returns [tree, the builder's timings, whether the map held prepared layers].
+func load_and_build(path: String, prepare: bool, threaded: bool, opts: Resource) -> Array:
+	var map: RefCounted = ClassDB.instantiate("TiledMap")
+	map.set("prepare_tile_layers", prepare)
+	if threaded:
+		map.call("load_async", path, "")
+		while int(map.call("poll")) < READY:
+			await process_frame
+	else:
+		map.call("load", path, "")
+	var builder: RefCounted = ClassDB.instantiate("TiledBuilder")
+	var n: Node = builder.call("build", map, ClassDB.instantiate("TiledTileSets"), opts)
+	return [n, builder.call("get_timings"), map.call("has_prepared_tile_layers")]
+
+
+## Tile layers prepared by the load (on the worker for load_async, on the main thread for load)
+## fill every layer with the blob a build that decodes them itself writes; the build then
+## decodes nothing. Several encodings, infinite maps (TMX and JSON), hexagonal flags, legacy
+## XML, and alternative tiles (no_alternative_tiles off), and the benchmark map.
+func test_prepared_tile_layers() -> void:
+	var opts: Resource = ImporterScript.new().call("make_options")
+	var alt_opts: Resource = ImporterScript.new().call("make_options")
+	alt_opts.set("no_alternative_tiles", false)
+	var cases := [
+		["layers.tmx", opts], ["encodings.tmx", opts], ["infinite.tmx", opts], ["infinite.tmj", opts],
+		["hexagonal.tmx", opts], ["legacy_xml.tmx", opts], ["tilesets.tmx", opts],
+		["json_map.tmj", opts], ["isometric.tmx", opts], ["missing_tileset.tmx", opts],
+		["layers.tmx", alt_opts], ["infinite.tmx", alt_opts], ["animations.tmx", alt_opts],
+	]
+	for c in cases:
+		var path: String = FIX + c[0]
+		var what: String = c[0] + (" (alternative tiles)" if c[1] == alt_opts else "")
+		var plain: Array = await load_and_build(path, false, false, c[1])
+		var worker: Array = await load_and_build(path, true, true, c[1])
+		var main: Array = await load_and_build(path, true, false, c[1])
+		var ok: bool = plain[0] != null and worker[0] != null and main[0] != null
+		var expected: Dictionary = layer_blobs(plain[0]) if ok else {}
+		check(ok and not expected.is_empty() and layer_blobs(worker[0]) == expected
+			and layer_blobs(main[0]) == expected and describe(worker[0]) == describe(plain[0]),
+			"%s: prepared tile layers (worker and main thread) give the same tile_map_data (%d layers)" % [what, expected.size()])
+		check(not plain[2] and worker[2] and main[2], "%s: has_prepared_tile_layers follows prepare_tile_layers" % what)
+		for r in [plain, worker, main]:
+			if r[0]: r[0].free()
+	# The benchmark map: what the build frame no longer does (each tree freed before the next
+	# build, the two ways alternated)
+	var expected_bench := {}
+	var same := true
+	var times := {false: [[], [], []], true: [[], [], []]}
+	for prepare in [false, true, true, false]:
+		var r: Array = await load_and_build(BENCH, prepare, true, opts)
+		if r[0] == null:
+			same = false
+			continue
+		var blobs := layer_blobs(r[0])
+		if expected_bench.is_empty():
+			expected_bench = blobs
+		same = same and blobs == expected_bench
+		r[0].free()
+		var t: Dictionary = r[1]
+		times[prepare][0].append(t.prepare_us / 1000.0)
+		times[prepare][1].append(t.cells_us / 1000.0)
+		times[prepare][2].append(t.assign_us / 1000.0)
+		await settle(3)
+	var tp: Array = times[false]
+	var tq: Array = times[true]
+	print("RESULT prepared bench (two builds each): the build decoding its tile layers: decode %s ms, cells %s ms, tile_map_data %s ms; prepared on the worker: decode %s ms, cells %s ms, tile_map_data %s ms" % [
+		str(tp[0]), str(tp[1]), str(tp[2]), str(tq[0]), str(tq[1]), str(tq[2])])
+	check(same and not expected_bench.is_empty(), "bench: prepared tile layers give the same tile_map_data")
+	check(tq[0].max() < 1.0, "bench: a prepared map's build decodes nothing (%.2f ms)" % tq[0].max())
 
 
 ## A second map on the same tilesets (the tiles-only benchmark map has the full map's tileset

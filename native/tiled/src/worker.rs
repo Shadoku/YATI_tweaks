@@ -27,18 +27,23 @@
 //!         Some(Event::Need { paths, .. }) => {
 //!             worker.supply(read(&paths));
 //!         }
-//!         Some(Event::Done(map)) => break map,
+//!         Some(Event::Done(map, _)) => break map,
 //!         Some(Event::Failed(errors)) => panic!("{errors:?}"),
 //!     }
 //! };
 //! println!("{} layers", map.all_layers().len());
 //! ```
 //!
+//! [`Worker::spawn_preparing`] also prepares the map's tile layers on the worker once the map is
+//! parsed ([`PreparedCells`]: the payloads decoded into blobs that wait only for the TileSet's
+//! tile fields), so a build that follows does not decode them on the caller's thread.
+//!
 //! Dropping a [`Worker`] (or [`Worker::cancel`]) never waits: the thread stops at its next
 //! message (it is parsing at most one batch), and its handle is kept until [`join_detached`]
 //! (the importer calls it when the engine shuts down, so no thread outlives the library).
 
 use crate::load::{Loader, Status};
+use crate::prepare::PreparedCells;
 use crate::{Error, ErrorKind, Map};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
@@ -61,8 +66,9 @@ pub enum Event {
         /// Images found since the last event (resolved paths).
         images: Vec<String>,
     },
-    /// The map is loaded ([`Status::Done`]).
-    Done(Box<Map>),
+    /// The map is loaded ([`Status::Done`]), with its tile layers prepared when the worker was
+    /// started with [`Worker::spawn_preparing`].
+    Done(Box<Map>, Option<PreparedCells>),
     /// The map could not be loaded ([`Status::Failed`]), or the thread stopped.
     Failed(Vec<Error>),
 }
@@ -128,6 +134,17 @@ impl Worker {
     /// reads its archive itself, so pass it unstepped with no files and the whole parse runs on
     /// the worker. The worker supplies the batch, steps, and sends one [`Event`].
     pub fn spawn(loader: Loader, first: Vec<File>) -> std::io::Result<Worker> {
+        Self::start(loader, first, false)
+    }
+
+    /// As [`spawn`](Self::spawn), and once the map is parsed the worker also prepares its tile
+    /// layers ([`PreparedCells::prepare`], one more thread per layer), sent with
+    /// [`Event::Done`].
+    pub fn spawn_preparing(loader: Loader, first: Vec<File>) -> std::io::Result<Worker> {
+        Self::start(loader, first, true)
+    }
+
+    fn start(loader: Loader, first: Vec<File>, prepare: bool) -> std::io::Result<Worker> {
         let (files_tx, files_rx) = channel::<Vec<File>>();
         let (events_tx, events_rx) = channel::<Event>();
         RUNNING.fetch_add(1, Ordering::SeqCst);
@@ -135,7 +152,7 @@ impl Worker {
             .name("tiled-loader".into())
             .spawn(move || {
                 let _guard = RunningGuard;
-                run(loader, first, files_rx, events_tx);
+                run(loader, first, prepare, files_rx, events_tx);
             });
         let handle = match spawned {
             Ok(h) => h,
@@ -226,7 +243,13 @@ impl Drop for Worker {
 
 /// The worker thread: supply a batch, step, answer; until the loader is done or the caller is
 /// gone.
-fn run(mut loader: Loader, first: Vec<File>, files: Receiver<Vec<File>>, events: Sender<Event>) {
+fn run(
+    mut loader: Loader,
+    first: Vec<File>,
+    prepare: bool,
+    files: Receiver<Vec<File>>,
+    events: Sender<Event>,
+) {
     let mut batch = first;
     loop {
         for (path, bytes) in batch {
@@ -240,7 +263,10 @@ fn run(mut loader: Loader, first: Vec<File>, files: Receiver<Vec<File>>, events:
                 paths: loader.needs().to_vec(),
                 images: loader.take_discovered_images(),
             },
-            Status::Done(map) => Event::Done(map),
+            Status::Done(map) => {
+                let cells = prepare.then(|| PreparedCells::prepare(&map));
+                Event::Done(map, cells)
+            }
             Status::Failed(errors) => Event::Failed(errors),
         };
         let last = !matches!(event, Event::Need { .. });
@@ -287,7 +313,10 @@ mod tests {
                     rounds += 1;
                     assert!(w.supply(read(&paths)));
                 }
-                Event::Done(m) => return (Ok(*m), images, rounds),
+                Event::Done(m, cells) => {
+                    assert!(cells.is_none(), "spawn does not prepare");
+                    return (Ok(*m), images, rounds);
+                }
                 Event::Failed(e) => return (Err(e), images, rounds),
             }
         }
@@ -340,8 +369,31 @@ mod tests {
         let mut w = Worker::spawn(Loader::from_zip(zip, "maps/zipmap.tmx", None), Vec::new())
             .expect("spawn");
         match w.wait_event() {
-            Event::Done(m) => assert_eq!(m.to_value(), sync.to_value()),
+            Event::Done(m, _) => assert_eq!(m.to_value(), sync.to_value()),
             other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_preparing_worker_sends_the_prepared_tile_layers() {
+        for name in ["layers.tmx", "infinite.tmx", "tilesets.tmx"] {
+            let path = format!("{}/{name}", fixtures());
+            let sync = crate::load::load_from_fs(&path, None).expect("sync load");
+            let mut loader = Loader::new(&path, None);
+            assert!(matches!(loader.step(), Status::NeedFiles));
+            let first = read(loader.needs());
+            let mut w = Worker::spawn_preparing(loader, first).expect("spawn");
+            let (map, cells) = loop {
+                match w.wait_event() {
+                    Event::Need { paths, .. } => assert!(w.supply(read(&paths))),
+                    Event::Done(m, cells) => break (m, cells),
+                    Event::Failed(e) => panic!("{name}: {e:?}"),
+                }
+            };
+            assert_eq!(map.to_value(), sync.to_value(), "{name}");
+            let cells = cells.expect("prepared");
+            assert_eq!(cells, PreparedCells::prepare(&sync), "{name}");
+            assert!(cells.byte_size() > 0, "{name}");
         }
     }
 

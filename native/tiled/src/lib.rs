@@ -11,6 +11,9 @@
 //!   `<tile gid>` list), decoded on demand.
 //! - [`cells`]: gid resolution as the GDScript runtime's `resolve_cell` does it, and the byte
 //!   blobs Godot's `TileMapLayer.tile_map_data` takes.
+//! - [`prepare`]: tile layers decoded into `tile_map_data` blobs that wait only for their tile
+//!   fields, so a build's main-thread share of a tile layer is resolving its distinct values
+//!   and patching the blob.
 //! - [`load`]: the [`Loader`], driven by a file-request protocol (the caller reads files, the
 //!   loader says which), with templates and custom types merged as the GDScript runtime merges
 //!   them; zip archives read directly.
@@ -32,6 +35,7 @@ pub mod load;
 pub mod model;
 pub mod parse;
 pub mod path;
+pub mod prepare;
 pub mod value;
 pub mod worker;
 pub mod world;

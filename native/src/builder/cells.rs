@@ -1,7 +1,10 @@
-//! Tile layers: the cells of every tile layer decoded (one thread per layer, pure Rust), each
-//! distinct cell value resolved once on the main thread as `resolve_cell` resolves it (tiles and
-//! alternative tiles created in the TileSet on the way), and the layer filled with one
-//! `tile_map_data` assignment of the core's blob format.
+//! Tile layers: every tile layer prepared as `tiled_core::prepare` prepares it (payloads
+//! decoded into `tile_map_data` blobs whose records wait for their tile fields, one thread per
+//! layer, pure Rust), or taken prepared from the map (`TiledMap.prepare_tile_layers`: an
+//! asynchronous load prepares them on its worker); then each distinct cell value resolved once
+//! on the main thread as `resolve_cell` resolves it (tiles and alternative tiles created in the
+//! TileSet on the way), the blob patched with the resolutions, and the layer filled with one
+//! `tile_map_data` assignment. Either way the blob is the same, byte for byte.
 //!
 //! The blob format is engine-internal, so it is checked once per process against the engine
 //! (cells set with `set_cell` read back as a blob, and a blob read back cell by cell); should it
@@ -14,132 +17,61 @@ use godot::global::printerr;
 use godot::prelude::*;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
 use tiled_core::cells::{BlobWriter, TRANSFORM_FLIP_H, TRANSFORM_FLIP_V, TRANSFORM_TRANSPOSE};
-use tiled_core::data::{
-    decode, FLIPPED_DIAGONALLY, FLIPPED_HORIZONTALLY, FLIPPED_VERTICALLY, GID_MASK,
-};
+use tiled_core::data::{FLIPPED_DIAGONALLY, FLIPPED_HORIZONTALLY, FLIPPED_VERTICALLY, GID_MASK};
+use tiled_core::prepare::{PreparedCells, PreparedLayer};
 use tiled_core::{Layer, Map};
 
-/// A run of cells in rows of `width`, the first at (`x0`, `y0`).
-pub struct Segment {
-    pub x0: i32,
-    pub y0: i32,
-    pub width: usize,
-    pub cells: Vec<u32>,
+/// Where a build's tile layers spent their main-thread time, in µs.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TileTiming {
+    /// Preparing the layers (decoding payloads into blobs) in the build; about 0 when the map
+    /// came prepared.
+    pub prepare_us: u64,
+    /// Resolving the distinct cell values and patching the blobs.
+    pub cells_us: u64,
+    /// `tile_map_data` assignments (or `set_cell` calls).
+    pub assign_us: u64,
 }
 
-/// One tile layer's decoded cells.
-#[derive(Default)]
-pub struct LayerCells {
-    pub segments: Vec<Segment>,
-    /// The distinct non-empty cell values, in the order they first appear.
-    pub distinct: Vec<u32>,
-    pub errors: Vec<String>,
-}
-
-/// The decoded tile layers of a map, by layer address.
+/// The prepared tile layers of the map being built.
 #[derive(Default)]
 pub struct Cells {
-    layers: HashMap<usize, LayerCells>,
+    prepared: Option<Arc<PreparedCells>>,
+    /// Layer address -> its index in `Map::all_layers`.
+    index: HashMap<usize, usize>,
 }
 
 fn key(l: &Layer) -> usize {
     l as *const Layer as usize
 }
 
-/// A segment's origin, row width and cells (or why they could not be decoded).
-type RawSegment = (i32, i32, usize, Result<Vec<u32>, String>);
-
-/// A layer's cells as `handle_layer` reads them: an infinite map's chunks, else its `data` in
-/// rows of the map's width.
-fn decode_layer(map: &Map, l: &Layer) -> LayerCells {
-    let mut out = LayerCells::default();
-    let enc = l.encoding.as_deref();
-    let comp = l.compression.as_deref();
-    let mut segs: Vec<RawSegment> = Vec::new();
-    if map.is_infinite() && l.chunks.is_some() {
-        for c in l.chunks.iter().flatten() {
-            let w = c.width.unwrap_or(0).max(0) as usize;
-            let h = c.height.unwrap_or(0).max(0) as usize;
-            let Some(p) = &c.data else { continue };
-            let cells = decode(p, enc, comp, w * h)
-                .map(|c| c.into_owned())
-                .map_err(|e| e.message);
-            segs.push((c.x.unwrap_or(0) as i32, c.y.unwrap_or(0) as i32, w, cells));
-        }
-    } else if let Some(p) = &l.data {
-        let w = map.width.unwrap_or(0).max(0) as usize;
-        let h = map.height.unwrap_or(0).max(0) as usize;
-        let cells = decode(p, enc, comp, w * h)
-            .map(|c| c.into_owned())
-            .map_err(|e| e.message);
-        segs.push((0, 0, w, cells));
-    }
-    // Distinct values: a bit per (gid, flips) for small gids, a set beyond
-    let mut seen_dense = vec![0u64; 1 << 12];
-    let mut seen_sparse = std::collections::HashSet::new();
-    for (x0, y0, width, cells) in segs {
-        match cells {
-            Ok(cells) => {
-                for &raw in &cells {
-                    if raw & GID_MASK == 0 {
-                        continue;
-                    }
-                    let gid = raw & GID_MASK;
-                    let flips = (raw >> 29) as usize;
-                    let idx = (gid as usize) * 8 + flips;
-                    let new = if idx < seen_dense.len() * 64 {
-                        let (w, b) = (idx / 64, idx % 64);
-                        let fresh = seen_dense[w] & (1 << b) == 0;
-                        seen_dense[w] |= 1 << b;
-                        fresh
-                    } else {
-                        seen_sparse.insert(raw & 0xEFFF_FFFF)
-                    };
-                    if new {
-                        out.distinct.push(raw & 0xEFFF_FFFF);
-                    }
-                }
-                out.segments.push(Segment {
-                    x0,
-                    y0,
-                    width: width.max(1),
-                    cells,
-                });
-            }
-            Err(e) => out.errors.push(e),
-        }
-    }
-    out
-}
-
 impl Cells {
-    /// Decodes every tile layer of the map, one thread per layer.
-    pub fn prepare(&mut self, map: &Map) {
-        let layers: Vec<&Layer> = map
-            .all_layers()
-            .into_iter()
-            .filter(|l| l.kind_or_tile() == "tilelayer")
-            .collect();
-        let decoded: Vec<(usize, LayerCells)> = if layers.len() > 1 {
-            std::thread::scope(|s| {
-                let handles: Vec<_> = layers
-                    .iter()
-                    .map(|&l| s.spawn(move || (key(l), decode_layer(map, l))))
-                    .collect();
-                handles.into_iter().filter_map(|h| h.join().ok()).collect()
-            })
-        } else {
-            layers
-                .iter()
-                .map(|&l| (key(l), decode_layer(map, l)))
-                .collect()
-        };
-        self.layers = decoded.into_iter().collect();
+    /// Uses the map's own prepared layers (`TiledMap.prepare_tile_layers`), if any.
+    pub fn given(&mut self, prepared: Option<Arc<PreparedCells>>) {
+        self.prepared = prepared;
     }
 
-    fn take(&mut self, l: &Layer) -> Option<LayerCells> {
-        self.layers.remove(&key(l))
+    /// Prepares every tile layer of the map, one thread per layer, unless the map came with
+    /// them prepared.
+    pub fn prepare(&mut self, map: &Map) {
+        let all = map.all_layers();
+        self.index = all.iter().enumerate().map(|(i, &l)| (key(l), i)).collect();
+        if self
+            .prepared
+            .as_ref()
+            .is_some_and(|p| p.layer_count() == all.len())
+        {
+            return;
+        }
+        self.prepared = Some(Arc::new(PreparedCells::prepare(map)));
+    }
+
+    /// The prepared cells and a layer's index in them.
+    fn of(&self, l: &Layer) -> Option<(Arc<PreparedCells>, usize)> {
+        let i = *self.index.get(&key(l))?;
+        Some((self.prepared.clone()?, i))
     }
 }
 
@@ -214,44 +146,6 @@ fn blob_format_ok() -> bool {
     }
     BLOB_FORMAT.store(if ok { 1 } else { 2 }, Ordering::Relaxed);
     ok
-}
-
-/// Raw cell value (flags included) to its resolution, for fast per-cell lookups.
-struct Table {
-    dense: Vec<Option<Resolved>>,
-    sparse: HashMap<u32, Resolved>,
-}
-
-impl Table {
-    fn new() -> Self {
-        Table {
-            dense: Vec::new(),
-            sparse: HashMap::new(),
-        }
-    }
-    fn index(raw: u32) -> usize {
-        ((raw & GID_MASK) as usize) * 8 + (raw >> 29) as usize
-    }
-    fn insert(&mut self, raw: u32, r: Resolved) {
-        let i = Self::index(raw);
-        if i < (1 << 20) {
-            if self.dense.len() <= i {
-                self.dense.resize(i + 1, None);
-            }
-            self.dense[i] = Some(r);
-        } else {
-            self.sparse.insert(raw & 0xEFFF_FFFF, r);
-        }
-    }
-    #[inline]
-    fn get(&self, raw: u32) -> Resolved {
-        let i = Self::index(raw);
-        match self.dense.get(i) {
-            Some(Some(r)) => *r,
-            Some(None) => None,
-            None => self.sparse.get(&(raw & 0xEFFF_FFFF)).copied().flatten(),
-        }
-    }
 }
 
 impl Build<'_> {
@@ -450,67 +344,51 @@ impl Build<'_> {
 
     /// Fills a tile layer's node with its cells.
     pub(super) fn fill_layer(&mut self, l: &Layer, tml: &mut Gd<TileMapLayer>) {
-        let Some(lc) = self.cells.take(l) else { return };
-        for e in &lc.errors {
+        let Some((prepared, i)) = self.cells.of(l) else {
+            return;
+        };
+        let Some(pl) = prepared.layer(i) else { return };
+        for e in &pl.errors {
             self.diag.error(e.clone());
         }
-        let mut table = Table::new();
-        for &raw in &lc.distinct {
-            let r = match self.cell_cache.get(&raw) {
+        let t0 = std::time::Instant::now();
+        let resolved: Vec<Resolved> = pl
+            .values
+            .iter()
+            .map(|&raw| match self.cell_cache.get(&raw) {
                 Some(r) => *r,
                 None => {
                     let r = self.resolve_cell(raw);
                     self.cell_cache.insert(raw, r);
                     r
                 }
-            };
-            table.insert(raw, r);
-        }
+            })
+            .collect();
         if blob_format_ok() {
-            let total: usize = lc.segments.iter().map(|s| s.cells.len()).sum();
-            let mut w = BlobWriter::with_capacity(total);
-            for s in &lc.segments {
-                let (mut col, mut row) = (0usize, 0i32);
-                for &raw in &s.cells {
-                    if raw & GID_MASK != 0 {
-                        if let Some([src, ax, ay, alt]) = table.get(raw) {
-                            w.push(
-                                (s.x0 + col as i32) as i16,
-                                (s.y0 + row) as i16,
-                                src,
-                                ax,
-                                ay,
-                                alt as u16,
-                            );
-                        }
-                    }
-                    col += 1;
-                    if col == s.width {
-                        col = 0;
-                        row += 1;
-                    }
+            let mut bytes = PackedByteArray::from(pl.blob.as_slice());
+            let n = PreparedLayer::patch(bytes.as_mut_slice(), &resolved);
+            let t1 = std::time::Instant::now();
+            self.timing.cells_us += (t1 - t0).as_micros() as u64;
+            if n > 2 {
+                if n < bytes.len() {
+                    bytes.resize(n);
                 }
+                tml.set_tile_map_data_from_array(&bytes);
             }
-            if !w.is_empty() {
-                tml.set_tile_map_data_from_array(&PackedByteArray::from(w.finish().as_slice()));
-            }
+            self.timing.assign_us += t1.elapsed().as_micros() as u64;
         } else {
-            for s in &lc.segments {
-                for (i, &raw) in s.cells.iter().enumerate() {
-                    if raw & GID_MASK == 0 {
-                        continue;
-                    }
-                    if let Some([src, ax, ay, alt]) = table.get(raw) {
-                        let at =
-                            Vector2i::new(s.x0 + (i % s.width) as i32, s.y0 + (i / s.width) as i32);
-                        tml.set_cell_ex(at)
-                            .source_id(src as i32)
-                            .atlas_coords(Vector2i::new(ax as i32, ay as i32))
-                            .alternative_tile(alt as u16 as i32)
-                            .done();
-                    }
+            let t1 = std::time::Instant::now();
+            self.timing.cells_us += (t1 - t0).as_micros() as u64;
+            for (x, y, index) in pl.records() {
+                if let Some(Some([src, ax, ay, alt])) = resolved.get(index as usize) {
+                    tml.set_cell_ex(Vector2i::new(x as i32, y as i32))
+                        .source_id(*src as i32)
+                        .atlas_coords(Vector2i::new(*ax as i32, *ay as i32))
+                        .alternative_tile(*alt as u16 as i32)
+                        .done();
                 }
             }
+            self.timing.assign_us += t1.elapsed().as_micros() as u64;
         }
     }
 }

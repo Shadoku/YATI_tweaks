@@ -9,6 +9,11 @@
 //! collects them when they are loaded; `loaded` (or `failed`) is emitted from the `poll()` that
 //! finishes. `load` / `from_zip` pump the same machine to the end in one call, with the loader on
 //! the main thread and no texture requests (the builder loads them, as before).
+//!
+//! With `prepare_tile_layers` on, the load also prepares the map's tile layers for a build
+//! ([`PreparedCells`]: payloads decoded into blobs that wait only for the TileSet's tile fields),
+//! on the worker for an asynchronous load, so `TiledBuilder.build` does not decode them in its
+//! frame.
 
 use crate::files::{
     orphan_count, orphan_requests, request_threaded, threaded_get, threaded_loadable,
@@ -20,6 +25,7 @@ use godot::global::{print_rich, printerr, Error as GdError};
 use godot::prelude::*;
 use std::collections::HashSet;
 use std::sync::Arc;
+use tiled_core::prepare::PreparedCells;
 use tiled_core::worker::{Event, File, Worker};
 use tiled_core::{Loader, Map, Status as LoadStatus};
 
@@ -71,6 +77,8 @@ enum Driver {
 /// One load in progress.
 struct Job {
     threaded: bool,
+    /// Prepare the tile layers (`prepare_tile_layers` when the load started).
+    prepare: bool,
     driver: Driver,
     /// The files the next round reads.
     to_read: Vec<String>,
@@ -108,6 +116,17 @@ pub struct TiledMap {
     /// The textures an asynchronous load collected (kept alive, so the build finds them in the
     /// engine's resource cache).
     textures: Vec<Gd<Resource>>,
+    /// Loads also prepare the map's tile layers for `TiledBuilder.build` (decoded into blobs
+    /// that wait only for the TileSet's tile fields; on the worker thread for `load_async` and
+    /// `from_zip_async`), so the build's frame does not decode them. The map then holds them,
+    /// about 12 bytes per non-empty cell, until it is loaded again or freed. Off by default: a
+    /// map a `TiledStreamer` reads needs none (it decodes the chunks it shows), and an infinite
+    /// map prepared whole costs 12 bytes per cell of every chunk. `Importer.import_async` turns
+    /// it on. Read when a load starts.
+    #[var]
+    prepare_tile_layers: bool,
+    /// The prepared tile layers (`prepare_tile_layers`).
+    pub(crate) cells: Option<Arc<PreparedCells>>,
 }
 
 #[godot_api]
@@ -234,6 +253,7 @@ impl TiledMap {
         }
         self.job = None;
         self.map = None;
+        self.cells = None;
         self.textures.clear();
         self.state = State::Failed;
     }
@@ -249,6 +269,13 @@ impl TiledMap {
     #[func]
     fn get_orphaned_texture_requests(&self) -> i64 {
         orphan_count() as i64
+    }
+
+    /// True when the loaded map holds its tile layers prepared for a build
+    /// (`prepare_tile_layers`).
+    #[func]
+    fn has_prepared_tile_layers(&self) -> bool {
+        self.cells.is_some()
     }
 
     /// The number of textures an asynchronous load collected and holds.
@@ -366,6 +393,7 @@ impl TiledMap {
     fn reset(&mut self, zip: &str) {
         self.job = None;
         self.map = None;
+        self.cells = None;
         self.textures.clear();
         self.errors.clear();
         self.warnings.clear();
@@ -380,8 +408,8 @@ impl TiledMap {
             LoadStatus::NeedFiles => loader.needs().to_vec(),
             LoadStatus::Done(m) => {
                 // Not reached: a loader of the file system needs its map.
-                self.job = Some(Self::job(threaded, Driver::Done, Vec::new()));
-                self.got_map(*m);
+                self.job = Some(self.job(threaded, Driver::Done, Vec::new()));
+                self.got_map(*m, None);
                 return;
             }
             LoadStatus::Failed(e) => {
@@ -389,7 +417,7 @@ impl TiledMap {
                 return;
             }
         };
-        self.job = Some(Self::job(threaded, Driver::Main(Box::new(loader)), to_read));
+        self.job = Some(self.job(threaded, Driver::Main(Box::new(loader)), to_read));
         self.state = State::Reading;
     }
 
@@ -400,13 +428,14 @@ impl TiledMap {
             path_in_zip,
             project: (!project.is_empty()).then_some(project),
         };
-        self.job = Some(Self::job(threaded, driver, vec![zip]));
+        self.job = Some(self.job(threaded, driver, vec![zip]));
         self.state = State::Reading;
     }
 
-    fn job(threaded: bool, driver: Driver, to_read: Vec<String>) -> Job {
+    fn job(&self, threaded: bool, driver: Driver, to_read: Vec<String>) -> Job {
         Job {
             threaded,
+            prepare: self.prepare_tile_layers,
             driver,
             to_read,
             requested: Vec::new(),
@@ -446,7 +475,7 @@ impl TiledMap {
                         }
                         self.read_round();
                     }
-                    Some(Event::Done(map)) => self.got_map(*map),
+                    Some(Event::Done(map, cells)) => self.got_map(*map, cells),
                     Some(Event::Failed(errors)) => {
                         self.fail(errors.into_iter().map(|e| e.message).collect())
                     }
@@ -476,6 +505,7 @@ impl TiledMap {
             return;
         };
         let threaded = job.threaded;
+        let prepare = job.prepare;
         let files: Vec<File> = std::mem::take(&mut job.to_read)
             .into_iter()
             .map(|p| {
@@ -516,7 +546,12 @@ impl TiledMap {
             }
         };
         if threaded {
-            match Worker::spawn(*loader, files) {
+            let spawned = if prepare {
+                Worker::spawn_preparing(*loader, files)
+            } else {
+                Worker::spawn(*loader, files)
+            };
+            match spawned {
                 Ok(w) => {
                     job.driver = Driver::Worker(w);
                     self.state = State::Parsing;
@@ -542,16 +577,23 @@ impl TiledMap {
                 job.driver = Driver::Main(loader);
                 self.state = State::Reading;
             }
-            LoadStatus::Done(map) => self.got_map(*map),
+            LoadStatus::Done(map) => self.got_map(*map, None),
             LoadStatus::Failed(errors) => {
                 self.fail(errors.into_iter().map(|e| e.message).collect())
             }
         }
     }
 
-    /// The parsed map: its messages printed and kept; an asynchronous load requests the
-    /// textures it has not requested yet and waits for them.
-    fn got_map(&mut self, map: Map) {
+    /// The parsed map (and its tile layers, when the worker prepared them): its messages
+    /// printed and kept; a synchronous load that prepares tile layers prepares them here; an
+    /// asynchronous load requests the textures it has not requested yet and waits for them.
+    fn got_map(&mut self, map: Map, cells: Option<PreparedCells>) {
+        let prepare = self.job.as_ref().is_some_and(|j| j.prepare);
+        self.cells = match cells {
+            Some(c) => Some(Arc::new(c)),
+            None if prepare => Some(Arc::new(PreparedCells::prepare(&map))),
+            None => None,
+        };
         self.errors = map.errors().iter().map(|e| e.message.clone()).collect();
         self.warnings = map.warnings().to_vec();
         self.print_messages();
@@ -578,6 +620,7 @@ impl TiledMap {
     fn fail(&mut self, errors: Vec<String>) {
         self.job = None;
         self.map = None;
+        self.cells = None;
         self.textures.clear();
         self.errors = errors;
         self.warnings.clear();
@@ -627,6 +670,11 @@ impl TiledMap {
     /// The parsed map.
     pub fn inner(&self) -> Option<Arc<Map>> {
         self.map.clone()
+    }
+
+    /// The map's prepared tile layers (`prepare_tile_layers`).
+    pub(crate) fn prepared(&self) -> Option<Arc<PreparedCells>> {
+        self.cells.clone()
     }
 
     /// The map's path ("" before a load).

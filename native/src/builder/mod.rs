@@ -147,6 +147,8 @@ build_state! {
     parallax_scale: Vector2,
     iso: Option<(f64, f64, Vector2)>,
     cells: cells::Cells,
+    /// Where the tile layers' main-thread time went (`TiledBuilder.get_timings`).
+    timing: cells::TileTiming,
     atlas_index_cache: HashMap<u32, i32>,
     cell_cache: HashMap<u32, Option<[i16; 4]>>,
     /// `object_refs`, validated: `nodepath`, `geometry` or `both` (F2).
@@ -253,6 +255,7 @@ impl<'m> Build<'m> {
             parallax_scale: Vector2::ONE,
             iso: None,
             cells: cells::Cells::default(),
+            timing: cells::TileTiming::default(),
             objects_by_id: None,
             atlas_index_cache: HashMap::new(),
             cell_cache: HashMap::new(),
@@ -284,7 +287,7 @@ impl<'m> Build<'m> {
     }
 
     /// `create`.
-    fn run(mut self) -> (Option<Gd<Node>>, Diag) {
+    fn run(mut self) -> (Option<Gd<Node>>, Diag, cells::TileTiming) {
         let map = self.map;
         for t in map.tilesets.iter().flatten() {
             self.first_gids.push(t.firstgid.unwrap_or(0));
@@ -294,7 +297,9 @@ impl<'m> Build<'m> {
         self.built = self
             .tilesets
             .built_for_map(map, &zip, &opts, &mut self.diag);
+        let t = std::time::Instant::now();
         self.cells.prepare(map);
+        self.timing.prepare_us += t.elapsed().as_micros() as u64;
 
         let mut base = self.base_node.clone();
         base.set_name(self.base_name.as_str());
@@ -375,7 +380,7 @@ impl<'m> Build<'m> {
         let Some(mut ret) = single else {
             let mut root: Gd<Node> = base.upcast();
             self.finish_import(&mut root);
-            return (Some(root), self.diag);
+            return (Some(root), self.diag, self.timing);
         };
         // A single child: returned parentless, the wrapper freed
         base.remove_child(&ret);
@@ -388,7 +393,7 @@ impl<'m> Build<'m> {
         ret.set_name(self.base_name.as_str());
         self.finish_import(&mut ret);
         base.free();
-        (Some(ret), self.diag)
+        (Some(ret), self.diag, self.timing)
     }
 
     /// `finish_import`: the root gets the map's bounds as metadata (F3); every object node
@@ -924,6 +929,7 @@ pub struct TiledBuilder {
     errors: u32,
     warnings: u32,
     messages: Vec<String>,
+    timing: cells::TileTiming,
 }
 
 #[godot_api]
@@ -940,16 +946,19 @@ impl TiledBuilder {
         self.errors = 0;
         self.warnings = 0;
         self.messages.clear();
-        let (inner, zip) = {
+        let (inner, zip, prepared) = {
             let m = map.bind();
-            (m.inner(), m.zip_file.clone())
+            (m.inner(), m.zip_file.clone(), m.prepared())
         };
         let inner = inner?;
         let opts = options_of(options);
         let mut tilesets = tilesets;
         let mut ts = tilesets.bind_mut();
-        let (node, diag) = Build::new(&inner, &zip, &mut ts, opts).run();
+        let mut b = Build::new(&inner, &zip, &mut ts, opts);
+        b.cells.given(prepared);
+        let (node, diag, timing) = b.run();
         ts.textures.close_zip();
+        self.timing = timing;
         self.errors = diag.errors;
         self.warnings = diag.warnings;
         self.messages = diag.messages;
@@ -966,6 +975,19 @@ impl TiledBuilder {
     #[func]
     fn get_warning_count(&self) -> i64 {
         self.warnings as i64
+    }
+
+    /// Where the last `build` spent its tile layers' main-thread time, in µs: `prepare_us`
+    /// (decoding the layers' payloads into cell blobs; 0 when the map came prepared, see
+    /// `TiledMap.prepare_tile_layers`), `cells_us` (resolving the distinct cell values and
+    /// writing them into the blobs), `assign_us` (the engine's `tile_map_data` assignments).
+    #[func]
+    fn get_timings(&self) -> VarDictionary {
+        let mut d = VarDictionary::new();
+        d.set("prepare_us", self.timing.prepare_us as i64);
+        d.set("cells_us", self.timing.cells_us as i64);
+        d.set("assign_us", self.timing.assign_us as i64);
+        d
     }
 
     /// The messages of the last `build`, each prefixed `E:` (error) or `W:` (warning).
