@@ -1,0 +1,110 @@
+{
+    "automappingRulesFile": "",
+    "commands": [],
+    "compatibilityVersion": 1100,
+    "extensionsPath": "extensions",
+    "folders": [
+        "."
+    ],
+    "properties": [
+        {
+            "name": "godot_project",
+            "type": "string",
+            "value": "../godot_project"
+        }
+    ],
+    "propertyTypes": [
+        {
+            "id": 1,
+            "name": "GodotPhysicsLayers",
+            "storageType": "int",
+            "type": "enum",
+            "values": [
+                "World",
+                "Player",
+                "Layer 3",
+                "Enemy"
+            ],
+            "valuesAsFlags": true
+        },
+        {
+            "id": 2,
+            "name": "GodotRenderLayers",
+            "storageType": "int",
+            "type": "enum",
+            "values": [
+                "Layer 1",
+                "Lights"
+            ],
+            "valuesAsFlags": true
+        },
+        {
+            "id": 3,
+            "name": "GodotNodeType",
+            "storageType": "string",
+            "type": "enum",
+            "values": [
+                "collision",
+                "staticbody",
+                "characterbody",
+                "rigidbody",
+                "animatablebody",
+                "area",
+                "navigation",
+                "occluder",
+                "line",
+                "path",
+                "polygon",
+                "instance",
+                "parallax"
+            ],
+            "valuesAsFlags": false
+        },
+        {
+            "color": "#ffa0a0a4",
+            "drawFill": true,
+            "id": 4,
+            "members": [
+                {
+                    "name": "godot_scene",
+                    "type": "file",
+                    "value": "../godot_project/scenes/enemy.tscn"
+                },
+                {
+                    "name": "level",
+                    "type": "int",
+                    "value": 3
+                }
+            ],
+            "name": "Enemy",
+            "type": "class",
+            "useAs": [
+                "object",
+                "tile"
+            ]
+        },
+        {
+            "color": "#ffa0a0a4",
+            "drawFill": true,
+            "id": 5,
+            "members": [
+                {
+                    "name": "godot_scene",
+                    "type": "file",
+                    "value": "../godot_project/scenes/door.tscn"
+                },
+                {
+                    "name": "target",
+                    "type": "object",
+                    "value": 0
+                }
+            ],
+            "name": "Door",
+            "type": "class",
+            "useAs": [
+                "object",
+                "tile"
+            ]
+        }
+    ]
+}

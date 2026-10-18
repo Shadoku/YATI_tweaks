@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- One of each mistake the save-time validation finds (validate.test.mjs), next to objects
+     that are fine. Used with game.tiled-project (Godot project: ../godot_project). -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="16" height="16" tilewidth="16" tileheight="16" infinite="0" nextlayerid="5" nextobjectid="40">
+ <properties>
+  <property name="start" type="object" value="0"/>
+ </properties>
+ <tileset firstgid="1" source="mistakes.tsx"/>
+ <objectgroup id="1" name="Units">
+  <properties>
+   <property name="collision_layer" value="Bogus"/>
+  </properties>
+  <object id="1" name="Grunt" class="Enemy" x="16" y="16" width="16" height="16"/>
+  <object id="2" name="Ghost" class="Gohst" x="32" y="16" width="16" height="16"/>
+  <object id="3" name="Lower" class="enemy" x="48" y="16" width="16" height="16"/>
+  <object id="4" name="Spawner" class="instance" x="64" y="16"/>
+  <object id="5" name="Chest" class="instance" x="80" y="16">
+   <properties>
+    <property name="res_path" type="file" value="chest.tscn"/>
+   </properties>
+  </object>
+  <object id="6" name="ResScene" class="instance" x="96" y="16">
+   <properties>
+    <property name="res_path" type="file" value="res://scenes/door.tscn"/>
+   </properties>
+  </object>
+  <object id="7" name="Typo" x="112" y="16" width="16" height="16">
+   <properties>
+    <property name="godot_node_type" value="staticbdy"/>
+   </properties>
+  </object>
+  <object id="8" name="Typed" class="Mystery" x="128" y="16" width="16" height="16">
+   <properties>
+    <property name="godot_node_type" propertytype="GodotNodeType" value="area"/>
+   </properties>
+  </object>
+  <object id="9" name="TileGuy" gid="3" x="144" y="32" width="16" height="16"/>
+  <object id="10" name="FromTemplate" template="missing.tx" x="160" y="16"/>
+  <object id="11" name="Override" class="Enemy" x="176" y="16" width="16" height="16">
+   <properties>
+    <property name="godot_scene" type="file" value="../godot_project/scenes/none.tscn"/>
+   </properties>
+  </object>
+ </objectgroup>
+ <group id="2" name="Logic">
+  <objectgroup id="3" name="Wiring">
+   <object id="20" name="Masked" class="area" x="16" y="64" width="16" height="16">
+    <properties>
+     <property name="collision_layer" propertytype="GodotPhysicsLayers" value="Player,Ghosts"/>
+     <property name="collision_mask" value="Player"/>
+     <property name="light_mask" value="1,3"/>
+     <property name="navigation_layers" type="int" value="3"/>
+     <property name="visibility_layer" value="Lights,Nope"/>
+     <property name="platform_floor_layers" type="int" propertytype="GodotPhysicsLayers" value="5"/>
+    </properties>
+   </object>
+   <object id="21" name="Pointer" x="32" y="64">
+    <point/>
+    <properties>
+     <property name="dangling" type="object" value="99"/>
+     <property name="fine" type="object" value="1"/>
+     <property name="many" type="list">
+      <item type="object" value="20"/>
+      <item type="object" value="98"/>
+     </property>
+     <property name="unset" type="object" value="0"/>
+    </properties>
+   </object>
+   <object id="22" name="FrontDoor" class="Door" x="48" y="64" width="16" height="16"/>
+   <object id="23" name="BackDoor" class="Door" x="64" y="64" width="16" height="16">
+    <properties>
+     <property name="target" type="object" value="22"/>
+    </properties>
+   </object>
+  </objectgroup>
+ </group>
+</map>

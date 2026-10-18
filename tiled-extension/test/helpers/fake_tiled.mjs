@@ -691,6 +691,9 @@ class FakeMap extends PropertyReader {
 		case "bool": return raw.value === "true";
 		case "color": return new FakeColor(raw.value);
 		case "file": {
+			// A URL other than a local file (res://...) has no local path, as with a QUrl.
+			if (/^[a-z]+:\/\//.test(raw.value))
+				return { url: raw.value, localFile: "" };
 			const local = raw.value === "" ? "" : path.resolve(raw.dir, raw.value);
 			return filePathValue(local);
 		}
