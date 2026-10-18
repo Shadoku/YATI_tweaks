@@ -126,6 +126,12 @@ impl Property {
         }
     }
 
+    /// True for a member merged in from a `.tiled-project` file (it keeps that file's JSON
+    /// typing in any document).
+    pub fn from_project(&self) -> bool {
+        self.style.0 == Style::Json
+    }
+
     /// The declared type, `string` when absent.
     pub fn kind_or_string(&self) -> &str {
         self.kind.as_deref().unwrap_or("string")

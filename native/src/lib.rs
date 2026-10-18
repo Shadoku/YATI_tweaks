@@ -1,11 +1,26 @@
 //! The YATI runtime importer as a GDExtension, loaded by Godot through
-//! `addons/yati_native/yati_native.gdextension`.
+//! `addons/yati_native/yati_native.gdextension` (`docs/native-importer-plan.md`).
 //!
-//! Stage 0 of `docs/native-importer-plan.md`: the scaffold. One class, `TiledNative`, proves
-//! that the library loads and that values cross the boundary both ways; the parsers (stage 1),
-//! the builders (stage 2), asynchronous loading (stage 3) and the streamer (stage 4) come after.
+//! The Tiled format itself (model, parsers, payloads, the loader and its file protocol) is the
+//! pure-Rust core `tiled_core` (`native/tiled/`); this crate is the Godot side:
+//!
+//! - [`TiledNative`]: the library's version (the facade checks it once per process).
+//! - [`TiledImportOptions`](options::TiledImportOptions): every import option.
+//! - [`TiledMap`](map::TiledMap): a map loaded through the core, its files read on the main
+//!   thread with `FileAccess` (or from a zip archive); queries and `to_dictionary()`.
+//!
+//! Everything here runs on the main thread except the decoding of tile layer payloads, which
+//! runs on one thread per layer and touches no Godot object.
 
 use godot::prelude::*;
+
+mod diag;
+mod dynobj;
+mod files;
+mod gd;
+mod map;
+mod options;
+mod props;
 
 struct YatiNative;
 
@@ -14,8 +29,8 @@ struct YatiNative;
 #[gdextension]
 unsafe impl ExtensionLibrary for YatiNative {}
 
-/// The native importer's handle for GDScript. For now only what proves the extension works:
-/// its version and a round trip of a packed array.
+/// The native importer's handle for GDScript: its version, and a round trip of a packed array
+/// for the smoke test.
 #[derive(GodotClass)]
 #[class(base = RefCounted, init)]
 pub struct TiledNative {

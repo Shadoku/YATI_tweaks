@@ -437,6 +437,25 @@ impl Object {
     }
 }
 
+impl Property {
+    /// The property as its dictionary (`name`, `type`, `propertytype`, `value`) in a document
+    /// of the given format (`json`: a TMJ/TSJ/TJ file); a member merged in from a
+    /// `.tiled-project` file keeps that file's JSON form whatever the document is.
+    pub fn to_value(&self, json: bool) -> Value {
+        property(self, Cx { json })
+    }
+
+    /// The `value` of [`Property::to_value`]'s dictionary alone (`None` when the property has
+    /// none), without building the dictionary.
+    pub fn dict_value(&self, json: bool) -> Option<Value> {
+        let style = self.style.0;
+        let cx = Cx {
+            json: json || style == Style::Json,
+        };
+        self.value.as_ref().map(|v| top_value(v, cx, style))
+    }
+}
+
 fn map(m: &Map, cx: Cx) -> Value {
     let mut d = D::new(cx, &m.extra);
     d.raw("type", &m.kind);
