@@ -1,0 +1,13 @@
+{
+  "columns": 2,
+  "image": "zip_tiles.png",
+  "imageheight": 16,
+  "imagewidth": 32,
+  "name": "zip_tiles",
+  "tilecount": 2,
+  "tiledversion": "1.11.2",
+  "tileheight": 16,
+  "tilewidth": 16,
+  "type": "tileset",
+  "version": "1.10"
+}

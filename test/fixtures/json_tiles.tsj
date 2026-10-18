@@ -1,0 +1,134 @@
+{
+ "columns": 8,
+ "image": "tiles.png",
+ "imageheight": 64,
+ "imagewidth": 128,
+ "margin": 0,
+ "name": "json_tiles",
+ "spacing": 0,
+ "tilecount": 32,
+ "tiledversion": "1.11.2",
+ "tileheight": 16,
+ "tilewidth": 16,
+ "type": "tileset",
+ "version": "1.10",
+ "tileoffset": {
+  "x": 2,
+  "y": -1
+ },
+ "grid": {
+  "orientation": "orthogonal",
+  "width": 16,
+  "height": 16
+ },
+ "transformations": {
+  "hflip": true,
+  "vflip": false,
+  "rotate": false,
+  "preferuntransformed": true
+ },
+ "properties": [
+  {
+   "name": "author",
+   "type": "string",
+   "value": "json"
+  }
+ ],
+ "tiles": [
+  {
+   "id": 1,
+   "type": "Terrain",
+   "probability": 0.5,
+   "properties": [
+    {
+     "name": "data_speed",
+     "type": "int",
+     "value": 2
+    }
+   ],
+   "animation": [
+    {
+     "tileid": 1,
+     "duration": 100
+    },
+    {
+     "tileid": 2,
+     "duration": 150
+    }
+   ],
+   "objectgroup": {
+    "draworder": "index",
+    "id": 2,
+    "name": "",
+    "objects": [
+     {
+      "height": 8,
+      "id": 1,
+      "name": "",
+      "rotation": 0,
+      "type": "",
+      "visible": true,
+      "width": 16,
+      "x": 0,
+      "y": 8
+     },
+     {
+      "ellipse": true,
+      "height": 4,
+      "id": 2,
+      "name": "",
+      "rotation": 0,
+      "type": "",
+      "visible": true,
+      "width": 4,
+      "x": 1,
+      "y": 1
+     }
+    ],
+    "opacity": 1,
+    "type": "objectgroup",
+    "visible": true,
+    "x": 0,
+    "y": 0
+   }
+  }
+ ],
+ "wangsets": [
+  {
+   "colors": [
+    {
+     "color": "#00ff00",
+     "name": "Grass",
+     "probability": 1,
+     "tile": -1,
+     "properties": [
+      {
+       "name": "wet",
+       "type": "bool",
+       "value": false
+      }
+     ]
+    }
+   ],
+   "name": "Ground",
+   "tile": -1,
+   "type": "corner",
+   "wangtiles": [
+    {
+     "tileid": 16,
+     "wangid": [
+      0,
+      1,
+      0,
+      1,
+      0,
+      1,
+      0,
+      1
+     ]
+    }
+   ]
+  }
+ ],
+ "class": "Terrain"
+}

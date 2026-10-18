@@ -1,0 +1,154 @@
+{
+  "class": "Terrain",
+  "columns": 8.0,
+  "grid": {
+    "height": 16.0,
+    "orientation": "orthogonal",
+    "width": 16.0
+  },
+  "image": "tiles.png",
+  "imageheight": 64.0,
+  "imagewidth": 128.0,
+  "margin": 0.0,
+  "name": "json_tiles",
+  "properties": [
+    {
+      "name": "author",
+      "type": "string",
+      "value": "json"
+    },
+    {
+      "name": "cost",
+      "type": "float",
+      "value": 1.0
+    },
+    {
+      "name": "walkable",
+      "type": "bool",
+      "value": true
+    }
+  ],
+  "spacing": 0.0,
+  "tilecount": 32.0,
+  "tiledversion": "1.11.2",
+  "tileheight": 16.0,
+  "tileoffset": {
+    "x": 2.0,
+    "y": -1.0
+  },
+  "tiles": [
+    {
+      "animation": [
+        {
+          "duration": 100.0,
+          "tileid": 1.0
+        },
+        {
+          "duration": 150.0,
+          "tileid": 2.0
+        }
+      ],
+      "id": 1.0,
+      "objectgroup": {
+        "draworder": "index",
+        "id": 2.0,
+        "name": "",
+        "objects": [
+          {
+            "height": 8.0,
+            "id": 1.0,
+            "name": "",
+            "rotation": 0.0,
+            "type": "",
+            "visible": true,
+            "width": 16.0,
+            "x": 0.0,
+            "y": 8.0
+          },
+          {
+            "ellipse": true,
+            "height": 4.0,
+            "id": 2.0,
+            "name": "",
+            "rotation": 0.0,
+            "type": "",
+            "visible": true,
+            "width": 4.0,
+            "x": 1.0,
+            "y": 1.0
+          }
+        ],
+        "opacity": 1.0,
+        "type": "objectgroup",
+        "visible": true,
+        "x": 0.0,
+        "y": 0.0
+      },
+      "probability": 0.5,
+      "properties": [
+        {
+          "name": "data_speed",
+          "type": "int",
+          "value": 2.0
+        },
+        {
+          "name": "cost",
+          "type": "float",
+          "value": 1.0
+        },
+        {
+          "name": "walkable",
+          "type": "bool",
+          "value": true
+        }
+      ],
+      "type": "Terrain"
+    }
+  ],
+  "tilewidth": 16.0,
+  "transformations": {
+    "hflip": true,
+    "preferuntransformed": true,
+    "rotate": false,
+    "vflip": false
+  },
+  "type": "tileset",
+  "version": "1.10",
+  "wangsets": [
+    {
+      "colors": [
+        {
+          "color": "#00ff00",
+          "name": "Grass",
+          "probability": 1.0,
+          "properties": [
+            {
+              "name": "wet",
+              "type": "bool",
+              "value": false
+            }
+          ],
+          "tile": -1.0
+        }
+      ],
+      "name": "Ground",
+      "tile": -1.0,
+      "type": "corner",
+      "wangtiles": [
+        {
+          "tileid": 16.0,
+          "wangid": [
+            0.0,
+            1.0,
+            0.0,
+            1.0,
+            0.0,
+            1.0,
+            0.0,
+            1.0
+          ]
+        }
+      ]
+    }
+  ]
+}

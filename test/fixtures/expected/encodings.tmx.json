@@ -1,0 +1,87 @@
+{
+  "height": 4,
+  "infinite": false,
+  "layers": [
+    {
+      "data": [
+        1,
+        2,
+        3,
+        4,
+        9,
+        10,
+        11,
+        12,
+        0,
+        0,
+        17,
+        18,
+        25,
+        26,
+        27,
+        2147483650
+      ],
+      "encoding": "csv",
+      "height": 4,
+      "id": 1,
+      "name": "CSV",
+      "type": "tilelayer",
+      "width": 4
+    },
+    {
+      "data": "AQAAAAIAAAADAAAABAAAAAkAAAAKAAAACwAAAAwAAAAAAAAAAAAAABEAAAASAAAAGQAAABoAAAAbAAAAAgAAgA==",
+      "encoding": "base64",
+      "height": 4,
+      "id": 2,
+      "name": "B64",
+      "type": "tilelayer",
+      "width": 4
+    },
+    {
+      "compression": "zlib",
+      "data": "eJxjZGBgYAJiZiBmAWJOIOYCYm4g5mFAAEEgFgJiSSCWAmJpiL4GABBoASg=",
+      "encoding": "base64",
+      "height": 4,
+      "id": 3,
+      "name": "B64zlib",
+      "type": "tilelayer",
+      "width": 4
+    },
+    {
+      "compression": "gzip",
+      "data": "H4sIAAAAAAAAA2NkYGBgAmJmIGYBYk4g5gJibiDmYUAAQSAWAmJJIJYCYmmIvgYAbuLWTEAAAAA=",
+      "encoding": "base64",
+      "height": 4,
+      "id": 4,
+      "name": "B64gzip",
+      "type": "tilelayer",
+      "width": 4
+    },
+    {
+      "compression": "zstd",
+      "data": "KLUv/SBAAQIAAQAAAAIAAAADAAAABAAAAAkAAAAKAAAACwAAAAwAAAAAAAAAAAAAABEAAAASAAAAGQAAABoAAAAbAAAAAgAAgA==",
+      "encoding": "base64",
+      "height": 4,
+      "id": 5,
+      "name": "B64zstd",
+      "type": "tilelayer",
+      "width": 4
+    }
+  ],
+  "nextlayerid": 6,
+  "nextobjectid": 1,
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "tiledversion": "1.11.2",
+  "tileheight": 16,
+  "tilesets": [
+    {
+      "firstgid": 1,
+      "source": "terrain.tsx"
+    }
+  ],
+  "tilewidth": 16,
+  "type": "map",
+  "version": "1.10",
+  "width": 4
+}

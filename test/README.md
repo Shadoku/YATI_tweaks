@@ -34,6 +34,25 @@ cd /path/to/YATI && godot --headless -s test/benchmark.gd -- --runtime=res://run
 xvfb-run -a godot --path . --rendering-driver opengl3 --audio-driver Dummy -s test/bench_materialize.gd
 ```
 
+```sh
+# 5. The dictionary the runtime builds for one Tiled file (DictionaryBuilder.get_dictionary),
+#    as JSON: the parity target of the native importer's model (native/tiled). With a project
+#    file its custom types are merged where the runtime merges them; --zip reads from an archive.
+godot --headless -s test/dump_dictionary.gd -- test/fixtures/objects.tmx test/fixtures/custom.tiled-project
+godot --headless -s test/dump_dictionary.gd -- maps/zipmap.tmx --zip=test/fixtures/bundle.zip --out=x.json
+
+# 6. Regenerate test/fixtures/expected/*.json (every fixture map, tileset and template dumped
+#    with the script above; native/tiled/tests/parity.rs compares against them). Needed after
+#    changing a fixture or DictionaryFromXml.gd.
+GODOT=/path/to/godot test/gen_expected.sh
+```
+
+The dump prints `JSON.stringify(dict, "", true, true)` (keys sorted, floats always with a
+decimal point, so `5` and `5.0` stay apart); with `--out` it writes the same indented. Godot's
+JSON quirk to keep in mind when reading a dump of a `.tmj`/`.tsj`/`.tj` file: Godot parses every
+JSON number as a float, so those dumps hold `16.0` where the file has `16`. Without `--out` the
+engine's banner line comes first on stdout.
+
 ### Test runner options (after `--`)
 
 | Option | Meaning |
@@ -103,3 +122,7 @@ godot --headless -s test/run_tests.gd -- --runtime=res://baseline_runtime
 | `bundle.zip` | `maps/zipmap.tmx` + tileset + image for `import_from_zip` (generated) |
 | `missing_tileset.tmx` | error path: tileset file not found |
 | `postproc.gd` | post-processor for `import_with_post_processing` |
+| `classes.tmx` + `classes.tiled-project` + `crate.tx` | for the native parity tests: class `Room` map, `Floor` layers, nested groups with template instances (one overriding properties and opacity), list properties (nested lists and class items), class values with nested classes and lists, multi-line strings, enum and object properties, an embedded tileset with class, transformations, transparent colour, tile collision object, wang colour properties, `editorsettings`, a capsule, a text object, a zstd layer; the project has every `useAs` scope the runtime merges, a class defined twice and an enum |
+| `infinite.tmj` + `json_tiles.tsj` + `json_enemy.tj` | for the native parity tests: an infinite JSON map (csv-array and base64+zlib chunks, the same cells as `infinite.tmx`), external JSON tileset (tile offset, grid, transformations, animation, collision objects, wang set) and JSON template, nested groups, every property type incl. list and nested class |
+| `json_twin.tmx` | `json_map.tmj` written as TMX: both formats must give the same model |
+| `expected/*.json` | the GDScript runtime's dictionary of every fixture map, tileset and template (`test/gen_expected.sh`; `+<project>` with the project's custom types merged, `bundle.zip#...` members of the zip) |
