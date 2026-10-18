@@ -39,6 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   animated tiles become an `AnimatedSprite2D` (looping animation `"default"`, autoplay) in both modes.
   (The plan's per-(tileset, tile) strip cache belongs to F4's tileset cache, which the GDScript runtime
   does not get; each import composes its strips once.)
+- B10a: importer option `always_wrap_root` (default `false`): a map with a single layer returns a
+  `Node2D` root holding the map's properties, the layer as its child, instead of the layer itself with the
+  map's properties applied over its own. Recommended; planned as the default of 4.0.
 
 ### Changed
 - `test/run_tests.gd` checks that a runtime has `DataLoader.gd` / `CommonUtils.gd` before loading them,

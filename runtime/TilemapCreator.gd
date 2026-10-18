@@ -99,6 +99,7 @@ var _tileset_save_path: String = ""
 var _object_groups
 var _parallax_mode: String = "parallax2d"
 var _animation_mode: String = "strip"
+var _always_wrap_root: bool = false
 var _parallax_scale := Vector2.ONE			# parallax2d mode: product of the enclosing groups' parallax factors
 var _unknown_class_fallback: String = "staticbody"
 var _unknown_class_type = _godot_type.BODY
@@ -202,6 +203,11 @@ func set_parallax_mode(value: String):
 		print_rich("[color=" + WARNING_COLOR + "] -- Option parallax_mode '" + value + "' is not supported. -> Using 'parallax2d'[/color]")
 		CommonUtils.warning_count += 1
 		_parallax_mode = "parallax2d"
+
+
+# A Node2D root also for single-layer maps (otherwise the layer itself is returned)
+func set_always_wrap_root(value: bool):
+	_always_wrap_root = value
 
 
 # How tile animations are created: "strip" or "atlas" (see TilesetCreator.set_animation_mode)
@@ -369,7 +375,7 @@ func create(source_file: String):
 	_template_cache.clear()
 	_objects_by_id = null
 
-	if _base_node.get_child_count() != 1:
+	if _base_node.get_child_count() != 1 or _always_wrap_root:
 		var base = _base_node
 		_base_node = null
 		return base

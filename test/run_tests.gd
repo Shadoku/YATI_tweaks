@@ -1662,6 +1662,36 @@ func test_new_animated_tile_object() -> bool:
 	return done()
 
 
+func test_new_always_wrap_root() -> bool:
+	# B10a: a map with one layer returns that layer as the root, with the map's properties applied
+	# on top of the layer's (the map wins). always_wrap_root (default off) returns a Node2D root
+	# holding the map's properties, the layer below it with its own.
+	var d := _import("single_layer.tmx")
+	if d:
+		is_type(d, "TileMapLayer", "default root")
+		eq(String(d.name), "single_layer", "default root name")
+		meta(d, "level", 3)
+		meta(d, "owner_name", "map")
+	var imp := _new_importer()
+	if not _require_option(imp, "always_wrap_root"): return done()
+	eq(imp.get("always_wrap_root"), false, "default always_wrap_root")
+	imp.set("always_wrap_root", true)
+	var n := _import_with(imp, "single_layer.tmx")
+	if n == null: return done()
+	if is_type(n, "Node2D", "wrapped root"):
+		check(not n.is_class("TileMapLayer"), "wrapped root is the layer")
+		eq(String(n.name), "single_layer", "wrapped root name")
+		check(n.get_parent() == null, "wrapped root has a parent")
+		meta(n, "level", 3)
+		meta(n, "owner_name", "map")
+		var g := n.get_node_or_null("Ground")
+		if is_type(g, "TileMapLayer", "Ground"):
+			eq(g.owner, n, "Ground owner")
+			meta(g, "owner_name", "layer")
+			check(not g.has_meta("level"), "map property on the layer")
+	return done()
+
+
 # ---------------------------------------------------------------------------
 # Zip (keep last: the pre-change runtime leaks zip mode, see _reset_zip_mode)
 

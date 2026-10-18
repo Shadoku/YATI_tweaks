@@ -135,3 +135,4 @@ godot --headless -s test/run_tests.gd -- --runtime=res://baseline_runtime
 | `unknown_class.tmx` | B8: objects of unknown classes (two `Door` rectangles with a property, a `Door` polygon, a `Lever` ellipse) and one without a class |
 | `parallax.tmx` | B6: parallax origin, a group (offset, opacity) with a parallax tile layer (factor 1.2) and a repeated parallax image layer, a parallax group holding a parallax layer, a parallax object layer, background colour |
 | `animations.tmx` | B9: animations whose first frame is not the tile, a ping-pong sequence, an equidistant one with collision, metadata and custom data, an image collection animation, animated tile objects (plain and `staticbody`) |
+| `single_layer.tmx` | B10a: one layer, a map property and a property both map and layer set |

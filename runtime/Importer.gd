@@ -51,6 +51,9 @@ var parallax_mode: String = "parallax2d"
 # so any frame sequence works) or "atlas" (Godot's animation inside the tileset's atlas, as before 3.1:
 # only for frames that follow the tile at equal steps in a row or column).
 var animation_mode: String = "strip"
+# Return a Node2D root also for a map with a single layer (the layer then is its child and keeps its
+# own properties). Off: such a map returns the layer itself, with the map's properties applied on top.
+var always_wrap_root: bool = false
 # What an object of a class that is no Godot node type becomes: "staticbody", any other class
 # name of the Reference's mapping table (e.g. "area"), or "node2d" (a Node2D with the shape as metadata).
 var unknown_class_fallback: String = "staticbody"
@@ -127,6 +130,7 @@ func _create(source_file: String, project_file: String, zip_file: String):
 	tilemap_creator.set_custom_data_prefix(custom_data_prefix)
 	tilemap_creator.set_save_tileset_to(save_tileset_to)
 	tilemap_creator.set_parallax_mode(parallax_mode)
+	tilemap_creator.set_always_wrap_root(always_wrap_root)
 	tilemap_creator.set_animation_mode(animation_mode)
 	tilemap_creator.set_unknown_class_fallback(unknown_class_fallback)
 

@@ -131,6 +131,17 @@ In both modes a tile object of an animated tile becomes an `AnimatedSprite2D` (o
 `"default"`, autoplay, a frame per animation frame with its duration) instead of a `Sprite2D`, unless the
 object has the `clip_artifacts` property (which needs a Sprite2D region; a warning is printed).
 
+### always_wrap_root
+
+Type `bool`, default: `false`
+
+The root of the imported tree is a `Node2D` named after the map file, holding the layers and the map's
+properties. A map with a single layer (and no background colour) returns that layer's node instead, renamed
+after the map, and the map's properties are applied to it after the layer's own (a map property wins over a
+layer property of the same name). With this option on, such a map is wrapped like any other: the root is a
+`Node2D` with the map's properties, the layer its child with its own name and properties. Recommended for new
+code, so that the root's type does not depend on the number of layers; it is planned to become the default in 4.0.
+
 ### unknown_class_fallback
 
 Type `String`, default: `"staticbody"`
