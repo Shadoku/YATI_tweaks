@@ -8,11 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Native importer, stage 0 of `docs/native-importer-plan.md` (the scaffold, it imports nothing yet):
+  the Rust crate `native/` (`yati_native`, godot-rust 0.5 for Godot 4.7) registering `TiledNative`
+  (`version()`, `sum()`); `addons/yati_native/` with `yati_native.gdextension` and an `Importer.gd`
+  facade that has the GDScript runtime's options and methods and reports "not implemented yet"; the
+  tools `tools/build_native.sh`, `tools/install_native.sh` (CI builds, `.yati-native-version`),
+  `tools/install_godot.sh` (`.godot-version`), `tools/smoke_native.gd` (loads the library),
+  `tools/check_native_image.py` and `tools/verify_native_bin.sh`; the workflows `ci.yml` (builds the
+  library, runs the suite for both runtimes, the native one for information until stage 2) and
+  `native.yml` (Linux x86_64, Windows x86_64 and macOS libraries, committed back to the branch and
+  published as the rolling pre-release `native-<branch>` or a release on a `v<crate version>` tag).
+- `test/run_all.sh` runs the native smoke test first, and imports the project (seeding
+  `.godot/extension_list.cfg` so a fresh `.godot/` does not crash on its first import), so it works
+  from a fresh clone.
 - `docs/native-importer-plan.md`: the exploration and plan for a native (Rust GDExtension) importer
   that needs no preloading and streams infinite maps, with the measurements behind it.
 - `test/bench_materialize.gd`: measures the engine's own cost of a map's tile layers (`tile_map_data`
   assignment, packed-scene instantiation, the frame after a layer enters the tree, `set_cell` /
   `erase_cell` of 16x16 chunks into a live layer, a layer per chunk).
+
+### Changed
+- `test/run_tests.gd` checks that a runtime has `DataLoader.gd` / `CommonUtils.gd` before loading them,
+  so the native facade (only an `Importer.gd`) runs the suite without a load error per test.
 
 ## [3.0.0] — runtime-only fork (2026-10-17)
 

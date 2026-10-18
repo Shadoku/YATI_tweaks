@@ -23,7 +23,13 @@ cd /path/to/YATI && godot --headless -s test/run_tests.gd
 cd /path/to/YATI && godot --headless -s test/benchmark.gd -- --runtime=res://runtime
 ```
 
-`test/run_all.sh` runs the tests and the benchmark in one go (`GODOT=/path/to/godot test/run_all.sh`).
+`test/run_all.sh` runs everything in one go (`GODOT=/path/to/godot test/run_all.sh [--runtime=res://dir]`):
+it names the native importer's GDExtension in `.godot/extension_list.cfg` when this platform's library
+is in place (Godot loads an extension only when that file names it, and a fresh `.godot/`'s first import
+that discovers one mid-scan aborts at shutdown with exit code 134 on Godot 4.7.2), imports the project
+(the fixtures' images are imported textures, so a fresh clone needs it), runs the native smoke test,
+then the tests and the benchmark. Without the library the smoke test is skipped, unless the runtime
+under test is the native one.
 
 ```sh
 # 4. What the engine itself charges for a map's tile layers (no importer involved): assigning
@@ -38,7 +44,7 @@ xvfb-run -a godot --path . --rendering-driver opengl3 --audio-driver Dummy -s te
 
 | Option | Meaning |
 |---|---|
-| `--runtime=res://dir` | runtime folder to test (default `res://runtime`) |
+| `--runtime=res://dir` | runtime folder to test (default `res://runtime`; `res://addons/yati_native` is the native importer's facade) |
 | `--filter=text` | only run tests whose name contains `text` |
 
 Output is one line per test (`PASS name` / `FAIL name: reason`) and a `SUMMARY` line.
@@ -68,6 +74,25 @@ It prints per-run and average times for: parse (DataLoader + DictionaryBuilder),
 creation (TilesetCreator), tile layer filling (tiles-only companion map minus its parse and
 tilesets) and objects (the rest), plus a final `RESULT` line. Timings on a shared machine are
 noisy; compare `min` and run a few more iterations when the numbers matter.
+
+## The native importer (`addons/yati_native/`)
+
+```sh
+# Build the library (Rust, native/) into addons/yati_native/bin/, or download a CI build
+bash tools/build_native.sh            # --check: only tell whether it is there
+bash tools/install_native.sh          # the branch's rolling build, or a tag: v0.1.0
+
+# Smoke test: the extension loads, TiledNative.version() and a round trip through sum()
+# (needs .godot/extension_list.cfg naming res://addons/yati_native/yati_native.gdextension)
+godot --headless --path . -s tools/smoke_native.gd
+
+# The suite against the native facade. Until stage 2 of docs/native-importer-plan.md every test
+# fails (the facade returns null with "not implemented yet"); the run must still reach SUMMARY.
+godot --headless -s test/run_tests.gd -- --runtime=res://addons/yati_native
+```
+
+The facade has only `Importer.gd`, so the suite's helpers that reach a runtime's `DataLoader.gd`
+(zip mode reset) and `CommonUtils.gd` (error count) skip them for it.
 
 ## Comparing against the pre-change runtime
 

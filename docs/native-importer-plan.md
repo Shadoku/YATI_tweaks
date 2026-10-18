@@ -179,7 +179,7 @@ fallback on a platform without a binary.
 ```
 addons/yati_native/
   yati_native.gdextension      entry symbol, compatibility_minimum 4.7, bin/ paths
-  bin/                         the libraries (CI-built, committed), kernel-commit.txt
+  bin/                         the libraries (CI-built, committed), native-commit.txt
   Importer.gd                  the facade: this runtime's API over the native classes
   TiledStreamer.gd?            none: TiledStreamer is a native Node (below)
   README.md                    install, API, options, what differs from the GDScript runtime
@@ -343,4 +343,49 @@ numbers measured. Stages 1 and 2 are the bulk; 3 and 4 are what the two goals ne
 ## 6. Status
 
 - 2026-10-18: findings measured (sections 1.1 to 1.3), `test/bench_materialize.gd` committed,
-  the pure-Rust prototype kept outside the repository (its numbers are 1.2's). No stage started.
+  the pure-Rust prototype kept outside the repository (its numbers are 1.2's).
+- 2026-10-18, **stage 0 done** (scaffold and loop), except the CI half of its gate, which runs on
+  the first push:
+  - The crate `native/` (`yati_native` 0.1.0, godot-rust 0.5.5, `api-4-7`, `cdylib`, release
+    `opt-level = 3`, `lto = "thin"`, `.gdignore`'d, `target/` gitignored, `Cargo.lock` committed)
+    registers `TiledNative` (RefCounted): `version()` and `sum(PackedInt32Array) -> int`, the FFI
+    round trip. The pure-Rust core (`native/tiled/`, `tiled_core`) joins it as a path dependency and
+    workspace member later. A cold release build takes about 2.5 minutes here (godot-rust's
+    bindings), a no-change rebuild about a second.
+  - `addons/yati_native/`: `yati_native.gdextension` (`gdext_rust_init`, `compatibility_minimum =
+    4.7`, linux x86_64/arm64, windows x86_64, the macos framework, web entries for later), `bin/`
+    (gitignored but for `.gitkeep`: a local build is never committed, `native.yml`'s bot adds the
+    CI-built libraries with `git add -f`), `README.md`, and `Importer.gd`, the facade with the
+    GDScript runtime's options (same defaults), its four `import*` methods and
+    `last_error_count` / `last_warning_count`; it checks `TiledNative.version()` once per process
+    (`Importer.native_version()`, through `ClassDB` so the script compiles without a library) and
+    every import prints `yati_native: not implemented yet (stage 2)`, counts one error and returns
+    null.
+  - Tools: `build_native.sh` (`--check`), `install_native.sh` (rolling `native-<branch>`, falling
+    back to `native-main`, or a tag; `.yati-native-version` = `branch`; `bin/native-commit.txt`
+    names the build's commit), `install_godot.sh` (`.godot-version` = `4.7.2-stable`),
+    `smoke_native.gd`, `check_native_image.py`, `verify_native_bin.sh` (ported from the Goo2D
+    kernel's, generic names).
+  - Workflows: `ci.yml` (Godot, stable Rust with `rust-cache`, the build, the smoke test,
+    `test/run_all.sh` for `res://runtime`, the suite for `res://addons/yati_native` with
+    `continue-on-error` until stage 2) and `native.yml` (ported from `kernel.yml`: the three-platform
+    matrix, per-job staging and checksums, the image check, the load smoke test, the bot commit
+    back, the rolling pre-release `native-<branch>`, a release on `v<crate version>`). A `v*` tag
+    that is not the crate's version builds but publishes nothing, since the GDScript runtime's
+    releases are `v*` tags too.
+  - The first `--import` of a fresh `.godot/` with the extension present aborts at shutdown here too
+    (exit 134, Godot 4.7.2, reproduced); naming the extension in `.godot/extension_list.cfg` first
+    avoids it (the import then exits 0) and also makes the extension load in a run without an
+    import. `test/run_all.sh` now seeds that file when the library is in place, imports the project
+    (a fresh clone needs it anyway: the fixtures' textures), runs the smoke test, the suite and the
+    benchmark. `test/run_tests.gd`'s helpers no longer load a runtime's `DataLoader.gd` /
+    `CommonUtils.gd` when it has none (they printed two load errors per test for the facade).
+  - Gate, measured: `bash tools/build_native.sh` builds and copies, `--check` succeeds; the smoke
+    test prints `smoke_native: TiledNative 0.1.0 loaded, sum round trip ok (4294967296)`; the suite
+    against the facade runs to `SUMMARY: 0 passed, 74 failed (new_: 23, bug_: 4, other: 47) of 74`
+    with no script error; the GDScript runtime still passes `SUMMARY: 74 passed, 0 failed ... of
+    74`; `test/run_all.sh` from a deleted `.godot/` exits 0; `check_native_image.py` accepts the
+    Linux library (ELF, 33 section headers) and rejects a truncated copy; `verify_native_bin.sh`
+    passes on a staged directory (the real Linux library, stand-ins for the other two) and fails on
+    a wrong checksum. Not verified here: the Windows and macOS builds and their load tests, the
+    release and bot-commit steps (they run on GitHub).
