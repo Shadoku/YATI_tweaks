@@ -2104,6 +2104,57 @@ func test_new_world_pattern() -> bool:
 	return done()
 
 
+func test_new_mask_int_and_enum() -> bool:
+	# F5: layer-mask properties (collision_layer, light_mask, navigation_layers, ..., and the
+	# tileset's collision_layer_n etc.) took only a string of layer numbers ("1,3,5-7"). An int is
+	# the bitmask itself (a Tiled flags enum stored as int saves that), a string of names of a flags
+	# enum (stored as string) maps each value's index to its bit, looked up in the project file.
+	var n := _import("masks.tmx", {}, "masks.tiled-project")
+	if n == null: return done()
+	var im := need(n, "IntMask (Area)", "Area2D") as Area2D
+	if im:
+		eq(im.collision_layer, 5, "IntMask collision_layer (int)")
+		eq(im.collision_mask, 10, "IntMask collision_mask (flags enum stored as int)")
+	var em := need(n, "EnumMask (Area)", "Area2D") as Area2D
+	if em:
+		eq(em.collision_layer, 6, "EnumMask collision_layer (Player, Enemy: bits 1 and 2)")
+		eq(em.collision_mask, 1, "EnumMask collision_mask (World: bit 0)")
+		eq(em.visibility_layer, 8, "EnumMask visibility_layer (Pickup: bit 3)")
+		check(not em.has_meta("collision_layer"), "EnumMask: collision_layer as metadata")
+	var sm := need(n, "StringMask (Area)", "Area2D") as Area2D
+	if sm:
+		eq(sm.collision_layer, 5, "StringMask collision_layer ('1,3')")
+		eq(sm.collision_mask, 14, "StringMask collision_mask ('2-4')")
+	var w := need(n, "Walker (CB)", "CharacterBody2D") as CharacterBody2D
+	if w:
+		eq(w.collision_layer, 2, "Walker collision_layer")
+		eq(w.platform_floor_layers, 3, "Walker platform_floor_layers")
+		eq(w.platform_wall_layers, 4, "Walker platform_wall_layers (Enemy)")
+	var nav := need(n, "Nav (NR)", "NavigationRegion2D") as NavigationRegion2D
+	if nav:
+		eq(nav.navigation_layers, 2, "Nav navigation_layers")
+		eq(nav.navigation_polygon.parsed_collision_mask, 12, "Nav parsed_collision_mask")
+	var occ := need(n, "Occ (LO)", "LightOccluder2D") as LightOccluder2D
+	if occ: eq(occ.occluder_light_mask, 4, "Occ occluder_light_mask")
+	var g := layer(n, "Ground")
+	if g:
+		eq(g.light_mask, 9, "Ground light_mask")
+		var ts := g.tile_set
+		eq(ts.get_physics_layer_collision_layer(0), 6, "tileset collision_layer (int)")
+		eq(ts.get_physics_layer_collision_mask(0), 9, "tileset collision_mask (World, Pickup)")
+		eq(ts.get_navigation_layer_layers(0), 3, "tileset layers (int)")
+		if check(ts.get_occlusion_layers_count() >= 2, "tileset occlusion layer 1 missing"):
+			eq(ts.get_occlusion_layer_light_mask(1), 2, "tileset light_mask_1 (Player)")
+	# Without the project file names are no layer numbers: nothing is set
+	var plain := _import("masks.tmx")
+	if plain:
+		var e2 := need(plain, "EnumMask (Area)", "Area2D") as Area2D
+		if e2: eq(e2.collision_layer, 0, "EnumMask collision_layer without the project file")
+		var i2 := need(plain, "IntMask (Area)", "Area2D") as Area2D
+		if i2: eq(i2.collision_mask, 10, "IntMask collision_mask without the project file")
+	return done()
+
+
 # ---------------------------------------------------------------------------
 # Zip (keep last: the pre-change runtime leaks zip mode, see _reset_zip_mode)
 

@@ -1,0 +1,38 @@
+{
+    "automappingRulesFile": "",
+    "commands": [],
+    "compatibilityVersion": 1100,
+    "extensionsPath": "extensions",
+    "folders": [
+        "."
+    ],
+    "properties": [],
+    "propertyTypes": [
+        {
+            "id": 1,
+            "name": "PhysicsNames",
+            "storageType": "string",
+            "type": "enum",
+            "values": [
+                "World",
+                "Player",
+                "Enemy",
+                "Pickup"
+            ],
+            "valuesAsFlags": true
+        },
+        {
+            "id": 2,
+            "name": "PhysicsFlags",
+            "storageType": "int",
+            "type": "enum",
+            "values": [
+                "World",
+                "Player",
+                "Enemy",
+                "Pickup"
+            ],
+            "valuesAsFlags": true
+        }
+    ]
+}

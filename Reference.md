@@ -339,7 +339,12 @@ The property is either a tileset property or in case of an image collection tile
 Remarks:  
 - (*) refers to a string consisting of comma separated values, each value representing an element number to enable.  
 Example for a collision layer property (name+value), where layers 1,3,5,6,7 on physics layer 0 are to enable:  
-`collision_layer_0 = 1,3,5-7` (you can set ranges like 5-7 in this example)
+`collision_layer_0 = 1,3,5-7` (you can set ranges like 5-7 in this example)  
+New in 3.1: such a mask property may also be of type `int`, the bitmask itself (bit 0 is layer 1; a Tiled enum with
+"Allow multiple values (flags)" and storage type `int` saves exactly that), or a `string` property of a flags enum of the
+[project file](#tiled-project-file) stored as string (`Player,Enemy`): each value's index in the enum is its bit, so an
+enum `World, Player, Enemy, Pickup` maps `Player,Enemy` to layers 2 and 3. Without the project file such names set no
+layer. Names that are not values of the enum are ignored with a warning.
 - (col) refers to a property of type `color` (Tiled's colour picker; Tiled saves it as `#AARRGGBB`, alpha first,
 and it is read that way) or of type `string`, read as Godot reads a colour: `#RRGGBB`, `#RRGGBBAA` (alpha last)
 or a colour name. Example: `#4e4aff`
@@ -711,6 +716,7 @@ Supported by this runtime fork in addition to upstream YATI 2.2.x:
 | Custom properties named like a node property (e.g. a script's `@export var`) | Assigned to the property ([assign_node_properties](#assign_node_properties)) |
 | Object references (`object` properties) | A `NodePath` to the target's node, or the node for a `Node`-typed property of that name ([Object references](#object-references)) |
 | Tiled worlds (`.world`: `maps` and `patterns`) | `WorldLoader.parse()`, `Importer.import_world()` ([World files and map bounds](#world-files-and-map-bounds)) |
+| Flags enums (and ints) for layer masks | `collision_layer`, `light_mask`, `navigation_layers`, ... from an int bitmask or enum value names (see the remarks of the [custom properties reference](#custom-properties-reference)) |
 | Map bounds | Metadata `map_rect`, `map_size_tiles`, `tile_size`, `orientation` on the root |
 | Object references (`object` properties) to objects inside group layers | Resolved like references to top-level objects |
 | Deprecated XML tile layer data (`<tile gid="..."/>` children, no encoding) | Imported like CSV data |

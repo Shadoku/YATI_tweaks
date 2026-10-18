@@ -84,6 +84,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `WorldLoader` resolving its patterns through the file-request protocol (the world file, a `ListDir` request for
   its directory, the matching maps' files; `WorldLoader::from_zip`, `load_world_from_fs`), and `Map::map_rect()` /
   `tile_rect()` / `pixel_rect()` with the GDScript runtime's formula. `tiled_core` depends on `regex` for the patterns.
+- F5: layer-mask properties (`collision_layer`, `collision_mask`, `platform_floor_layers`, `platform_wall_layers`,
+  `navigation_layers`, `light_mask`, `visibility_layer`, `occluder_light_mask`, `parsed_collision_mask`, and the
+  tileset's `collision_layer_n`, `collision_mask_n`, `layers_n`, `light_mask_n`) accept an `int`, the bitmask itself
+  (a Tiled flags enum stored as int), and the value names of a flags enum stored as string (`Player,Enemy`), looked up
+  in the project file (`CustomTypes.get_enum_mask`, `CommonUtils.get_mask_value`); the `"1,3,5-7"` strings work as before.
 
 ### Changed
 - F1: with the new default `assign_node_properties = true` a custom property named like a property of the created

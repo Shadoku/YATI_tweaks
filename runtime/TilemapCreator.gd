@@ -111,7 +111,7 @@ var _reported_unknown_classes: Dictionary = {}	# class names already warned abou
 var _object_refs: String = "nodepath"		# object properties: "nodepath", "geometry" or "both"
 var _nodes_by_object_id: Dictionary = {}	# Tiled object id -> the node created for it (this import)
 var _pending_object_refs: Array = []		# object properties waiting for every node to exist (resolve_object_refs)
-var _property_info_cache: Dictionary = {}	# class + script -> {property name: property info} (get_assignable_properties)
+var _property_info_cache: Dictionary = {}	# class -> script (or null) -> {property name: property info} (get_assignable_properties)
 var _class_scenes: Dictionary = {}			# lower case Tiled class -> scene path
 var _read_godot_scene: bool = true			# a custom class's 'godot_scene' member maps it to a scene
 var _assign_node_properties: bool = true	# custom properties set a node property of the same name
@@ -1271,7 +1271,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 	# godot_node_type property and before the class mapping (F1); template instances decide in
 	# their template's objects
 	var scene_path := ""
-	if not godot_node_type_prop_found and not obj.has("template"):
+	if _maps_classes_to_scenes() and not godot_node_type_prop_found and not obj.has("template"):
 		scene_path = get_class_scene(obj, class_string, "object")
 
 	if godot_type == _godot_type.UNKNOWN and scene_path == "":
@@ -1472,7 +1472,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 		if tile_has_node_type:
 			tile_class = td.get_meta(GODOT_NODE_TYPE_PROPERTY)
 		# No scene for the object's own class: the tile's class may have one (F1)
-		if scene_path == "" and not godot_node_type_prop_found and not tile_has_node_type and tile_class != "" and not obj.has("template"):
+		if scene_path == "" and _maps_classes_to_scenes() and not godot_node_type_prop_found and not tile_has_node_type and tile_class != "" and not obj.has("template"):
 			scene_path = get_class_scene(obj, tile_class, "tile")
 
 		if tile_class.to_lower() == "instance" or obj_is_instance or scene_path != "":
@@ -1873,6 +1873,11 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 					register_object_node(obj_id, polygon, true, obj)
 					if obj.has("properties"):
 						handle_properties(polygon, obj["properties"], obj.get("template_dir_path", ""))	
+
+
+# Whether any class can map to a scene in this import (class_scenes, or godot_scene members)
+func _maps_classes_to_scenes() -> bool:
+	return not _class_scenes.is_empty() or (_read_godot_scene and _ct != null)
 
 
 # The scene path for objects of a Tiled class (F1), resolved, or "": class_scenes (a relative path
@@ -2457,9 +2462,10 @@ func finish_import(root: Node) -> void:
 	_object_nodes = []
 	for entry in nodes:
 		var node = entry[0]
-		if is_instance_valid(node) and node.has_method(IMPORT_HOOK_METHOD):
+		if is_instance_valid(node) and node.get_script() != null and node.has_method(IMPORT_HOOK_METHOD):
 			node.call(IMPORT_HOOK_METHOD, get_import_info(node, entry[1]))
 	_nodes_by_object_id.clear()
+	_property_info_cache.clear()
 
 
 # What _tiled_import(info) receives: the object's id, name, class, its custom properties as the
@@ -2646,8 +2652,12 @@ static func is_of_class(obj: Object, cls: String) -> bool:
 # share the list.
 func get_assignable_properties(node: Object) -> Dictionary:
 	var script = node.get_script()
-	var key := node.get_class() + "|" + (str(script.get_instance_id()) if script != null else "")
-	var cached = _property_info_cache.get(key)
+	var cls := node.get_class()
+	var by_script = _property_info_cache.get(cls)
+	if by_script == null:
+		by_script = {}
+		_property_info_cache[cls] = by_script
+	var cached = by_script.get(script)
 	if cached != null:
 		return cached
 	var ret := {}
@@ -2658,7 +2668,7 @@ func get_assignable_properties(node: Object) -> Dictionary:
 		var pname: String = p["name"]
 		if pname == "script" or pname.begins_with("metadata/"): continue
 		ret[pname] = p
-	_property_info_cache[key] = ret
+	by_script[script] = ret
 	return ret
 
 
@@ -2703,13 +2713,16 @@ func handle_properties(target_node: Node, properties: Array, base_dir: String = 
 		has_children = target_node.get_child_count() > 0 
 	# First pass: the script, so that its variables exist when the other properties are assigned (F1)
 	for property in properties:
+		var pname: String = property.get("name", "")
+		if pname.length() != GODOT_SCRIPT_PROPERTY.length() or pname.to_lower() != GODOT_SCRIPT_PROPERTY: continue
 		var type: String = property.get("type", "string")
-		if str(property.get("name", "")).to_lower() == GODOT_SCRIPT_PROPERTY and (type == "file" or type == "string"):
+		if type == "file" or type == "string":
 			var val := str(property.get("value", ""))
 			var path = val
 			if type == "file" and not val.is_absolute_path():
 				path = CommonUtils.cleanup_path(file_base.replace("res://", "") + "/" + val)
 			target_node.set_script(load(path))
+	var assignable = null	# the node's assignable properties, looked up once when needed
 	for property in properties:
 		var name: String = property.get("name", "")
 		var type: String = property.get("type", "string")
@@ -2735,6 +2748,8 @@ func handle_properties(target_node: Node, properties: Array, base_dir: String = 
 			child_prop_dict["type"] = type
 			# Lists and class dictionaries are forwarded unchanged
 			child_prop_dict["value"] = property["value"] if type == "list" or is_class_dict else val
+			if property.has("propertytype"):
+				child_prop_dict["propertytype"] = property["propertytype"]
 			var child_props = []
 			child_props.append(child_prop_dict)
 			for child in target_node.get_children():
@@ -2762,10 +2777,10 @@ func handle_properties(target_node: Node, properties: Array, base_dir: String = 
 		elif lname == "clip_children" and type == "int":
 			if int(val) < CanvasItem.CLIP_CHILDREN_MAX:
 				target_node.clip_children = int(val)
-		elif lname == "light_mask" and type == "string":
-			target_node.light_mask = CommonUtils.get_bitmask_integer_from_string(val, 20)
-		elif lname == "visibility_layer" and type == "string":
-			target_node.visibility_layer = CommonUtils.get_bitmask_integer_from_string(val, 20)
+		elif lname == "light_mask" and (type == "string" or type == "int"):
+			target_node.light_mask = CommonUtils.get_mask_value(property, 20, _ct)
+		elif lname == "visibility_layer" and (type == "string" or type == "int"):
+			target_node.visibility_layer = CommonUtils.get_mask_value(property, 20, _ct)
 		elif lname == "z_index" and type == "int":
 			target_node.z_index = int(val)
 		elif lname == "z_as_relative" and type == "bool":
@@ -2850,10 +2865,10 @@ func handle_properties(target_node: Node, properties: Array, base_dir: String = 
 		elif lname == "disable_mode" and type == "int" and target_node is CollisionObject2D:
 			if int(val) < 3:
 				target_node.disable_mode = int(val)
-		elif lname == "collision_layer" and type == "string" and target_node is CollisionObject2D:
-			target_node.collision_layer = CommonUtils.get_bitmask_integer_from_string(val, 32)
-		elif lname == "collision_mask" and type == "string" and target_node is CollisionObject2D:
-			target_node.collision_mask = CommonUtils.get_bitmask_integer_from_string(val, 32)
+		elif lname == "collision_layer" and (type == "string" or type == "int") and target_node is CollisionObject2D:
+			target_node.collision_layer = CommonUtils.get_mask_value(property, 32, _ct)
+		elif lname == "collision_mask" and (type == "string" or type == "int") and target_node is CollisionObject2D:
+			target_node.collision_mask = CommonUtils.get_mask_value(property, 32, _ct)
 		elif lname == "collision_priority" and  (type == "float" or type == "int") and target_node is CollisionObject2D:
 			target_node.collision_priority = float(val)
 		elif lname == "input_pickable" and type == "bool" and target_node is CollisionObject2D:
@@ -2956,16 +2971,16 @@ func handle_properties(target_node: Node, properties: Array, base_dir: String = 
 		elif lname == "platform_on_leave" and type == "int" and target_node is CharacterBody2D:
 			if int(val) < 3:
 				target_node.platform_on_leave = int(val)
-		elif lname == "platform_floor_layers" and type == "string" and target_node is CharacterBody2D:
-			target_node.platform_floor_layers = CommonUtils.get_bitmask_integer_from_string(val, 32)
-		elif lname == "platform_wall_layers" and type == "string" and target_node is CharacterBody2D:
-			target_node.platform_wall_layers = CommonUtils.get_bitmask_integer_from_string(val, 32)
+		elif lname == "platform_floor_layers" and (type == "string" or type == "int") and target_node is CharacterBody2D:
+			target_node.platform_floor_layers = CommonUtils.get_mask_value(property, 32, _ct)
+		elif lname == "platform_wall_layers" and (type == "string" or type == "int") and target_node is CharacterBody2D:
+			target_node.platform_wall_layers = CommonUtils.get_mask_value(property, 32, _ct)
 		elif lname == "safe_margin" and  (type == "float" or type == "int") and target_node is CharacterBody2D:
 			target_node.safe_margin = float(val)
-		elif lname == "collision_layer" and type == "string" and target_node is CharacterBody2D:
-			target_node.collision_layer = CommonUtils.get_bitmask_integer_from_string(val, 32)
-		elif lname == "collision_mask" and type == "string" and target_node is CharacterBody2D:
-			target_node.collision_mask = CommonUtils.get_bitmask_integer_from_string(val, 32)
+		elif lname == "collision_layer" and (type == "string" or type == "int") and target_node is CharacterBody2D:
+			target_node.collision_layer = CommonUtils.get_mask_value(property, 32, _ct)
+		elif lname == "collision_mask" and (type == "string" or type == "int") and target_node is CharacterBody2D:
+			target_node.collision_mask = CommonUtils.get_mask_value(property, 32, _ct)
 		elif lname == "collision_priority" and  (type == "float" or type == "int") and target_node is CharacterBody2D:
 			target_node.collision_priority = float(val)
 
@@ -3029,8 +3044,8 @@ func handle_properties(target_node: Node, properties: Array, base_dir: String = 
 			target_node.navigation_polygon = DataLoader.load_resource_from_file(val, file_base)
 		elif lname == "enabled" and type == "bool" and target_node is NavigationRegion2D:
 			target_node.enabled = val.to_lower() == "true"
-		elif lname == "navigation_layers" and type == "string" and target_node is NavigationRegion2D:
-			target_node.navigation_layers = CommonUtils.get_bitmask_integer_from_string(val, 32)
+		elif lname == "navigation_layers" and (type == "string" or type == "int") and target_node is NavigationRegion2D:
+			target_node.navigation_layers = CommonUtils.get_mask_value(property, 32, _ct)
 		elif lname == "use_edge_connection" and type == "bool" and target_node is NavigationRegion2D:
 			target_node.use_edge_connection = val.to_lower() == "true"
 		elif lname == "enter_cost" and (type == "float" or type == "int") and target_node is NavigationRegion2D:
@@ -3043,9 +3058,9 @@ func handle_properties(target_node: Node, properties: Array, base_dir: String = 
 			if int(val) < 3:
 				var nav_poly = target_node.navigation_polygon
 				nav_poly.parsed_geometry_type = int(val)
-		elif lname == "parsed_collision_mask" and type == "string" and target_node is NavigationRegion2D:
+		elif lname == "parsed_collision_mask" and (type == "string" or type == "int") and target_node is NavigationRegion2D:
 			var nav_poly = target_node.navigation_polygon
-			nav_poly.parsed_collision_mask = CommonUtils.get_bitmask_integer_from_string(val, 32)
+			nav_poly.parsed_collision_mask = CommonUtils.get_mask_value(property, 32, _ct)
 		elif lname == "source_geometry_mode" and type == "int" and target_node is NavigationRegion2D:
 			if int(val) < 3:
 				var nav_poly = target_node.navigation_polygon
@@ -3110,8 +3125,8 @@ func handle_properties(target_node: Node, properties: Array, base_dir: String = 
 		# LightOccluder2D properties
 		elif lname == "sdf_collision" and type == "bool" and target_node is LightOccluder2D:
 			target_node.sdf_collision = val.to_lower() == "true"
-		elif lname == "occluder_light_mask" and type == "string" and target_node is LightOccluder2D:
-			target_node.occluder_light_mask = CommonUtils.get_bitmask_integer_from_string(val, 20)
+		elif lname == "occluder_light_mask" and (type == "string" or type == "int") and target_node is LightOccluder2D:
+			target_node.occluder_light_mask = CommonUtils.get_mask_value(property, 20, _ct)
 
 		# Polygon2D properties
 		elif lname == "color" and (type == "string" or type == "color") and target_node is Polygon2D:
@@ -3148,19 +3163,21 @@ func handle_properties(target_node: Node, properties: Array, base_dir: String = 
 					var shapes = []
 					handle_list_property(shapes, property["value"])
 					target_node.set_meta(name + "_shape", shapes)
-			elif type == "list":
-				set_property_or_meta(target_node, name, type, list_val, file_base)
-			elif is_class_dict:
-				set_property_or_meta(target_node, name, type, class_val, file_base)
 			else:
-				set_property_or_meta(target_node, name, type, CommonUtils.get_right_typed_value(type, val), file_base)
+				var value = list_val if type == "list" else class_val if is_class_dict else CommonUtils.get_right_typed_value(type, val)
+				if _assign_node_properties and assignable == null:
+					assignable = get_assignable_properties(target_node)
+				if assignable != null and assignable.has(name):
+					set_property_or_meta(target_node, name, type, value, file_base, assignable)
+				else:
+					target_node.set_meta(name, value)
 
 
 # A custom property that no special case handles: assigned to the node's property of that name when
 # there is one and the value fits its type (assign_node_properties, F1), else metadata as before.
-func set_property_or_meta(node: Node, name: String, type: String, value, file_base: String) -> void:
+func set_property_or_meta(node: Node, name: String, type: String, value, file_base: String, assignable = null) -> void:
 	if _assign_node_properties:
-		var info = get_assignable_properties(node).get(name)
+		var info = (assignable if assignable != null else get_assignable_properties(node)).get(name)
 		if info != null:
 			var converted = convert_for_property(info, type, value, file_base)
 			if converted.size() == 1:

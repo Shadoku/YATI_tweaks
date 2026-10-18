@@ -31,6 +31,8 @@ var _custom_types = null
 var _project_dir: String = ""
 # Index "name|scope" -> Array of member dictionaries (built once after loading)
 var _class_members_by_name_and_scope: Dictionary = {}
+# Enum name -> Array of its value names (built once after loading)
+var _enum_values_by_name: Dictionary = {}
 
 func load_custom_types(project_file: String):
 	_project_dir = project_file.get_base_dir()
@@ -52,8 +54,11 @@ func load_custom_types(project_file: String):
 
 func _build_index() -> void:
 	_class_members_by_name_and_scope.clear()
+	_enum_values_by_name.clear()
 	if _custom_types == null: return
 	for ct_prop in _custom_types:
+		if ct_prop.get("type", "") == "enum":
+			_enum_values_by_name[str(ct_prop.get("name", ""))] = ct_prop.get("values", [])
 		if ct_prop.get("type", "") != "class": continue
 		var pt_name: String = str(ct_prop.get("name", ""))
 		var pt_members: Array = ct_prop.get("members", [])
@@ -81,6 +86,22 @@ func get_class_member(type_name: String, scope: String, member_name: String):
 		if str(mem.get("name", "")) == member_name:
 			return mem
 	return null
+
+
+# The bitmask of a string of value names of the enum enum_name ("Player,Enemy"): each value's index
+# in the enum is its bit (a flags enum's layers in their order). -1 if there is no such enum.
+func get_enum_mask(enum_name: String, names: String, max_len: int) -> int:
+	var values = _enum_values_by_name.get(enum_name)
+	if values == null: return -1
+	var mask := 0
+	for name in names.split(",", false):
+		var index: int = values.find(name.strip_edges())
+		if index < 0 or index >= max_len:
+			print_rich("[color=yellow] -- '" + name.strip_edges() + "' is no layer of enum '" + enum_name + "'. -> Ignored[/color]")
+			CommonUtils.warning_count += 1
+			continue
+		mask |= 1 << index
+	return mask
 
 
 func unload_custom_types():

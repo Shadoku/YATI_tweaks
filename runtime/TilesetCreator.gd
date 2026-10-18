@@ -934,38 +934,38 @@ func handle_tileset_properties(properties: Array):
 			val = str(property.get("value", ""))
 		if name == "": continue
 		var layer_index
-		if name.to_lower() == "collision_layer" and type == "string":
+		if name.to_lower() == "collision_layer" and (type == "string" or type == "int"):
 			ensure_layer_existing(layer_type.PHYSICS, 0)
-			_tileset.set_physics_layer_collision_layer(0, CommonUtils.get_bitmask_integer_from_string(val, 32))
-		elif name.to_lower().begins_with("collision_layer_") and type == "string":
+			_tileset.set_physics_layer_collision_layer(0, CommonUtils.get_mask_value(property, 32, _ct))
+		elif name.to_lower().begins_with("collision_layer_") and (type == "string" or type == "int"):
 			if not name.substr(16).is_valid_int(): continue
 			layer_index = int(name.substr(16))
 			ensure_layer_existing(layer_type.PHYSICS, layer_index)
-			_tileset.set_physics_layer_collision_layer(layer_index, CommonUtils.get_bitmask_integer_from_string(val, 32))
-		elif name.to_lower() == "collision_mask" and type == "string":
+			_tileset.set_physics_layer_collision_layer(layer_index, CommonUtils.get_mask_value(property, 32, _ct))
+		elif name.to_lower() == "collision_mask" and (type == "string" or type == "int"):
 			ensure_layer_existing(layer_type.PHYSICS, 0)
-			_tileset.set_physics_layer_collision_mask(0, CommonUtils.get_bitmask_integer_from_string(val, 32))
-		elif name.to_lower().begins_with("collision_mask_") and type == "string":
+			_tileset.set_physics_layer_collision_mask(0, CommonUtils.get_mask_value(property, 32, _ct))
+		elif name.to_lower().begins_with("collision_mask_") and (type == "string" or type == "int"):
 			if not name.substr(15).is_valid_int(): continue
 			layer_index = int(name.substr(15))
 			ensure_layer_existing(layer_type.PHYSICS, layer_index)
-			_tileset.set_physics_layer_collision_mask(layer_index, CommonUtils.get_bitmask_integer_from_string(val, 32))
-		elif name.to_lower() == "layers" and type == "string":
+			_tileset.set_physics_layer_collision_mask(layer_index, CommonUtils.get_mask_value(property, 32, _ct))
+		elif name.to_lower() == "layers" and (type == "string" or type == "int"):
 			ensure_layer_existing(layer_type.NAVIGATION, 0)
-			_tileset.set_navigation_layer_layers(0, CommonUtils.get_bitmask_integer_from_string(val, 32))
-		elif name.to_lower().begins_with("layers_") and type == "string":
+			_tileset.set_navigation_layer_layers(0, CommonUtils.get_mask_value(property, 32, _ct))
+		elif name.to_lower().begins_with("layers_") and (type == "string" or type == "int"):
 			if not name.substr(7).is_valid_int(): continue
 			layer_index = int(name.substr(7))
 			ensure_layer_existing(layer_type.NAVIGATION, layer_index)
-			_tileset.set_navigation_layer_layers(layer_index, CommonUtils.get_bitmask_integer_from_string(val, 32))
-		elif name.to_lower() == "light_mask" and type == "string":
+			_tileset.set_navigation_layer_layers(layer_index, CommonUtils.get_mask_value(property, 32, _ct))
+		elif name.to_lower() == "light_mask" and (type == "string" or type == "int"):
 			ensure_layer_existing(layer_type.OCCLUSION, 0)
-			_tileset.set_occlusion_layer_light_mask(0, CommonUtils.get_bitmask_integer_from_string(val, 20))
-		elif name.to_lower().begins_with("light_mask_") and type == "string":
+			_tileset.set_occlusion_layer_light_mask(0, CommonUtils.get_mask_value(property, 20, _ct))
+		elif name.to_lower().begins_with("light_mask_") and (type == "string" or type == "int"):
 			if not name.substr(11).is_valid_int(): continue
 			layer_index = int(name.substr(11))
 			ensure_layer_existing(layer_type.OCCLUSION, layer_index)
-			_tileset.set_occlusion_layer_light_mask(layer_index, CommonUtils.get_bitmask_integer_from_string(val, 20))
+			_tileset.set_occlusion_layer_light_mask(layer_index, CommonUtils.get_mask_value(property, 20, _ct))
 		elif name.to_lower() == "sdf_collision_" and type == "bool":
 			ensure_layer_existing(layer_type.OCCLUSION, 0)
 			_tileset.set_occlusion_layer_sdf_collision(0, val.to_lower() == "true")
