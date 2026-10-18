@@ -294,3 +294,13 @@ through the `.tiled-project` file, the maps and (for the check) the Godot binary
   against the real `check_map.gd` on `unknown_class.tmx` and `scenes.tmx` (captured as test
   fixtures): every `YATI_CHECK` line parsed as expected; Godot's other lines carry ANSI colour
   codes even headless, which the reader now strips. Stage 3 (the game) follows.
+- 2026-10-18, **stage 3 done** (the game, `goo_pachinko` commit on its branch): the extension is
+  vendored at `assets/tmx/extensions/yati-godot/` (the Tiled project's `extensionsPath`, with a
+  `VENDORED.md` and a `.gdignore`), the project file carries `godot_project = ../..`,
+  `godot_binary = godot` and `yati_import_options = assign_node_properties=false
+  warn_unknown_classes=false`, the vendored addon follows commit `5497408` (libraries from the bot
+  commit `fd246d8`), and `check_map.gd` run from that repository on its dungeon board reports no
+  error and no warning. Its `check.py` passes (535 tests). The game's board classes are loader
+  classes, so the sync adds the Godot enums and `MapRef` and the validator knows its classes; no
+  scene becomes a class. **Still to do by the user, in Tiled 1.12:** open the project, enable its
+  extensions, and run the README's checklist; the first run anywhere.
