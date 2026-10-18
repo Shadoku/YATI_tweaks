@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lists) and tile custom data are a `Color` instead of a `#RRGGBBAA` String. Code that passes the
   value to `Color()` keeps working; code that treats it as a String does not. Class members and list
   items inside class-typed properties keep Tiled's `#AARRGGBB` String (the parsed dictionary is unchanged).
+- **Breaking** (B7): a tile layer without a class no longer has metadata `class` (it was always
+  `"tilelayer"`); object, group and image layers with a class now get it as tile layers do
+  (with `add_class_as_metadata`, the default).
 
 ### Fixed
 - B5 (`docs/runtime-improvement-plan.md`): the Area2D gravity properties were misspelt in
@@ -51,6 +54,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `type="string"`. Both types are accepted now, a `color` read as Tiled's `#AARRGGBB` and a `string` as
   before (Godot's `#RRGGBB` / `#RRGGBBAA` or a colour name). A colour-typed tile custom data property
   on its `TYPE_COLOR` layer got a String.
+- B7: every tile layer without a class got metadata `class = "tilelayer"`: the class fell back to
+  the `type` key, which pre-1.9 files use for an object's or tile's class but which on a layer is its
+  kind. The fallback (`TilemapCreator.get_class_string()`) now applies to objects and tiles only.
 
 ## [3.0.0] — runtime-only fork (2026-10-17)
 

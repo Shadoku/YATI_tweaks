@@ -34,7 +34,8 @@ Setting this option to `true` leaves all texture filters as they are by default 
 
 Type `bool`, default: `true`
 
-If enabled the content of the Tiled class field is added as metadata `class` to the corresponding Godot node.
+If enabled the content of the Tiled class field is added as metadata `class` to the corresponding Godot node
+(objects, and layers of every kind; a layer without a class gets none).
 Independent of this option tiles always get their class as metadata `class` on their TileData, and the class of a
 tileset is stored as metadata `class` on the generated TileSet (as all tilesets of a map end up in one Godot TileSet,
 the last tileset with a class wins).

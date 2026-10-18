@@ -400,11 +400,7 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 			if data != null:
 				create_map_from_data(data, 0, 0, _map_width)
 
-		var class_string = layer.get("class", "")
-		if class_string == "":
-			class_string = layer.get("type", "")
-		if _add_class_as_metadata and class_string != "":
-			_tilemap_layer.set_meta("class", class_string)
+		set_layer_class_meta(_tilemap_layer, layer)
 		var obj_id = layer.get("id", 0)
 		if _add_id_as_metadata and obj_id != 0:
 			_tilemap_layer.set_meta("id", obj_id)
@@ -413,7 +409,7 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 			handle_properties(_tilemap_layer, layer["properties"])
 
 	elif layer_type == "objectgroup":
-		var node_type = get_godot_node_type(layer)
+		var node_type = get_godot_node_type(layer, true)
 
 		var layer_node
 		if node_type == _godot_type.PARALLAX:
@@ -449,11 +445,12 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 			for obj in layer["objects"]:
 				handle_object(obj, layer_node, _tileset, Vector2.ZERO)
 
+		set_layer_class_meta(layer_node, layer)
 		if layer.has("properties"):
 			handle_properties(layer_node, layer["properties"])
 
 	elif layer_type == "group":
-		var node_type = get_godot_node_type(layer)
+		var node_type = get_godot_node_type(layer, true)
 
 		var group_node
 		if node_type == _godot_type.PARALLAX:
@@ -487,11 +484,12 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 		if group_node.material != null:
 			use_parent_material_recursively(group_node)
 
+		set_layer_class_meta(group_node, layer)
 		if layer.has("properties"):
 			handle_properties(group_node, layer["properties"])
 
 	elif layer_type == "imagelayer":
-		var node_type = get_godot_node_type(layer)
+		var node_type = get_godot_node_type(layer, true)
 
 		if node_type == _godot_type.PARALLAX:
 			var px_2d = Parallax2D.new()
@@ -527,6 +525,7 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 			px_2d.add_child(texture_rect)
 			texture_rect.owner = _base_node
 
+			set_layer_class_meta(px_2d, layer)
 			if layer.has("properties"):
 				handle_properties(px_2d, layer["properties"])
 		else:
@@ -565,6 +564,7 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 					texture_rect.position = rect_pos
 					texture_rect.size = rect_size
 
+			set_layer_class_meta(texture_rect, layer)
 			if layer.has("properties"):
 				handle_properties(texture_rect, layer["properties"])
 
@@ -887,10 +887,24 @@ static func get_godot_node_type_property(obj: Dictionary):
 	return [ret, property_found]
 
 
-static func get_godot_node_type(obj: Dictionary):
-	var class_string = obj.get("class", "")
-	if class_string == "":
-		class_string = obj.get("type", "")
+# The Tiled class of an object, tile or layer. Objects and tiles of files older than Tiled 1.9 saved
+# it as 'type'; on a layer 'type' is the layer kind (tilelayer, objectgroup...), never a class.
+static func get_class_string(d: Dictionary, is_layer: bool) -> String:
+	var class_string := str(d.get("class", ""))
+	if class_string == "" and not is_layer:
+		class_string = str(d.get("type", ""))
+	return class_string
+
+
+# Sets metadata "class" on a layer's node (if the layer has a class and the option is on)
+func set_layer_class_meta(node: Node, layer: Dictionary) -> void:
+	var class_string := get_class_string(layer, true)
+	if _add_class_as_metadata and class_string != "":
+		node.set_meta("class", class_string)
+
+
+static func get_godot_node_type(obj: Dictionary, is_layer: bool = false):
+	var class_string = get_class_string(obj, is_layer)
 	var search_result = get_godot_node_type_property(obj)
 	var godot_node_type_property_string = search_result[0]
 	var godot_node_type_prop_found = search_result[1]
@@ -1004,9 +1018,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 	if _ct != null:
 		_ct.merge_custom_properties(obj, "object")
 
-	var class_string = obj.get("class", "")
-	if class_string == "":
-		class_string = obj.get("type", "")
+	var class_string = get_class_string(obj, false)
 	var search_result = get_godot_node_type_property(obj)
 	var godot_node_type_property_string = search_result[0]
 	var godot_node_type_prop_found = search_result[1]

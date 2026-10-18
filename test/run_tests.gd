@@ -1341,6 +1341,25 @@ func test_bug_color_property_type() -> bool:
 	return done()
 
 
+func test_bug_layer_class_meta() -> bool:
+	# B7: the class fell back to the 'type' key, which on a layer is its kind, so every tile
+	# layer got class = "tilelayer". Layers of the other kinds now get their class as well.
+	var n := _import("layer_class.tmx")
+	if n == null: return done()
+	var plain := layer(n, "Plain")
+	if plain: check(not plain.has_meta("class"), "tile layer without class has meta class = %s" % str(plain.get_meta("class", "")))
+	meta(layer(n, "Ground"), "class", "Ground")
+	var po := need(n, "PlainObjects", "Node2D")
+	if po: check(not po.has_meta("class"), "object layer without class has meta class")
+	meta(need(n, "Spawns", "Node2D"), "class", "Spawns")
+	meta(need(n, "Zone", "Node2D"), "class", "Zone")
+	var pic := need(n, "Picture", "TextureRect")
+	if pic: check(not pic.has_meta("class"), "image layer without class has meta class")
+	var off := _import("layer_class.tmx", {"add_class_as_metadata": false})
+	if off: check(not layer(off, "Ground").has_meta("class"), "class meta with add_class_as_metadata off")
+	return done()
+
+
 # ---------------------------------------------------------------------------
 # Zip (keep last: the pre-change runtime leaks zip mode, see _reset_zip_mode)
 
