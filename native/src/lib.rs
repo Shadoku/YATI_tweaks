@@ -71,7 +71,7 @@ pub struct TiledNative {
 
 #[godot_api]
 impl TiledNative {
-    /// The native importer's version (the crate's), e.g. "0.1.0".
+    /// The native importer's version (the crate's), e.g. "0.2.0".
     #[func]
     fn version(&self) -> GString {
         GString::from(env!("CARGO_PKG_VERSION"))

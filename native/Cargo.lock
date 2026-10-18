@@ -383,7 +383,7 @@ dependencies = [
 
 [[package]]
 name = "tiled_core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64",
  "flate2",
@@ -414,7 +414,7 @@ dependencies = [
 
 [[package]]
 name = "yati_native"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "godot",
  "tiled_core",

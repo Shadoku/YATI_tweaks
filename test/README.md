@@ -106,7 +106,7 @@ noisy; compare `min` and run a few more iterations when the numbers matter.
 ```sh
 # Build the library (Rust, native/) into addons/yati_native/bin/, or download a CI build
 bash tools/build_native.sh            # --check: only tell whether it is there
-bash tools/install_native.sh          # the branch's rolling build, or a tag: v0.1.0
+bash tools/install_native.sh          # the branch's rolling build, or a tag: v0.2.0
 
 # Smoke test: the extension loads, TiledNative.version() and a round trip through sum()
 # (needs .godot/extension_list.cfg naming res://addons/yati_native/yati_native.gdextension)

@@ -7,111 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0] — 2026-10-18
+
+The runtime improvement plan (`docs/runtime-improvement-plan.md`: bug fixes B1 to B10, features
+F1, F2, F3, F5) and the native importer (`docs/native-importer-plan.md`, stages 0 to 5).
+
+### Changed (breaking)
+- B4: colour-typed properties that become metadata (on nodes, tiles, the TileSet, in
+  lists) and tile custom data are a `Color` instead of a `#RRGGBBAA` String. Code that passes the
+  value to `Color()` keeps working; code that treats it as a String does not. Class members and list
+  items inside class-typed properties keep Tiled's `#AARRGGBB` String (the parsed dictionary is unchanged).
+- B7: a tile layer without a class no longer has metadata `class` (it was always
+  `"tilelayer"`); object, group and image layers with a class now get it as tile layers do
+  (with `add_class_as_metadata`, the default).
+- F1: with the new default `assign_node_properties = true` a custom property named like a property of the created
+  node sets that property instead of becoming metadata (e.g. a `rotation` float on an object, a `hp` int on an
+  instance whose script exports `hp`); set it `false` for the 3.0 result. B8's unknown-class warning names
+  `class_scenes` as a remedy.
+- F2: with the new default `object_refs = "nodepath"` an object property is a `NodePath` instead of the
+  target's geometry (`PackedVector2Array` / `Vector2`); set `object_refs = "geometry"` for the 3.0 values. A text
+  object's Label now gets metadata `id` with `add_id_as_metadata`, as every other object's node does.
+- B6: with the new default `parallax_mode = "parallax2d"` a map with parallax layers gives a different
+  tree: no `<map> (PBG)` ParallaxBackground and `(PL)` ParallaxLayers, but a `<layer> (PX)` Parallax2D
+  around each parallax layer where the layer is, and the background colour stays a child of the root.
+  Set `parallax_mode = "legacy"` for the 3.0 tree. Layers of class `parallax` take the parallax origin
+  and their offset into `scroll_offset`.
+- B9: with the new default `animation_mode = "strip"` an animated tile's cells use a strip atlas source
+  (source ids after the tilesets' own, atlas coords `(0, 0)`) instead of the tile in the tileset's atlas,
+  which keeps no animation; `animation_mode = "atlas"` gives the 3.0 result.
+
 ### Added
-- Native importer, stage 4 of `docs/native-importer-plan.md`: `TiledStreamer` (a Node2D) streams a
-  map (infinite or finite) or a Tiled world chunk by chunk as a window moves (`window` in cells, or
-  `follow` a node with a `margin`), within a per-frame budget (`budget_us`, 2000 by default) that
-  it calibrates on its own work (µs per chunk, cell, collision cell, y-sorted cell, object, erased
-  cell, freed object: `get_costs()`). One persistent `TileMapLayer` per Tiled tile layer, chunks in
-  with `set_cell` and out with `erase_cell` (hysteresis `keep_margin`), payloads decoded on demand;
-  objects created with their chunk by the builder's own code and freed with it (or kept,
-  `keep_objects_resident`), references across chunks resolved whenever both exist; signals
-  `chunk_loaded`, `chunk_unloaded`, `object_spawned`, `object_despawned`, `map_loaded`,
-  `map_unloaded`, `settled`; `step(budget_us)`, `load_all()` (the whole map, equal to
-  `TiledBuilder.build`'s content), `get_layer(name)` and the other queries. World mode: each map
-  loaded with `TiledMap.load_async` when the window approaches and unloaded when it leaves.
-  Y-sorted tile layers (isometric, staggered) are refused unless `allow_y_sorted_layers` (the
-  engine re-sorts all of a y-sorted layer's cells in each frame that changes it, beyond any budget).
-  `Importer.make_streamer(map_or_world, options = null, project_file = "")`;
-  `TiledTileSets.shared()`, the process-wide cache behind `Importer.shared_tilesets()`.
-- `test/test_stream.gd` (run by `test/run_all.sh` and CI), `test/bench_stream.gd` (the streaming
-  benchmark, with a renderer) and `test/gen_stream_bench.gd` (its maps: 4 000 × 4 000 cells
-  infinite, an isometric twin, a world of 3 × 3 maps); `test/bench_materialize.gd -- --ysort`.
-- Native importer, stage 2b of `docs/native-importer-plan.md`: the native builder has the GDScript
-  runtime's part B features, so the whole test suite (103 of 103) passes against
-  `addons/yati_native/`. F2: object references become NodePaths in a second pass (`object_refs`,
-  exports of the same name, lists as `Array[NodePath]`, the empty-path warning, `"both"`'s
-  `<name>_shape`, the `id` metadata on text objects' Labels too). F1: `class_scenes`,
-  `read_godot_scene_from_custom_types` (a class's `godot_scene` member, an object's own override),
-  `assign_node_properties` (custom properties into node properties with the runtime's coercions,
-  `godot_script` attached first) and the `_tiled_import(info)` hook. F3: `map_rect`,
-  `map_size_tiles`, `tile_size` and `orientation` metadata on every root; `Importer.import_world()`,
-  and `addons/yati_native/WorldLoader.gd` (`parse(world_file, zip_file = "")`, `clear_cache()`) over
-  a new native class `TiledWorld` (the core's world loader, files and directory listings read on the
-  main thread). F5: int and flag-enum mask values on nodes and the tileset's `_n` properties.
-  `addons/yati_native/TilemapCreator.gd`: a stand-in for the runtime's (`create()`,
-  `get_map_rect()`, `get_tileset()`). The native parity tests cover the part B fixtures
-  (`object_refs.tmx`, `scenes.tmx`, `masks.tmx`, `world/*`, with their project files);
-  `tools/native_gate.gd` checks them for leaks too, and a world import. CI requires the native suite
-  again.
-- Native importer, stage 3 of `docs/native-importer-plan.md`: asynchronous loading and shared
-  caches. `Importer.import_async(path, project = "")` and `import_from_zip_async(...)` (coroutines:
-  `await` them) import a map without a hitch: the parse runs on a worker thread
-  (`TiledMap.load_async` / `from_zip_async`, `poll()` once per frame returning `READING`,
-  `PARSING`, `WAITING_FILES`, `READY` or `FAILED`, signals `loaded` and `failed`, `cancel()`), the
-  main thread only reads the files the parse asks for (`FileAccess`, so `res://` in a .pck works);
-  the map's `res://` textures load in the engine's threads (`ResourceLoader.load_threaded_request`)
-  while it parses; TileSets are created a few tiles per frame (`TiledTileSets.build_step`) and the
-  tree is built in one frame. On the benchmark map no frame before the build takes more than about
-  2 to 3 ms of main-thread time, and the build frame equals the synchronous build. TileSets are
-  shared across imports (`Importer.share_tilesets`, on by default, through `Importer.shared_tilesets()`,
-  an exclusive cache: two live trees never share a TileSet, a later map reuses a freed tree's;
-  `TiledTileSets.exclusive` off shares one by reference between live trees too), so a second map on
-  the same tilesets creates no TileSet; textures are cached per process
-  (`TiledTileSets.clear_textures()`). The cache key now also holds `no_alternative_tiles` and the
-  project file's types. `TiledTileSets.get_created_count()`, `get_texture_count()`;
-  `TiledMap.get_status()`. A cached TileSet's messages are reported by every import that uses it.
-- `test/test_async.gd` (run by `test/run_all.sh` with the native library): the async import's
-  frame times and tree, the shared cache, cancellation without leaks; `tools/native_gate.gd` times
-  the small map's async import.
-- Native importer, stage 2 of `docs/native-importer-plan.md`: maps import natively.
-  `addons/yati_native/Importer.gd` (the GDScript runtime's API) now imports through the native
-  classes `TiledImportOptions`, `TiledMap` (load from the file system or a zip, queries,
-  `to_dictionary()`), `TiledTileSets` (the TileSet builder and its cache) and `TiledBuilder` (the
-  whole node tree in one call, tile layers filled with one `tile_map_data` assignment each), and
-  passes the runtime's test suite (90 of 90). About 4 to 5 times faster than the GDScript runtime
-  on the benchmark map, a small map in about 2 ms. The addon stands alone (`PostProcessing.gd` and
-  a `CommonUtils.gd` with the error counters next to `Importer.gd`); its README lists the few
-  differences from the GDScript runtime. Crate feature `unchecked` (off by default): godot-rust's
-  per-call checks off, about 30 % off the object phase.
-- `tools/native_gate.gd`: leak check (every fixture imported and freed 20 times, object and node
-  counts unchanged), small-map timing and the engine's `tile_map_data` floor; `tools/smoke_native.gd`
-  imports a fixture through the facade too.
-- `test/benchmark.gd` times a runtime without `DataLoader.gd` (the native facade) with the native
-  classes, so its phase split works for both importers.
-- The native parity tests cover the runtime improvement plan's part A fixtures and their templates
-  (`test/fixtures/expected/` has their dumps).
-- Native importer, stage 0 of `docs/native-importer-plan.md` (the scaffold, it imports nothing yet):
-  the Rust crate `native/` (`yati_native`, godot-rust 0.5 for Godot 4.7) registering `TiledNative`
-  (`version()`, `sum()`); `addons/yati_native/` with `yati_native.gdextension` and an `Importer.gd`
-  facade that has the GDScript runtime's options and methods and reports "not implemented yet"; the
-  tools `tools/build_native.sh`, `tools/install_native.sh` (CI builds, `.yati-native-version`),
-  `tools/install_godot.sh` (`.godot-version`), `tools/smoke_native.gd` (loads the library),
-  `tools/check_native_image.py` and `tools/verify_native_bin.sh`; the workflows `ci.yml` (builds the
-  library, runs the suite for both runtimes, the native one for information until stage 2) and
-  `native.yml` (Linux x86_64, Windows x86_64 and macOS libraries, committed back to the branch and
-  published as the rolling pre-release `native-<branch>` or a release on a `v<crate version>` tag).
-- `test/run_all.sh` runs the native smoke test first, and imports the project (seeding
-  `.godot/extension_list.cfg` so a fresh `.godot/` does not crash on its first import), so it works
-  from a fresh clone.
-- `docs/native-importer-plan.md`: the exploration and plan for a native (Rust GDExtension) importer
-  that needs no preloading and streams infinite maps, with the measurements behind it.
-- `native/tiled/` (`tiled_core`, stage 1 of the native importer plan): a pure-Rust crate, no Godot
-  dependency, with the Tiled data model (structs mirroring the JSON format), TMX/TSX/TX and
-  TMJ/TSJ/TJ parsers into that one model, payload decoding in every encoding (csv, base64, zlib,
-  gzip, zstd, legacy `<tile gid>`) kept lazy, gid resolution as `resolve_cell` does it, Godot
-  `tile_map_data` blobs (per layer, per chunk, merged, one thread per layer), a loader with a
-  file-request protocol (external tilesets, templates and their tilesets, the project file, zip
-  archives), the template and custom-type merges, and `Map::to_value()`: the dictionary
-  `DictionaryBuilder.gd` builds, equal to the GDScript runtime's for every fixture.
-- `test/dump_dictionary.gd`: prints the runtime's dictionary of a Tiled file as JSON (optionally with a
-  project's custom types merged, or from a zip); `test/gen_expected.sh` writes
-  `test/fixtures/expected/*.json` with it for the native parity tests.
-- Fixtures for the native parity tests: `classes.tmx` + `classes.tiled-project` + `crate.tx`,
-  `infinite.tmj` + `json_tiles.tsj` + `json_enemy.tj`, `json_twin.tmx`.
-- `test/bench_materialize.gd`: measures the engine's own cost of a map's tile layers (`tile_map_data`
-  assignment, packed-scene instantiation, the frame after a layer enters the tree, `set_cell` /
-  `erase_cell` of 16x16 chunks into a live layer, a layer per chunk).
 - B8: importer option `unknown_class_fallback` (default `"staticbody"`, as before): what an object of a
   class that is no Godot node type becomes; `"node2d"` gives a plain Node2D with the shape as metadata
   `shape` (`Rect2` or `PackedVector2Array`) and `size`, any class name of the mapping table that node.
@@ -153,49 +78,153 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   directory's `.tmx`/`.tmj` files, sizes from the maps' headers, cached), from the file system or a zip;
   `Importer.import_world(world_file, project_file = "")` imports a whole world under one Node2D.
   `DataLoader.list_files(dir)` lists a directory in either mode.
-- F3, native: `tiled_core::world` (`native/tiled/src/world.rs`): `World::parse` for a world file's own content,
-  `WorldLoader` resolving its patterns through the file-request protocol (the world file, a `ListDir` request for
-  its directory, the matching maps' files; `WorldLoader::from_zip`, `load_world_from_fs`), and `Map::map_rect()` /
-  `tile_rect()` / `pixel_rect()` with the GDScript runtime's formula. `tiled_core` depends on `regex` for the patterns.
 - F5: layer-mask properties (`collision_layer`, `collision_mask`, `platform_floor_layers`, `platform_wall_layers`,
   `navigation_layers`, `light_mask`, `visibility_layer`, `occluder_light_mask`, `parsed_collision_mask`, and the
   tileset's `collision_layer_n`, `collision_mask_n`, `layers_n`, `light_mask_n`) accept an `int`, the bitmask itself
   (a Tiled flags enum stored as int), and the value names of a flags enum stored as string (`Player,Enemy`), looked up
   in the project file (`CustomTypes.get_enum_mask`, `CommonUtils.get_mask_value`); the `"1,3,5-7"` strings work as before.
+- The native importer, `addons/yati_native/` (library version 0.2.0; `docs/native-importer-plan.md`
+  has its plan, measurements and stages): the GDScript runtime as a Rust GDExtension (godot-rust 0.5,
+  Godot 4.7) behind an `Importer.gd` with the runtime's API, the same tree, options, metadata and
+  messages (the runtime's test suite passes against it), 4 to 5 times faster; `import_async`,
+  shared TileSets and `TiledStreamer` on top. Documented in `Runtime.md` ("Native importer"), the
+  addon's README (self-contained: install, API, streamer, limits, web build requirements) and
+  `Reference.md` ("Differences between the GDScript and the native importer"). In detail:
+- Native importer, stage 0 of `docs/native-importer-plan.md` (the scaffold, it imports nothing yet):
+  the Rust crate `native/` (`yati_native`, godot-rust 0.5 for Godot 4.7) registering `TiledNative`
+  (`version()`, `sum()`); `addons/yati_native/` with `yati_native.gdextension` and an `Importer.gd`
+  facade that has the GDScript runtime's options and methods and reports "not implemented yet"; the
+  tools `tools/build_native.sh`, `tools/install_native.sh` (CI builds, `.yati-native-version`),
+  `tools/install_godot.sh` (`.godot-version`), `tools/smoke_native.gd` (loads the library),
+  `tools/check_native_image.py` and `tools/verify_native_bin.sh`; the workflows `ci.yml` (builds the
+  library, runs the suite for both runtimes, the native one for information until stage 2) and
+  `native.yml` (Linux x86_64, Windows x86_64 and macOS libraries, committed back to the branch and
+  published as the rolling pre-release `native-<branch>` or a release on a `v<crate version>` tag).
+- `native/tiled/` (`tiled_core`, stage 1 of the native importer plan): a pure-Rust crate, no Godot
+  dependency, with the Tiled data model (structs mirroring the JSON format), TMX/TSX/TX and
+  TMJ/TSJ/TJ parsers into that one model, payload decoding in every encoding (csv, base64, zlib,
+  gzip, zstd, legacy `<tile gid>`) kept lazy, gid resolution as `resolve_cell` does it, Godot
+  `tile_map_data` blobs (per layer, per chunk, merged, one thread per layer), a loader with a
+  file-request protocol (external tilesets, templates and their tilesets, the project file, zip
+  archives), the template and custom-type merges, and `Map::to_value()`: the dictionary
+  `DictionaryBuilder.gd` builds, equal to the GDScript runtime's for every fixture.
+- Native importer, stage 2 of `docs/native-importer-plan.md`: maps import natively.
+  `addons/yati_native/Importer.gd` (the GDScript runtime's API) now imports through the native
+  classes `TiledImportOptions`, `TiledMap` (load from the file system or a zip, queries,
+  `to_dictionary()`), `TiledTileSets` (the TileSet builder and its cache) and `TiledBuilder` (the
+  whole node tree in one call, tile layers filled with one `tile_map_data` assignment each), and
+  passes the runtime's test suite (90 of 90). About 4 to 5 times faster than the GDScript runtime
+  on the benchmark map, a small map in about 2 ms. The addon stands alone (`PostProcessing.gd` and
+  a `CommonUtils.gd` with the error counters next to `Importer.gd`); its README lists the few
+  differences from the GDScript runtime. Crate feature `unchecked` (off by default): godot-rust's
+  per-call checks off, about 30 % off the object phase.
+- Native importer, stage 2b of `docs/native-importer-plan.md`: the native builder has the GDScript
+  runtime's part B features, so the whole test suite (103 of 103) passes against
+  `addons/yati_native/`. F2: object references become NodePaths in a second pass (`object_refs`,
+  exports of the same name, lists as `Array[NodePath]`, the empty-path warning, `"both"`'s
+  `<name>_shape`, the `id` metadata on text objects' Labels too). F1: `class_scenes`,
+  `read_godot_scene_from_custom_types` (a class's `godot_scene` member, an object's own override),
+  `assign_node_properties` (custom properties into node properties with the runtime's coercions,
+  `godot_script` attached first) and the `_tiled_import(info)` hook. F3: `map_rect`,
+  `map_size_tiles`, `tile_size` and `orientation` metadata on every root; `Importer.import_world()`,
+  and `addons/yati_native/WorldLoader.gd` (`parse(world_file, zip_file = "")`, `clear_cache()`) over
+  a new native class `TiledWorld` (the core's world loader, files and directory listings read on the
+  main thread). F5: int and flag-enum mask values on nodes and the tileset's `_n` properties.
+  `addons/yati_native/TilemapCreator.gd`: a stand-in for the runtime's (`create()`,
+  `get_map_rect()`, `get_tileset()`). The native parity tests cover the part B fixtures
+  (`object_refs.tmx`, `scenes.tmx`, `masks.tmx`, `world/*`, with their project files);
+  `tools/native_gate.gd` checks them for leaks too, and a world import. CI requires the native suite
+  again.
+- F3, native: `tiled_core::world` (`native/tiled/src/world.rs`): `World::parse` for a world file's own content,
+  `WorldLoader` resolving its patterns through the file-request protocol (the world file, a `ListDir` request for
+  its directory, the matching maps' files; `WorldLoader::from_zip`, `load_world_from_fs`), and `Map::map_rect()` /
+  `tile_rect()` / `pixel_rect()` with the GDScript runtime's formula. `tiled_core` depends on `regex` for the patterns.
+- Native importer, stage 3 of `docs/native-importer-plan.md`: asynchronous loading and shared
+  caches. `Importer.import_async(path, project = "")` and `import_from_zip_async(...)` (coroutines:
+  `await` them) import a map without a hitch: the parse runs on a worker thread
+  (`TiledMap.load_async` / `from_zip_async`, `poll()` once per frame returning `READING`,
+  `PARSING`, `WAITING_FILES`, `READY` or `FAILED`, signals `loaded` and `failed`, `cancel()`), the
+  main thread only reads the files the parse asks for (`FileAccess`, so `res://` in a .pck works);
+  the map's `res://` textures load in the engine's threads (`ResourceLoader.load_threaded_request`)
+  while it parses; TileSets are created a few tiles per frame (`TiledTileSets.build_step`) and the
+  tree is built in one frame. On the benchmark map no frame before the build takes more than about
+  2 to 3 ms of main-thread time, and the build frame equals the synchronous build. TileSets are
+  shared across imports (`Importer.share_tilesets`, on by default, through `Importer.shared_tilesets()`,
+  an exclusive cache: two live trees never share a TileSet, a later map reuses a freed tree's;
+  `TiledTileSets.exclusive` off shares one by reference between live trees too), so a second map on
+  the same tilesets creates no TileSet; textures are cached per process
+  (`TiledTileSets.clear_textures()`). The cache key now also holds `no_alternative_tiles` and the
+  project file's types. `TiledTileSets.get_created_count()`, `get_texture_count()`;
+  `TiledMap.get_status()`. A cached TileSet's messages are reported by every import that uses it.
+- Native importer, stage 4 of `docs/native-importer-plan.md`: `TiledStreamer` (a Node2D) streams a
+  map (infinite or finite) or a Tiled world chunk by chunk as a window moves (`window` in cells, or
+  `follow` a node with a `margin`), within a per-frame budget (`budget_us`, 2000 by default) that
+  it calibrates on its own work (µs per chunk, cell, collision cell, y-sorted cell, object, erased
+  cell, freed object: `get_costs()`). One persistent `TileMapLayer` per Tiled tile layer, chunks in
+  with `set_cell` and out with `erase_cell` (hysteresis `keep_margin`), payloads decoded on demand;
+  objects created with their chunk by the builder's own code and freed with it (or kept,
+  `keep_objects_resident`), references across chunks resolved whenever both exist; signals
+  `chunk_loaded`, `chunk_unloaded`, `object_spawned`, `object_despawned`, `map_loaded`,
+  `map_unloaded`, `settled`; `step(budget_us)`, `load_all()` (the whole map, equal to
+  `TiledBuilder.build`'s content), `get_layer(name)` and the other queries. World mode: each map
+  loaded with `TiledMap.load_async` when the window approaches and unloaded when it leaves.
+  Y-sorted tile layers (isometric, staggered) are refused unless `allow_y_sorted_layers` (the
+  engine re-sorts all of a y-sorted layer's cells in each frame that changes it, beyond any budget).
+  `Importer.make_streamer(map_or_world, options = null, project_file = "")`;
+  `TiledTileSets.shared()`, the process-wide cache behind `Importer.shared_tilesets()`.
+- Native importer, stage 5: an asynchronous import's worker thread also decodes the map's tile
+  layers (`tiled_core::prepare`: blobs in `tile_map_data`'s format whose records wait only for
+  their tile fields; `Worker::spawn_preparing`; `TiledMap.prepare_tile_layers`, which
+  `import_async` turns on, and `has_prepared_tile_layers()`), so the build frame only resolves the
+  layers' distinct cell values, patches the blobs and assigns them: the benchmark map's build frame
+  decodes nothing (it decoded for 5 to 8 ms) and the blobs are byte for byte the synchronous
+  build's. Small layers are decoded on the calling thread instead of a thread each (a third off a
+  small map's synchronous import). `TiledBuilder.get_timings()` (the tile layers' main-thread time
+  by phase); `TiledTileSets.get_shared()`.
+- `test/test_stream.gd` (run by `test/run_all.sh` and CI), `test/bench_stream.gd` (the streaming
+  benchmark, with a renderer) and `test/gen_stream_bench.gd` (its maps: 4 000 × 4 000 cells
+  infinite, an isometric twin, a world of 3 × 3 maps); `test/bench_materialize.gd -- --ysort`.
+- `test/test_async.gd` (run by `test/run_all.sh` with the native library): the async import's
+  frame times and tree, the shared cache, cancellation without leaks; `tools/native_gate.gd` times
+  the small map's async import.
+- `tools/native_gate.gd`: leak check (every fixture imported and freed 20 times, object and node
+  counts unchanged), small-map timing and the engine's `tile_map_data` floor; `tools/smoke_native.gd`
+  imports a fixture through the facade too.
+- `test/benchmark.gd` times a runtime without `DataLoader.gd` (the native facade) with the native
+  classes, so its phase split works for both importers.
+- The native parity tests cover the runtime improvement plan's part A fixtures and their templates
+  (`test/fixtures/expected/` has their dumps).
+- `test/run_all.sh` runs the native smoke test first, and imports the project (seeding
+  `.godot/extension_list.cfg` so a fresh `.godot/` does not crash on its first import), so it works
+  from a fresh clone.
+- `docs/native-importer-plan.md`: the exploration and plan for a native (Rust GDExtension) importer
+  that needs no preloading and streams infinite maps, with the measurements behind it.
+- `test/dump_dictionary.gd`: prints the runtime's dictionary of a Tiled file as JSON (optionally with a
+  project's custom types merged, or from a zip); `test/gen_expected.sh` writes
+  `test/fixtures/expected/*.json` with it for the native parity tests.
+- Fixtures for the native parity tests: `classes.tmx` + `classes.tiled-project` + `crate.tx`,
+  `infinite.tmj` + `json_tiles.tsj` + `json_enemy.tj`, `json_twin.tmx`.
+- `test/bench_materialize.gd`: measures the engine's own cost of a map's tile layers (`tile_map_data`
+  assignment, packed-scene instantiation, the frame after a layer enters the tree, `set_cell` /
+  `erase_cell` of 16x16 chunks into a live layer, a layer per chunk).
 
 ### Changed
-- F1: with the new default `assign_node_properties = true` a custom property named like a property of the created
-  node sets that property instead of becoming metadata (e.g. a `rotation` float on an object, a `hp` int on an
-  instance whose script exports `hp`); set it `false` for the 3.0 result. B8's unknown-class warning names
-  `class_scenes` as a remedy.
-- F2: with the new default `object_refs = "nodepath"` an object property is a `NodePath` instead of the
-  target's geometry (`PackedVector2Array` / `Vector2`); set `object_refs = "geometry"` for the 3.0 values. A text
-  object's Label now gets metadata `id` with `add_id_as_metadata`, as every other object's node does.
 - CI runs the test suite against the native importer's facade as a required step, with
   `tools/native_gate.gd` and the benchmark, and tests, lints and formats both Rust crates.
 - `test/run_tests.gd` checks that a runtime has `DataLoader.gd` / `CommonUtils.gd` before loading them,
   so the native facade (only an `Importer.gd`) runs the suite without a load error per test.
-- **Breaking** (B4): colour-typed properties that become metadata (on nodes, tiles, the TileSet, in
-  lists) and tile custom data are a `Color` instead of a `#RRGGBBAA` String. Code that passes the
-  value to `Color()` keeps working; code that treats it as a String does not. Class members and list
-  items inside class-typed properties keep Tiled's `#AARRGGBB` String (the parsed dictionary is unchanged).
-- **Breaking** (B7): a tile layer without a class no longer has metadata `class` (it was always
-  `"tilelayer"`); object, group and image layers with a class now get it as tile layers do
-  (with `add_class_as_metadata`, the default).
 - B8: an object of an unknown class is reported with a warning once per class name and import,
   whatever `add_class_as_metadata` says (it was silent with the option on, the default, so a `Door`
   became a solid StaticBody2D unnoticed); the warning names the fallback used.
-- B6: with the new default `parallax_mode = "parallax2d"` a map with parallax layers gives a different
-  tree: no `<map> (PBG)` ParallaxBackground and `(PL)` ParallaxLayers, but a `<layer> (PX)` Parallax2D
-  around each parallax layer where the layer is, and the background colour stays a child of the root.
-  Set `parallax_mode = "legacy"` for the 3.0 tree. Layers of class `parallax` take the parallax origin
-  and their offset into `scroll_offset`.
-- B9: with the new default `animation_mode = "strip"` an animated tile's cells use a strip atlas source
-  (source ids after the tilesets' own, atlas coords `(0, 0)`) instead of the tile in the tileset's atlas,
-  which keeps no animation; `animation_mode = "atlas"` gives the 3.0 result.
 - B10c-e: `test_clip_artifacts_xml_and_json` keeps `clip_artifacts` working from .tmx (string) and .tmj
   (bool); the Reference says that `__` property forwarding to children works on collision objects only,
   and why the hexagonal 120° rotation flag stays unsupported.
+- `test/benchmark.gd` clears the native importer's shared TileSet and texture caches before every
+  timed step, so its phases mean the same for both runtimes (the tiles-only import reused the full
+  import's TileSet, and "tile layers" read about 1.5 ms short), and reports the warm-cache import on
+  its own (`cached import avg`). `test/test_async.gd` checks the prepared tile layers on thirteen
+  fixtures and the benchmark map and prints the builder's tile timings.
+- The crates' versions: `yati_native` and `tiled_core` 0.2.0 (their API grew since 0.1.0).
 
 ### Fixed
 - B5 (`docs/runtime-improvement-plan.md`): the Area2D gravity properties were misspelt in
@@ -239,6 +268,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (only `res_path` was); `handle_properties()` takes the base directory now. A file property that the
   instance overrides is resolved relative to the map, where Tiled saves it (an overridden `res_path` was
   joined with the template's directory).
+- Native importer: `Importer.shared_tilesets()` failed while a `SceneTree` script's `_init` ran
+  (`godot -s script.gd`), where godot-rust's static methods are not registered yet: "Cannot find
+  static method" and a null cache (the benchmark printed it in its warm-up). It falls back to the
+  instance method `TiledTileSets.get_shared()`.
 
 ## [3.0.0] — runtime-only fork (2026-10-17)
 

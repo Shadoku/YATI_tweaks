@@ -1,6 +1,6 @@
 [package]
 name = "tiled_core"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Tiled map (TMX/TMJ) data model, parsers, payload decoding and Godot tile_map_data blobs, without Godot"
 license = "MIT"

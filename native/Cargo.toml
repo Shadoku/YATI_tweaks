@@ -1,6 +1,6 @@
 [package]
 name = "yati_native"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "The YATI runtime importer as a Godot GDExtension (godot-rust): Tiled maps imported and streamed natively."
 license = "MIT"

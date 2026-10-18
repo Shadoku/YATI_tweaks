@@ -4,11 +4,11 @@
 # The last line printed is this platform's library path.
 #
 #   bash tools/install_native.sh            # the build named by .yati-native-version (below)
-#   bash tools/install_native.sh v0.1.0     # a versioned release
+#   bash tools/install_native.sh v0.2.0     # a versioned release
 #   bash tools/install_native.sh --update   # replace the library already in bin/ with the
 #                                           # latest build (a rolling build moves with its branch)
 #
-# .yati-native-version holds either a release tag (v0.1.0) or the word `branch`: the rolling
+# .yati-native-version holds either a release tag (v0.2.0) or the word `branch`: the rolling
 # pre-release the workflow keeps for the current git branch, tagged native-<branch> with every
 # character outside [A-Za-z0-9._-] replaced by '-' (native-claude-feature for claude/feature),
 # falling back to native-main when the branch has none (its library is main's then).
