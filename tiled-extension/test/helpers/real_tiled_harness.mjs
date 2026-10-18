@@ -11,12 +11,14 @@
 // Dialog, its widgets read and logged, Save pressed through QAbstractButton::click(); exec() would
 // block, so it is never called) and configure:<options> (the same, with the import options set
 // and the validation switched off before Save), and save:<map or tileset file> (the save hook on
-// that file, read through Tiled's own format: the real API values of its properties).
+// that file, read through Tiled's own format: the real API values of its properties), and
+// options:<text> (the Import options dialog built from that text with the real combo boxes, two
+// of them changed, OK pressed, the text it hands back logged).
 // Output: tiled.log lines, which Tiled prints to the console; the test reads the ones that start
 // with "HARNESS ", "ALERT ", "CONFIRM ", "PROMPT ", "ISSUE " and "YATI".
 //
 // Under Node (node --test runs every file under test/) this file does nothing.
-import { install, ACTIONS, configureDialog, currentSettings } from "../../yati-godot/yati-godot.mjs";
+import { install, ACTIONS, configureDialog, optionsDialog, currentSettings } from "../../yati-godot/yati-godot.mjs";
 
 /* global tiled, TextFile, File, Process, Dialog, ClassPropertyType, StorageType */
 if (typeof tiled !== "undefined" && typeof tiled.registerAction === "function")
@@ -68,6 +70,8 @@ function main() {
 			tiled.log("HARNESS save hook on " + file + (asset ? "" : " (not read)"));
 			for (let k = 0; k < saveHooks.length; k++)
 				saveHooks[k](asset);
+		} else if (step.indexOf("options:") === 0) {
+			optionsStep(api, step.substring(8));
 		} else if ((step === "configure" || step.indexOf("configure:") === 0) && tiled.project !== null) {
 			configureStep(api, step.indexOf("configure:") === 0 ? step.substring(10) : null);
 		} else if (handlers[ACTIONS[step]] !== undefined) {
@@ -102,4 +106,21 @@ function configureStep(api, options) {
 		w.save.click();
 		tiled.log("HARNESS dialog after Save anyway: saved " + d.saved() + ", status '" + w.status.text.replace(/\n/g, " | ") + "'");
 	}
+}
+
+// The Import options dialog without exec(): the combo boxes' indices from the text, two changed,
+// OK pressed, and what it hands back.
+function optionsStep(api, text) {
+	let applied = null;
+	const o = optionsDialog(api, text, function (t) { applied = t; });
+	const w = o.widgets;
+	tiled.log("HARNESS options '" + o.dialog.windowTitle + "': warn_unknown_classes " + w.warn_unknown_classes.currentIndex +
+		", object_refs " + w.object_refs.currentIndex + ", add_id_as_metadata " + w.add_id_as_metadata.currentIndex +
+		", custom_data_prefix '" + w.custom_data_prefix.text + "' (placeholder '" + w.custom_data_prefix.placeholderText + "')" +
+		", tooltip " + (w.object_refs.toolTip.indexOf("object_refs\n\n") === 0));
+	w.add_id_as_metadata.currentIndex = 1;
+	w.object_refs.currentIndex = 3;
+	w.custom_data_prefix.text = "d_";
+	w.ok.click();
+	tiled.log("HARNESS options applied: '" + applied + "'");
 }

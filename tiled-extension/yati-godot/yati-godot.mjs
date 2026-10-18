@@ -18,8 +18,9 @@ import {
 	SETTING_NAMES, readSettings, settingsProblem, stringifyGenerated, stringifyFixups, joinPath, baseName,
 } from "./lib/settings.mjs";
 import {
-	TITLE as CONFIGURE_TITLE, TEXTS, FIELDS, initialValues, managedSummary, godotProjectStatus, godotVersionStatus,
-	validateConfiguration, configuredLines,
+	TITLE as CONFIGURE_TITLE, OPTIONS_TITLE, TEXTS, FIELDS, OPTION_FIELDS, initialValues, managedSummary,
+	godotProjectStatus, godotVersionStatus, validateConfiguration, configuredLines, optionTooltip, optionChoices,
+	optionsToValues, valuesToOptions,
 } from "./lib/configure.mjs";
 import { readGodotProject } from "./lib/godot_project.mjs";
 import { indexClassNames, scanScenes, walkFiles } from "./lib/scene_exports.mjs";
@@ -221,6 +222,13 @@ export function configureDialog(api, settings) {
 				widgets.binaryStatus.text = status.text;
 			});
 		}
+		if (f.key === "importOptions") {
+			const options = dialog.addButton(TEXTS.options, TEXTS.optionsTip);
+			options.clicked.connect(function () {
+				const o = optionsDialog(api, widgets.importOptions.text, function (text) { widgets.importOptions.text = text; });
+				o.dialog.exec();
+			});
+		}
 		dialog.addNewRow();
 		if (f.key === "godotProject" || f.key === "godotBinary" || f.key === "importOptions") {
 			widgets[f.key + "Status"] = dialog.addLabel("");
@@ -323,6 +331,58 @@ export function configureDialog(api, settings) {
 		saved: function () { return state.saved; },
 		readValues: readValues,
 	};
+}
+
+// The import options as fields: a combo box per boolean (default, true, false) and per option
+// with listed values, a text input for the free ones, each with its meaning as its tooltip. OK
+// hands the name=value text to `apply` (the Configure dialog puts it into its field, so the
+// stored form stays the string). Built without exec(), like configureDialog.
+export function optionsDialog(api, text, apply) {
+	const D = api.Dialog;
+	const dialog = new D(OPTIONS_TITLE);
+	dialog.newRowMode = D.ManualRows;
+	const parsed = optionsToValues(text);
+	const widgets = {};
+	const choices = {};
+	dialog.addHeading(TEXTS.optionsHeading, true);
+	dialog.addNewRow();
+	dialog.addLabel(TEXTS.optionsIntro);
+	dialog.addNewRow();
+	for (let i = 0; i < OPTION_FIELDS.length; i++) {
+		const f = OPTION_FIELDS[i];
+		const current = parsed.values[f.name];
+		if (f.kind === "text") {
+			const w = dialog.addTextInput(f.name, current, optionTooltip(f));
+			w.placeholderText = TEXTS.importerDefault(f.def);
+			widgets[f.name] = w;
+		} else {
+			const c = optionChoices(f, current);
+			choices[f.name] = c.values;
+			widgets[f.name] = dialog.addComboBox(f.name, c.labels, c.index, optionTooltip(f));
+		}
+		dialog.addNewRow();
+	}
+	if (parsed.extra.length > 0) {
+		widgets.extra = dialog.addLabel(TEXTS.optionsKept + parsed.extra.join(" "));
+		dialog.addNewRow();
+	}
+	const readValues = function () {
+		const values = {};
+		for (let i = 0; i < OPTION_FIELDS.length; i++) {
+			const f = OPTION_FIELDS[i];
+			values[f.name] = f.kind === "text" ? widgets[f.name].text : choices[f.name][widgets[f.name].currentIndex];
+		}
+		return values;
+	};
+	const ok = function () {
+		apply(valuesToOptions(readValues(), parsed.extra));
+		dialog.accept();
+	};
+	widgets.ok = dialog.addButton(TEXTS.ok, TEXTS.okTip);
+	widgets.cancel = dialog.addButton(TEXTS.cancel, TEXTS.cancelTip);
+	widgets.ok.clicked.connect(ok);
+	widgets.cancel.clicked.connect(function () { dialog.reject(); });
+	return { dialog: dialog, widgets: widgets, ok: ok, readValues: readValues, text: function () { return valuesToOptions(readValues(), parsed.extra); } };
 }
 
 // The import options field's own messages (the validator's, without the other fields).

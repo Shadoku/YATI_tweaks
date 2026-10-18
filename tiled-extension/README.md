@@ -70,8 +70,13 @@ it is saved as. *Godot project* and *Scenes folder* are folder pickers; *Godot b
 command on `PATH` must stay possible) with *Browse…* and *Test*, which runs the binary with
 `--version` and shows which Godot it is, or that it could not start; *Import options* is text,
 with the option names and their values in its tooltip and its mistakes shown under it as you
-type; *Validate maps and tilesets on save* is a check box. A line at the bottom says how many
-types the extension manages.
+type, and *Options…* opens a second dialog with one field per option (a dropdown of *importer
+default*, `true`, `false` for a boolean, of the listed values for `parallax_mode`,
+`animation_mode`, `object_refs` and `unknown_class_fallback`, text for `custom_data_prefix` and
+`save_tileset_to`; each option's meaning and default as its tooltip; a value not in the list is
+kept as a last entry; text this version does not know is kept as written) whose *OK* writes the
+`name=value` text back into the field, so the stored form stays the string; *Validate maps and
+tilesets on save* is a check box. A line at the bottom says how many types the extension manages.
 
 *Save* checks everything first and refuses, naming each problem in red, while something cannot
 work: no Godot project or none with a `project.godot`, a binary path that does not exist, a
@@ -216,9 +221,10 @@ what `test/real_tiled.test.mjs` runs headless; the rest needs the editor, so do 
    log shows the module imported and no error. The Map menu ends with the four *YATI:* entries.
 2. *YATI: Configure…*: one dialog. Hover each field for its tooltip. Clear the Godot project and
    press *Save*: the dialog stays open and says so in red. Set it to `godot/`, type an import
-   option such as `warn_unknown_classes=maybe` and see the message under the field; correct it to
-   `false` and press *Save*: the dialog closes, *Help > Show Log* has "YATI: Configured." and the
-   settings. (Without Godot on `PATH`, *Save* first warns that `godot` could not start and asks for
+   option such as `warn_unknown_classes=maybe` and see the message under the field; press
+   *Options…*: `warn_unknown_classes` shows `maybe (not a listed value)`; choose `false` and *OK*:
+   the field reads `warn_unknown_classes=false`. Press *Save*: the dialog closes, *Help > Show Log*
+   has "YATI: Configured." and the settings. (Without Godot on `PATH`, *Save* first warns that `godot` could not start and asks for
    *Save anyway*; *Test* says the same.) Clear the option again before going on, or expect it in
    the project file. Then *YATI: Sync Godot project…*: the message lists four created types and
    says the project is reloaded now. (The sample names no navigation layer, so there is no
@@ -254,8 +260,8 @@ its relative imports; `ClassPropertyType` and its constants exist on the global,
 member values read back through `members` comparing equal ("Unchanged" on a second run); the
 project file Tiled writes equal to the fake's; `new Dialog(title)` with `addFilePicker`
 (`isDirectory`, `fileName` a plain path), `addTextInput` (`text`, `placeholderText`),
-`addCheckBox` (`checked`), `addButton` (`click()` reaching the connected handler), `addLabel`
-(`text`), tooltips read back, a `Process` run from a handler, properties written from the
+`addCheckBox` (`checked`), `addComboBox` (`currentIndex`), `addButton` (`click()` reaching the connected
+handler), `addLabel` (`text`), tooltips read back, a `Process` run from a handler, properties written from the
 handler reaching the project file. Not confirmed yet, for the editor: the dialog's look; a
 `res://` file property read as an empty `localFile` with the URL in `url`; `Process.exec`
 finding `godot` on `PATH`; an Issue's activation; `tiled.extendMenu` (headless there is no Map
@@ -307,7 +313,7 @@ fallback message runs), so the reload is the next run. Without a Tiled the test 
 |------|------|
 | `yati-godot/yati-godot.mjs` | the glue: actions, menu, save hook, Issues, the API read into plain models |
 | `yati-godot/lib/settings.mjs` | the settings, the import options, paths |
-| `yati-godot/lib/configure.mjs` | the Configure dialog's fields, tooltips, validation and stored values, as data and rules |
+| `yati-godot/lib/configure.mjs` | the Configure dialog's fields, tooltips, validation and stored values, and the import options as fields, as data and rules |
 | `yati-godot/lib/godot_project.mjs` | `project.godot`, layer names |
 | `yati-godot/lib/scene_exports.mjs` | `.tscn` roots, `.gd` exports and enums, GDScript literals, the scene scan |
 | `yati-godot/lib/types.mjs` | the generated types as data |

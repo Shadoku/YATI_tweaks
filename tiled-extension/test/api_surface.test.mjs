@@ -31,6 +31,8 @@ test("every member the extension touches is documented, and every documented one
 		d.button("Test").click();
 		d.field("Scenes folder").fileName = path.join(a.godot, "scenes");
 		d.field("Import options").text = "warn_unknown_classes=false";
+		a.fake.answers.dialogs.push((o) => { o.field("add_id_as_metadata").currentIndex = 1; o.button("OK").click(); });
+		d.button("Options…").click();
 		d.field("Validate maps and tilesets on save").checked = true;
 		d.button("Save").click();
 	});

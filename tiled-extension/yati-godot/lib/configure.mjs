@@ -7,11 +7,12 @@
 // Written for Qt's JavaScript engine (ECMAScript 2016) as well as Node.
 
 import {
-	SETTING_NAMES, DEFAULT_GODOT_BINARY, parseImportOptions, describeImportOptions, storedPath, localToGodot,
-	godotToLocal, joinPath, cleanPath, isAbsolutePath, baseName,
+	SETTING_NAMES, DEFAULT_GODOT_BINARY, IMPORT_OPTION_VALUES, parseImportOptions, describeImportOptions,
+	storedPath, localToGodot, godotToLocal, joinPath, cleanPath, isAbsolutePath, baseName,
 } from "./settings.mjs";
 
 export const TITLE = "YATI: Configure";
+export const OPTIONS_TITLE = "YATI: Import options";
 
 export const TEXTS = {
 	heading: "The Godot side of this Tiled project",
@@ -30,6 +31,15 @@ export const TEXTS = {
 	saveAnyway: "Save anyway",
 	cancel: "Cancel",
 	cancelTip: "Close without changing anything.",
+	options: "Options…",
+	optionsTip: "Choose each import option from a list, with its meaning.",
+	optionsHeading: "The options Check map in Godot gives the importer",
+	optionsIntro: "An option left at its default is not written. Give the same values the game gives the importer,\n" +
+		"so that the check sees what the game will. Hover an option for its meaning (Runtime.md has the details).",
+	optionsKept: "Kept as written (not an option this version knows): ",
+	ok: "OK",
+	okTip: "Put the choices into the Import options field (the dialog's Save stores them).",
+	importerDefault: function (value) { return "(importer default: " + (value === "" ? "empty" : value) + ")"; },
 	anyway: "Press Save anyway to keep these settings regardless.",
 	saved: "Configured.",
 	unset: "(not set)",
@@ -93,6 +103,117 @@ export const FIELDS = [
 			"Saved as " + SETTING_NAMES.validate + ".",
 	},
 ];
+
+// The import options as fields of the Options... dialog (Runtime.md's table): kind "bool"
+// (true | false), "choice" (IMPORT_OPTION_VALUES), "text"; `def` the importer's default.
+export const OPTION_FIELDS = [
+	{ name: "use_default_filter", kind: "bool", def: "false",
+		text: "Keep Godot's default texture filter instead of forcing 'nearest' on the created layers." },
+	{ name: "add_class_as_metadata", kind: "bool", def: "true",
+		text: "Store the Tiled class as metadata 'class' on created nodes, tiles and the TileSet." },
+	{ name: "add_id_as_metadata", kind: "bool", def: "false",
+		text: "Store the Tiled object id as metadata 'id' on created nodes." },
+	{ name: "no_alternative_tiles", kind: "bool", def: "true",
+		text: "Flipped or rotated tiles use the engine's transform flags instead of generated alternative tiles." },
+	{ name: "map_wangset_to_terrain", kind: "bool", def: "false",
+		text: "Use the old wangset mapping (wangset to terrain instead of terrain set)." },
+	{ name: "custom_data_prefix", kind: "text", def: "data_",
+		text: "Tile properties with this name prefix become TileSet custom data layers." },
+	{ name: "save_tileset_to", kind: "text", def: "",
+		text: "If set, the generated TileSet is saved to this resource path." },
+	{ name: "parallax_mode", kind: "choice", def: "parallax2d",
+		text: "Layers with a parallax factor: parallax2d wraps each in a Parallax2D at its place in the hierarchy;\n" +
+			"legacy moves them into one ParallaxBackground (ParallaxLayers), as before 3.1." },
+	{ name: "animation_mode", kind: "choice", def: "strip",
+		text: "Tile animations: strip gives each animated tile an atlas of its frames in their order (any sequence);\n" +
+			"atlas animates in the tileset's atlas as before 3.1 (only frames that follow the tile at equal steps)." },
+	{ name: "always_wrap_root", kind: "bool", def: "false",
+		text: "Return a Node2D root (named after the map, holding the map's properties) also for a map with a single\n" +
+			"layer, instead of that layer. Recommended, and planned as the default of 4.0." },
+	{ name: "unknown_class_fallback", kind: "choice", def: "staticbody",
+		text: "What an object whose class is no Godot node type becomes: staticbody, another class of the mapping\n" +
+			"table (area, ...) or node2d (a Node2D with the shape as metadata)." },
+	{ name: "warn_unknown_classes", kind: "bool", def: "true",
+		text: "Warn once per import about each class that is no Godot node type; off for a game that handles its\n" +
+			"classes itself (the fallback node is the same, only the warning and its count go)." },
+	{ name: "read_godot_scene_from_custom_types", kind: "bool", def: "true",
+		text: "With a project file, a custom class's godot_scene (file) member maps its objects and tiles to that scene." },
+	{ name: "assign_node_properties", kind: "bool", def: "true",
+		text: "A custom property named like a property of the created node (a script's @export var, ...) is assigned to\n" +
+			"it, converted to its type; others stay metadata. Off: all metadata, as before 3.1." },
+	{ name: "object_refs", kind: "choice", def: "nodepath",
+		text: "Object properties: nodepath gives a NodePath to the target object's node (or the node, for a Node-typed\n" +
+			"property of that name); geometry the target's points, as before 3.1; both the NodePath and the points\n" +
+			"as metadata <name>_shape." },
+];
+
+export function optionFieldByName(name) {
+	for (let i = 0; i < OPTION_FIELDS.length; i++) {
+		if (OPTION_FIELDS[i].name === name)
+			return OPTION_FIELDS[i];
+	}
+	return null;
+}
+
+export function optionTooltip(field) {
+	return field.name + "\n\n" + field.text + "\n\nDefault: " + (field.def === "" ? "(empty)" : field.def) + ".";
+}
+
+// The field's choices for a combo box: the default first (value ""), then the values, then the
+// current value when it is none of them (kept rather than lost). {labels, values, index}.
+export function optionChoices(field, current) {
+	const values = [""];
+	const labels = [TEXTS.importerDefault(field.def)];
+	const known = field.kind === "bool" ? ["true", "false"] : (IMPORT_OPTION_VALUES[field.name] || []);
+	for (let i = 0; i < known.length; i++) {
+		values.push(known[i]);
+		labels.push(known[i]);
+	}
+	let index = values.indexOf(current);
+	if (index < 0) {
+		values.push(current);
+		labels.push(current + " (not a listed value)");
+		index = values.length - 1;
+	}
+	return { labels: labels, values: values, index: index };
+}
+
+// The setting's text as the dialog's values: {values: {name: value} (an option not given is
+// ""), extra: [pairs of unknown names and text that is no pair, kept as written]}.
+export function optionsToValues(text) {
+	const parsed = parseImportOptions(text);
+	const values = {};
+	for (let i = 0; i < OPTION_FIELDS.length; i++)
+		values[OPTION_FIELDS[i].name] = "";
+	const extra = [];
+	for (let i = 0; i < parsed.options.length; i++) {
+		const o = parsed.options[i];
+		if (optionFieldByName(o.name) !== null)
+			values[o.name] = o.value;
+		else
+			extra.push(optionPair(o.name, o.value));
+	}
+	if (parsed.leftover !== "")
+		extra.push(parsed.leftover);
+	return { values: values, extra: extra };
+}
+
+function optionPair(name, value) {
+	return name + "=" + (/\s/.test(value) || value === "" ? "\"" + value.replace(/"/g, "") + "\"" : value);
+}
+
+// The dialog's values as the setting's text: the options given, in the table's order, then the
+// extra text.
+export function valuesToOptions(values, extra) {
+	const parts = [];
+	for (let i = 0; i < OPTION_FIELDS.length; i++) {
+		const name = OPTION_FIELDS[i].name;
+		const v = values[name] === undefined || values[name] === null ? "" : String(values[name]).trim();
+		if (v !== "")
+			parts.push(optionPair(name, v));
+	}
+	return parts.concat(extra || []).join(" ");
+}
 
 export function fieldByKey(key) {
 	for (let i = 0; i < FIELDS.length; i++) {

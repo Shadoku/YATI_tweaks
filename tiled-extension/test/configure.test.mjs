@@ -3,10 +3,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-	FIELDS, TEXTS, fieldByKey, initialValues, managedSummary, godotProjectStatus, godotVersionStatus,
-	validateConfiguration, configuredLines,
+	FIELDS, TEXTS, OPTION_FIELDS, fieldByKey, initialValues, managedSummary, godotProjectStatus, godotVersionStatus,
+	validateConfiguration, configuredLines, optionFieldByName, optionTooltip, optionChoices, optionsToValues, valuesToOptions,
 } from "../yati-godot/lib/configure.mjs";
-import { readSettings, SETTING_NAMES } from "../yati-godot/lib/settings.mjs";
+import { readSettings, SETTING_NAMES, IMPORT_OPTIONS, IMPORT_OPTION_VALUES } from "../yati-godot/lib/settings.mjs";
 
 const props = (o) => (name) => o[name];
 const existing = (paths) => ({ exists: (p) => paths.indexOf(p) >= 0 });
@@ -26,6 +26,63 @@ test("fields: one per setting, in the dialog's order, each naming its property i
 	assert.match(fieldByKey("importOptions").tooltip, /\n  use_default_filter=true\|false\n/);
 	assert.match(fieldByKey("importOptions").tooltip, /\n  parallax_mode=parallax2d\|legacy\n/);
 	assert.match(TEXTS.intro(PROJECT), /^These settings are custom properties of the project file \(game\.tiled-project\)/);
+});
+
+test("option fields: one per import option but class_scenes, kinds matching the options table, a tooltip with the default", () => {
+	const names = Object.keys(IMPORT_OPTIONS).filter((n) => IMPORT_OPTIONS[n] !== "dictionary");
+	assert.deepEqual(OPTION_FIELDS.map((f) => f.name), names);
+	for (const f of OPTION_FIELDS) {
+		if (IMPORT_OPTIONS[f.name] === "bool")
+			assert.equal(f.kind, "bool", f.name);
+		else if (IMPORT_OPTION_VALUES[f.name] !== undefined)
+			assert.equal(f.kind, "choice", f.name);
+		else
+			assert.equal(f.kind, "text", f.name);
+		if (f.kind === "choice")
+			assert.ok(IMPORT_OPTION_VALUES[f.name].indexOf(f.def) >= 0, f.name + "'s default is one of its values");
+		if (f.kind === "bool")
+			assert.ok(f.def === "true" || f.def === "false", f.name);
+		assert.ok(f.text.length > 20, f.name);
+		assert.equal(optionTooltip(f).indexOf(f.name + "\n\n" + f.text + "\n\nDefault: "), 0);
+	}
+	assert.equal(optionTooltip(optionFieldByName("save_tileset_to")), "save_tileset_to\n\nIf set, the generated TileSet is saved to this resource path.\n\nDefault: (empty).");
+	assert.equal(optionFieldByName("class_scenes"), null);
+});
+
+test("option choices: the default first, the values, and an unlisted current value kept", () => {
+	assert.deepEqual(optionChoices(optionFieldByName("warn_unknown_classes"), ""), { labels: ["(importer default: true)", "true", "false"], values: ["", "true", "false"], index: 0 });
+	assert.equal(optionChoices(optionFieldByName("warn_unknown_classes"), "false").index, 2);
+	const u = optionChoices(optionFieldByName("unknown_class_fallback"), "area");
+	assert.equal(u.values[u.index], "area");
+	assert.equal(u.labels[0], "(importer default: staticbody)");
+	const odd = optionChoices(optionFieldByName("animation_mode"), "weird");
+	assert.deepEqual(odd.labels, ["(importer default: strip)", "strip", "atlas", "weird (not a listed value)"]);
+	assert.equal(odd.index, 3);
+	assert.equal(odd.values[3], "weird");
+});
+
+test("options text to values and back: the table's order, defaults left out, unknown text kept, quoting", () => {
+	const empty = optionsToValues("");
+	assert.deepEqual(empty.extra, []);
+	assert.ok(Object.keys(empty.values).every((k) => empty.values[k] === ""));
+	assert.equal(valuesToOptions(empty.values, empty.extra), "");
+	const v = optionsToValues("object_refs=both  warn_unknown_classes=FALSE bogus=1 custom_data_prefix='x y' junk here use_default_filter=true");
+	assert.equal(v.values.object_refs, "both");
+	assert.equal(v.values.warn_unknown_classes, "false");
+	assert.equal(v.values.custom_data_prefix, "x y");
+	assert.equal(v.values.use_default_filter, "true");
+	assert.deepEqual(v.extra, ["bogus=1", "junk here"]);
+	assert.equal(valuesToOptions(v.values, v.extra), "use_default_filter=true custom_data_prefix=\"x y\" warn_unknown_classes=false object_refs=both bogus=1 junk here");
+	// Round trip of the written form; a value changed to "" leaves the option out; spaces trimmed.
+	const again = optionsToValues(valuesToOptions(v.values, v.extra));
+	assert.deepEqual(again.values, v.values);
+	assert.deepEqual(again.extra, v.extra);
+	again.values.object_refs = "";
+	again.values.save_tileset_to = "  res://a.tres ";
+	assert.equal(valuesToOptions(again.values, []), "use_default_filter=true custom_data_prefix=\"x y\" save_tileset_to=res://a.tres warn_unknown_classes=false");
+	// An unknown pair with a quoted value keeps its quotes; a known option given twice: the last wins.
+	assert.deepEqual(optionsToValues("other=\"a b\" object_refs=both object_refs=geometry").extra, ["other=\"a b\""]);
+	assert.equal(optionsToValues("object_refs=both object_refs=geometry").values.object_refs, "geometry");
 });
 
 test("initial values: resolved folders, the binary and options as written, the scenes folder empty for the whole project", () => {

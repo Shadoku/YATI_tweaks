@@ -982,6 +982,18 @@ export function createFakeTiled(options) {
 		// QAbstractButton::click(), a slot: what a test presses.
 		click() { this._clicked._emit(); }
 	}
+	class FakeComboBox extends FakeWidget {
+		constructor(items, index, toolTip) {
+			super(toolTip);
+			this.items = items.slice();
+			this._index = index === undefined ? 0 : index;
+			this._currentIndexChanged = new FakeSignal();
+		}
+		get currentIndex() { return this._index; }
+		set currentIndex(v) { this._index = v; this._currentIndexChanged._emit(v); }
+		get currentText() { return this.items[this._index]; }
+		get currentIndexChanged() { return rec.wrap(this._currentIndexChanged, "Signal"); }
+	}
 	class FakeLabel extends FakeWidget {
 		constructor(text, toolTip) {
 			super(toolTip);
@@ -1013,6 +1025,7 @@ export function createFakeTiled(options) {
 		addTextInput(label, defaultValue, toolTip) { return this._add("text", label, new FakeLineEdit(defaultValue, toolTip), "QLineEdit"); }
 		addFilePicker(label, defaultValue, toolTip) { return this._add("file", label, new FakeFileEdit(defaultValue, toolTip), "FileEdit"); }
 		addCheckBox(text, defaultValue, toolTip) { return this._add("check", text, new FakeCheckBox(text, defaultValue, toolTip), "QCheckBox"); }
+		addComboBox(label, values, defaultIndex, toolTip) { return this._add("combo", label, new FakeComboBox(values, defaultIndex, toolTip), "QComboBox"); }
 		addButton(text, toolTip) { return this._add("button", text, new FakePushButton(text, toolTip), "QPushButton"); }
 		addNewRow() { this.rows++; }
 		accept() { this.result = 1; this.visible = false; }

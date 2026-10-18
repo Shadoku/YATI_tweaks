@@ -44,6 +44,7 @@ export const API_SURFACE = {
 	"Dialog.addTextInput": "classes/Dialog.html#addTextInput (toolTip since 1.12)",
 	"Dialog.addFilePicker": "classes/Dialog.html#addFilePicker (defaultValue and toolTip since 1.12)",
 	"Dialog.addCheckBox": "classes/Dialog.html#addCheckBox (toolTip since 1.12)",
+	"Dialog.addComboBox": "classes/Dialog.html#addComboBox (defaultIndex and toolTip since 1.12)",
 	"Dialog.addButton": "classes/Dialog.html#addButton (toolTip since 1.12)",
 	"Dialog.addNewRow": "classes/Dialog.html#addNewRow",
 	"Dialog.exec": "classes/Dialog.html#exec",
@@ -57,6 +58,7 @@ export const API_SURFACE = {
 	"FileEdit.isDirectory": "classes/FileEdit.html#isDirectory",
 	"FileEdit.fileUrlChanged": "classes/FileEdit.html#fileUrlChanged",
 	"QAbstractButton.checked": "index.d.ts#QAbstractButton.checked (QCheckBox's)",
+	"QComboBox.currentIndex": "index.d.ts#QComboBox.currentIndex",
 	"QAbstractButton.text": "index.d.ts#QAbstractButton.text (QPushButton's)",
 	"QAbstractButton.clicked": "index.d.ts#QAbstractButton.clicked (Signal<void>, QPushButton's)",
 	"QLabel.text": "index.d.ts#QLabel.text",
@@ -170,6 +172,7 @@ export const CLASS_CHAINS = {
 	QLineEdit: ["QLineEdit", "QWidget"],
 	FileEdit: ["FileEdit", "QWidget"],
 	QCheckBox: ["QCheckBox", "QAbstractButton", "QWidget"],
+	QComboBox: ["QComboBox", "QWidget"],
 	QPushButton: ["QPushButton", "QAbstractButton", "QWidget"],
 	QLabel: ["QLabel", "QWidget"],
 };

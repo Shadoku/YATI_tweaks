@@ -121,6 +121,10 @@ test("real Tiled: sync and scenes on the sample give the committed project; a se
 	assert.deepEqual(saved.properties.filter((p) => p.name.indexOf("yati_g") !== 0 && p.name !== "yati_fixups").map((p) => p.name + "=" + p.value),
 		["godot_project=../godot", "yati_import_options=warn_unknown_classes=false bogus=1", "yati_validate=false"]);
 	assert.deepEqual(saved.propertyTypes, JSON.parse(fs.readFileSync(EXPECTED_PROJECT, "utf8")).propertyTypes);
+	// The Import options dialog: the real combo boxes read from the text and written back.
+	lines = runTiled(s.projectFile, ["options:warn_unknown_classes=false object_refs=geometry bogus=1"]);
+	has(lines, "HARNESS options 'YATI: Import options': warn_unknown_classes 2, object_refs 2, add_id_as_metadata 0, custom_data_prefix '' (placeholder '(importer default: data_)'), tooltip true");
+	has(lines, "HARNESS options applied: 'add_id_as_metadata=true custom_data_prefix=d_ warn_unknown_classes=false object_refs=both bogus=1'");
 });
 
 test("real Tiled: the save hook on the sample map files its three mistakes", { skip: SKIP }, () => {

@@ -50,7 +50,7 @@ test("configure: one dialog with a field per setting, each with its tooltip; Can
 	assert.equal(seen.result, 0);		// closed without Save: rejected
 	assert.deepEqual(seen.widgets.filter((w) => ["file", "text", "check"].indexOf(w.kind) >= 0).map((w) => w.label),
 		["Godot project", "Godot binary", "Scenes folder", "Import options", "Validate maps and tilesets on save"]);
-	assert.deepEqual(seen.widgets.filter((w) => w.kind === "button").map((w) => w.label), ["Browse…", "Test", "Save", "Cancel"]);
+	assert.deepEqual(seen.widgets.filter((w) => w.kind === "button").map((w) => w.label), ["Browse…", "Test", "Options…", "Save", "Cancel"]);
 	for (const w of seen.widgets.filter((x) => ["file", "text", "check", "button"].indexOf(x.kind) >= 0))
 		assert.ok(w.widget.toolTip.length > 20, w.label + " has a tooltip");
 	assert.match(seen.field("Godot project").toolTip, /project\.godot/);
@@ -206,6 +206,63 @@ test("configure: Browse and Test; a binary that does not start warns, and Save a
 	});
 	t.fake.trigger(ACTIONS.configure);
 	assert.equal(t.property("godot_binary"), "thing");
+});
+
+test("configure: Options… opens a dialog with a field per import option; OK writes the text back into the field", () => {
+	const s = make({ fakeOptions: { process: godot4 } });
+	s.fake.answers.dialogs.push((d) => {
+		d.field("Godot project").fileName = s.godot;
+		d.field("Import options").text = "warn_unknown_classes=false parallax_mode=sideways bogus=1 junk custom_data_prefix=\"a b\"";
+		s.fake.answers.dialogs.push((o) => {
+			assert.equal(o.windowTitle, "YATI: Import options");
+			const fields = o.widgets.filter((w) => w.kind === "combo" || w.kind === "text");
+			assert.deepEqual(fields.map((w) => w.label), [
+				"use_default_filter", "add_class_as_metadata", "add_id_as_metadata", "no_alternative_tiles", "map_wangset_to_terrain",
+				"custom_data_prefix", "save_tileset_to", "parallax_mode", "animation_mode", "always_wrap_root", "unknown_class_fallback",
+				"warn_unknown_classes", "read_godot_scene_from_custom_types", "assign_node_properties", "object_refs",
+			]);
+			assert.deepEqual(fields.map((w) => w.kind), ["combo", "combo", "combo", "combo", "combo", "text", "text", "combo", "combo", "combo", "combo", "combo", "combo", "combo", "combo"]);
+			for (const w of fields)
+				assert.match(w.widget.toolTip, new RegExp("^" + w.label + "\\n\\n.*\\n\\nDefault: ", "s"));
+			// A boolean: default, true, false; the current value selected.
+			const warn = o.field("warn_unknown_classes");
+			assert.deepEqual(warn.items, ["(importer default: true)", "true", "false"]);
+			assert.equal(warn.currentIndex, 2);
+			assert.equal(o.field("add_id_as_metadata").currentIndex, 0);
+			// A choice with a value outside the list: kept as a fourth item, selected.
+			const parallax = o.field("parallax_mode");
+			assert.deepEqual(parallax.items, ["(importer default: parallax2d)", "parallax2d", "legacy", "sideways (not a listed value)"]);
+			assert.equal(parallax.currentIndex, 3);
+			assert.deepEqual(o.field("object_refs").items, ["(importer default: nodepath)", "nodepath", "geometry", "both"]);
+			// Free text: the value, the default as the placeholder.
+			assert.equal(o.field("custom_data_prefix").text, "a b");
+			assert.equal(o.field("custom_data_prefix").placeholderText, "(importer default: data_)");
+			assert.equal(o.field("save_tileset_to").placeholderText, "(importer default: empty)");
+			// What this version does not know is kept as written.
+			assert.equal(o.labels()[o.labels().length - 1].text, "Kept as written (not an option this version knows): bogus=1 junk");
+			assert.deepEqual(o.widgets.filter((w) => w.kind === "button").map((w) => w.label), ["OK", "Cancel"]);
+			// Change some and press OK.
+			warn.currentIndex = 0;
+			parallax.currentIndex = 2;
+			o.field("add_id_as_metadata").currentIndex = 1;
+			o.field("custom_data_prefix").text = "";
+			o.field("save_tileset_to").text = "res://out/tiles.tres";
+			o.button("OK").click();
+		});
+		d.button("Options…").click();
+		assert.equal(d.field("Import options").text, "add_id_as_metadata=true save_tileset_to=res://out/tiles.tres parallax_mode=legacy bogus=1 junk");
+		assert.equal(d.labels()[3].text, "Ignored in the import options: 'junk' (expected name=value pairs).\nUnknown import option 'bogus' (passed on as it is).");
+		// Cancel in the options dialog changes nothing.
+		s.fake.answers.dialogs.push((o) => { o.field("object_refs").currentIndex = 3; o.button("Cancel").click(); });
+		d.button("Options…").click();
+		assert.equal(d.field("Import options").text, "add_id_as_metadata=true save_tileset_to=res://out/tiles.tres parallax_mode=legacy bogus=1 junk");
+		d.button("Cancel").click();
+	});
+	s.fake.trigger(ACTIONS.configure);
+	assert.deepEqual(s.fake.out.errors, []);
+	assert.equal(s.fake.out.dialogs.length, 3);
+	assert.equal(s.fake.out.dialogs[1].result, 1);
+	assert.equal(s.fake.out.dialogs[2].result, 0);
 });
 
 test("configure: a scenes folder outside the Godot project warns and is stored absolute; res:// typed in is accepted", () => {

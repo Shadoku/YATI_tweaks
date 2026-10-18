@@ -255,7 +255,8 @@ export function settingsProblem(settings, projectGodotExists) {
 // a newer importer may know them). A value may be quoted: object_refs="both". `blocking` is the
 // part of `warnings` the Configure dialog refuses to save: a boolean that is not true or false,
 // a Dictionary option, text that is no name=value pair. An unknown name or an unlisted value of
-// a string option only warns.
+// a string option only warns. `leftover` is the text that was no name=value pair (kept as it is
+// by the options dialog).
 export function parseImportOptions(text) {
 	const options = [];
 	const warnings = [];
@@ -293,7 +294,7 @@ export function parseImportOptions(text) {
 		warnings.push("Ignored in the import options: '" + leftover + "' (expected name=value pairs).");
 		blocking.push(warnings[warnings.length - 1]);
 	}
-	return { options: options, warnings: warnings, blocking: blocking };
+	return { options: options, warnings: warnings, blocking: blocking, leftover: leftover };
 }
 
 // The record of what the extension generated: {typeName: [member names]} (JSON in the project

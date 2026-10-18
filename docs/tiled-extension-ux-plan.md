@@ -252,3 +252,15 @@ extension reopen the project itself.
   editor (checklist step 2):** that `tiled.open` on the project file reloads it from within the
   action, the open maps come back, the save prompt's Cancel leads to the fallback, and the
   extension is not torn down by the switch (the extensions path is the same).
+- 2026-10-18, **stage 3 done**: `OPTION_FIELDS` (name, kind `bool` | `choice` | `text`, the
+  importer's default, the meaning from Runtime.md), `optionChoices` (the default first, the
+  values, an unlisted current value kept as a last entry), `optionsToValues` and
+  `valuesToOptions` (the string round trip; unknown pairs and text that is no pair kept as
+  written, after the known options in the table's order; `parseImportOptions` now also returns
+  `leftover`), `optionsDialog(api, text, apply)` in the glue, the *Options…* button on the
+  options row, the fake's `addComboBox`, `Dialog.addComboBox` and `QComboBox.currentIndex` in
+  the surface, the harness's `options:<text>` step. **Confirmed in the real Tiled headless:**
+  `addComboBox(label, values, defaultIndex, toolTip)` with `currentIndex` read and written, and
+  the text handed back through *OK*. Not confirmed, for the editor: the dialog's height with
+  its fifteen rows (a Tiled `Dialog` has no scroll area; if it does not fit a small screen,
+  the rows could be split into two columns with `SameWidgetRows`).
