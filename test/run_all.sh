@@ -1,6 +1,6 @@
 #!/bin/sh
 # Runs the native importer's smoke test, the YATI runtime test suite, the benchmark and (with the
-# native library) the native importer's async test headless.
+# native library) the native importer's async and streaming tests headless.
 # Usage: GODOT=/path/to/godot test/run_all.sh [--runtime=res://runtime]
 #        (--runtime=res://addons/yati_native tests the native importer's facade)
 set -e
@@ -47,5 +47,7 @@ fi
 # docs/native-importer-plan.md), on the benchmark's map: needs the library, not a runtime.
 if [ "$HAVE_NATIVE" = true ]; then
 	"$GODOT" --headless -s test/test_async.gd || status=$?
+	# TiledStreamer (stage 4): load_all against the builder, windows, objects, budgets, worlds, leaks
+	"$GODOT" --headless -s test/test_stream.gd || status=$?
 fi
 exit $status

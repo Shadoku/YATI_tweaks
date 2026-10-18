@@ -64,8 +64,10 @@ jobs:
 
       # Also runs test/test_async.gd: the native importer's asynchronous import of the benchmark
       # map (no frame before the build above 5 ms, the tree equal to the synchronous import's),
-      # the shared TileSet cache and cancellation without leaks (stage 3).
-      - name: Test the GDScript runtime (smoke test, test suite, benchmark) and the native async import
+      # the shared TileSet cache and cancellation without leaks (stage 3); and test/test_stream.gd:
+      # TiledStreamer's load_all() against the builder, windows, objects, budgets, worlds, leaks
+      # (stage 4; test/bench_stream.gd, its benchmark, needs a renderer and is run by hand).
+      - name: Test the GDScript runtime (smoke test, test suite, benchmark) and the native async and streaming tests
         run: sh test/run_all.sh --runtime=res://runtime
 
       # The same suite against the native importer's facade (stage 2's gate).
