@@ -155,7 +155,11 @@ func import_from_zip_async(zip_file: String, source_file_in_zip: String, project
 # shares a TileSet also between trees alive at the same time.
 static func shared_tilesets() -> RefCounted:
 	if _shared_tilesets == null and native_version() != "":
-		_shared_tilesets = ClassDB.class_call_static(&"TiledTileSets", &"shared")
+		if ClassDB.class_has_method(&"TiledTileSets", &"shared"):
+			_shared_tilesets = ClassDB.class_call_static(&"TiledTileSets", &"shared")
+		else:
+			# A SceneTree script's _init: the extension's static methods are not registered yet
+			_shared_tilesets = ClassDB.instantiate(&"TiledTileSets").call(&"get_shared")
 	return _shared_tilesets
 
 

@@ -20,6 +20,15 @@ extends SceneTree
 ##   tilesets     TilesetCreator.create_from_dictionary_array on the parsed tilesets
 ##   tile layers  import(tiles-only map) - its parse - tilesets
 ##   objects      the rest (object layers, templates, metadata)
+##
+## The native importer's facade (a runtime without DataLoader.gd) shares one TileSet cache and
+## one texture cache across imports (share_tilesets), which the GDScript runtime does not have.
+## So that the phases mean the same for both runtimes, both caches are cleared before every
+## timed step of the native runtime (its parse, its TileSet creation, the tiles-only and the full
+## import): every phase is measured cold, the tile layers phase included (before, the tiles-only
+## import reused the previous full import's TileSet while its TileSet time was still subtracted,
+## so "tile layers" read about 1.5 ms short). What the cache saves is reported on its own as
+## "cached": the full import again right after, the TileSet and textures reused (native only).
 
 const OUT_DIR := "res://test/out/bench"
 const MAP_FILE := "bench.tmx"
@@ -93,15 +102,20 @@ func _init() -> void:
 	var tile_layers: Array[float] = []
 	var objects: Array[float] = []
 	var dups: Array[float] = []
+	var cached: Array[float] = []
 	var stats := ""
 	for i in range(iterations + 1):
+		cold_native_caches(importer_script, native)
 		var parse_ms := time_parse_native(map_path) if native else time_parse(data_loader, dict_builder, map_path)
 		var tiles_parse_ms := time_parse_native(tiles_path) if native else time_parse(data_loader, dict_builder, tiles_path)
+		cold_native_caches(importer_script, native)
 		var tileset_ms := time_tilesets_native(map_path) if native else time_tilesets(data_loader, dict_builder, tileset_creator, map_path)
 
+		cold_native_caches(importer_script, native)
 		var tiles_only := time_import(importer_script, tiles_path)
 		free_tree(tiles_only[1])
 
+		cold_native_caches(importer_script, native)
 		var full := time_import(importer_script, map_path)
 		var total_ms: float = full[0]
 		var node: Node = full[1]
@@ -123,11 +137,20 @@ func _init() -> void:
 			stats = describe(node)
 		free_tree(node)
 
+		# The shared cache's case: the same import again, its TileSet and textures cached
+		var cached_ms := 0.0
+		if native:
+			var again := time_import(importer_script, map_path)
+			cached_ms = again[0]
+			free_tree(again[1])
+
 		var label := "warm-up" if i == 0 else "run %d" % i
 		var line := "  %-8s total %8.1f ms | parse %7.1f | tilesets %6.1f | tile layers %8.1f | objects %8.1f" % [
 			label, total_ms, parse_ms, tileset_ms, tile_layer_ms, object_ms]
 		if with_duplicate:
 			line += " | duplicate %8.1f" % dup_ms
+		if native:
+			line += " | cached %8.1f" % cached_ms
 		print(line)
 		if i > 0:
 			totals.append(total_ms)
@@ -136,12 +159,24 @@ func _init() -> void:
 			tile_layers.append(tile_layer_ms)
 			objects.append(object_ms)
 			dups.append(dup_ms)
+			cached.append(cached_ms)
 
 	print("  result: " + stats)
-	print("RESULT runtime=%s total_ms min=%.1f avg=%.1f | parse avg=%.1f | tilesets avg=%.1f | tile layers avg=%.1f | objects avg=%.1f%s" % [
+	print("RESULT runtime=%s total_ms min=%.1f avg=%.1f | parse avg=%.1f | tilesets avg=%.1f | tile layers avg=%.1f | objects avg=%.1f%s%s" % [
 		runtime_dir, minf_arr(totals), avg(totals), avg(parses), avg(tilesets), avg(tile_layers), avg(objects),
-		(" | duplicate avg=%.1f" % avg(dups)) if with_duplicate else ""])
+		(" | duplicate avg=%.1f" % avg(dups)) if with_duplicate else "",
+		(" | cached import avg=%.1f" % avg(cached)) if native else ""])
 	quit(0)
+
+
+## The native importer's shared TileSet and texture caches emptied (nothing for a GDScript
+## runtime, which has none).
+static func cold_native_caches(importer_script: GDScript, native: bool) -> void:
+	if not native:
+		return
+	var shared: RefCounted = importer_script.call("shared_tilesets")
+	shared.call("clear")
+	shared.call("clear_textures")
 
 
 ## Read + parse a map into the Tiled dictionary (ms).

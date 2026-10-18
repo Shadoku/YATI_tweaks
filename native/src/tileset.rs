@@ -1655,6 +1655,14 @@ impl TiledTileSets {
         Self::shared_instance()
     }
 
+    /// `shared()` through an instance: godot-rust registers static methods later than
+    /// instance methods, so while a `SceneTree` script's `_init` runs (`godot -s script.gd`)
+    /// `ClassDB.class_call_static("TiledTileSets", "shared")` finds no method; this one works.
+    #[func]
+    fn get_shared(&self) -> Gd<TiledTileSets> {
+        Self::shared_instance()
+    }
+
     /// Forgets every cached TileSet (and those half created). The TileSets stay alive while
     /// trees use them; later maps get new ones.
     #[func]
