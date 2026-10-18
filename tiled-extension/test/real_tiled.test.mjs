@@ -97,10 +97,25 @@ test("real Tiled: sync and scenes on the sample give the committed project; a se
 	has(lines, "YATI:   Unchanged: Chest.material, Slime.Mood, Vector2, Chest, Slime");
 	none(lines, /Reopen the project now/);
 	assert.equal(fs.readFileSync(s.projectFile, "utf8"), fs.readFileSync(EXPECTED_PROJECT, "utf8"));
-	// Configure with every dialog answered "keep": nothing changes.
+	// The Configure dialog, built with the real Dialog and its widgets, saved with nothing changed:
+	// the file stays as it is. godot is not on PATH here, so the first Save warns (through Process).
 	lines = runTiled(s.projectFile, ["configure"]);
-	some(lines, /^ALERT \[YATI\]: Configured\. \| Godot project: .*\/godot \| Godot binary: godot \| /);
+	some(lines, /^HARNESS installed: .*Dialog=function/);
+	some(lines, /^HARNESS dialog 'YATI: Configure': project '.*\/godot' \(project\.godot found\.\), binary '' \(placeholder 'godot'\), scenes '', options '', validate true, tooltips true,true,true,true,true,true$/);
+	some(lines, /^HARNESS dialog after Save: saved false, button 'Save anyway', status 'Godot binary: Could not start 'godot': .* \| Press Save anyway to keep these settings regardless\.'$/);
+	some(lines, /^HARNESS dialog after Save anyway: saved true, status '/);
+	has(lines, "YATI: Configured.");
+	some(lines, /^YATI:   Scenes scanned under: .*\/godot$/);
+	none(lines, /^ALERT/);
 	assert.equal(fs.readFileSync(s.projectFile, "utf8"), fs.readFileSync(EXPECTED_PROJECT, "utf8"));
+	// Saved with the import options set and the validation off: the properties reach the file.
+	lines = runTiled(s.projectFile, ["configure:warn_unknown_classes=false bogus=1"]);
+	some(lines, /^HARNESS dialog options status: 'Unknown import option 'bogus' \(passed on as it is\)\.'$/);
+	some(lines, /^HARNESS dialog after Save anyway: saved true/);
+	const saved = JSON.parse(fs.readFileSync(s.projectFile, "utf8"));
+	assert.deepEqual(saved.properties.filter((p) => p.name.indexOf("yati_g") !== 0 && p.name !== "yati_fixups").map((p) => p.name + "=" + p.value),
+		["godot_project=../godot", "yati_import_options=warn_unknown_classes=false bogus=1", "yati_validate=false"]);
+	assert.deepEqual(saved.propertyTypes, JSON.parse(fs.readFileSync(EXPECTED_PROJECT, "utf8")).propertyTypes);
 });
 
 test("real Tiled: the save hook on the sample map files its three mistakes", { skip: SKIP }, () => {

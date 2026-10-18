@@ -7,15 +7,18 @@
 // are kept in a table instead of registered again. The extension's own installation (the module's
 // last lines) runs too, against the real globals: it must not throw.
 //
-// Steps: configure, sync, scenes, check (the actions), and save:<map or tileset file> (the save
-// hook on that file, read through Tiled's own format: the real API values of its properties).
+// Steps: sync, scenes, check (the actions), configure (the Configure dialog built with the real
+// Dialog, its widgets read and logged, Save pressed through QAbstractButton::click(); exec() would
+// block, so it is never called) and configure:<options> (the same, with the import options set
+// and the validation switched off before Save), and save:<map or tileset file> (the save hook on
+// that file, read through Tiled's own format: the real API values of its properties).
 // Output: tiled.log lines, which Tiled prints to the console; the test reads the ones that start
 // with "HARNESS ", "ALERT ", "CONFIRM ", "PROMPT ", "ISSUE " and "YATI".
 //
 // Under Node (node --test runs every file under test/) this file does nothing.
-import { install, ACTIONS } from "../../yati-godot/yati-godot.mjs";
+import { install, ACTIONS, configureDialog, currentSettings } from "../../yati-godot/yati-godot.mjs";
 
-/* global tiled, TextFile, File, Process, ClassPropertyType, StorageType */
+/* global tiled, TextFile, File, Process, Dialog, ClassPropertyType, StorageType */
 if (typeof tiled !== "undefined" && typeof tiled.registerAction === "function")
 	main();
 
@@ -46,14 +49,16 @@ function main() {
 		propertyValue: function (name, value) { return tiled.propertyValue(name, value); },
 		open: function (f) { return tiled.open(f); },
 	};
-	install({
+	const api = {
 		tiled: t, TextFile: TextFile, File: File, Process: Process,
+		Dialog: typeof Dialog !== "undefined" ? Dialog : null,
 		ClassPropertyType: typeof ClassPropertyType !== "undefined" ? ClassPropertyType : null,
 		StorageType: typeof StorageType !== "undefined" ? StorageType : null,
-	});
+	};
+	install(api);
 	tiled.log("HARNESS installed: Tiled " + tiled.version + ", project " + (tiled.project === null ? "null" : "'" + tiled.project.fileName + "'") +
 		", actions " + Object.keys(handlers).join(",") + ", save hooks " + saveHooks.length +
-		", globals ClassPropertyType=" + typeof ClassPropertyType + " StorageType=" + typeof StorageType);
+		", globals ClassPropertyType=" + typeof ClassPropertyType + " StorageType=" + typeof StorageType + " Dialog=" + typeof Dialog);
 	const steps = tiled.scriptArguments;
 	for (let i = 0; i < steps.length; i++) {
 		const step = steps[i];
@@ -63,6 +68,8 @@ function main() {
 			tiled.log("HARNESS save hook on " + file + (asset ? "" : " (not read)"));
 			for (let k = 0; k < saveHooks.length; k++)
 				saveHooks[k](asset);
+		} else if ((step === "configure" || step.indexOf("configure:") === 0) && tiled.project !== null) {
+			configureStep(api, step.indexOf("configure:") === 0 ? step.substring(10) : null);
 		} else if (handlers[ACTIONS[step]] !== undefined) {
 			tiled.log("HARNESS action " + step);
 			handlers[ACTIONS[step]]();
@@ -71,4 +78,28 @@ function main() {
 		}
 	}
 	tiled.log("HARNESS done: " + alerts + " alert(s)");
+}
+
+// The Configure dialog without exec(): what its widgets hold (the real FileEdit.fileName,
+// QLineEdit.text, QCheckBox.checked, the tooltips), then Save pressed; a second press when the
+// first only warned (godot is not on PATH here, so the --version run says so).
+function configureStep(api, options) {
+	const s = currentSettings(api);
+	const d = configureDialog(api, s);
+	const w = d.widgets;
+	tiled.log("HARNESS dialog '" + d.dialog.windowTitle + "': project '" + w.godotProject.fileName + "' (" + w.godotProjectStatus.text +
+		"), binary '" + w.godotBinary.text + "' (placeholder '" + w.godotBinary.placeholderText + "'), scenes '" + w.scenesDir.fileName +
+		"', options '" + w.importOptions.text + "', validate " + w.validate.checked + ", tooltips " +
+		[w.godotProject, w.godotBinary, w.scenesDir, w.importOptions, w.validate, w.save].map(function (x) { return x.toolTip.length > 20; }).join(","));
+	if (options !== null) {
+		w.importOptions.text = options;
+		w.validate.checked = false;
+		tiled.log("HARNESS dialog options status: '" + w.importOptionsStatus.text + "'");
+	}
+	w.save.click();
+	tiled.log("HARNESS dialog after Save: saved " + d.saved() + ", button '" + w.save.text + "', status '" + w.status.text.replace(/\n/g, " | ") + "'");
+	if (!d.saved()) {
+		w.save.click();
+		tiled.log("HARNESS dialog after Save anyway: saved " + d.saved() + ", status '" + w.status.text.replace(/\n/g, " | ") + "'");
+	}
 }

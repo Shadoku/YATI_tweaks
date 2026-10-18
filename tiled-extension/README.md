@@ -10,11 +10,12 @@ through the `.tiled-project` file, the maps, and (for the check) the Godot binar
 > against a fake of Tiled 1.12's documented scripting API, and `test/real_tiled.test.mjs` runs the
 > sample through a real Tiled (`tools/install_tiled.sh`, `tiled --evaluate`, no editor): the module
 > loads, the sync and the scenes action write the committed project file, a second run reports
-> "Unchanged", the save hook files the sample map's mistakes. What a headless run cannot reach is
-> the editor: the Issues' double-click, the dialogs, *Check map in Godot* on the active map, the
-> reopen. Go through the [manual checklist](#manual-checklist-in-a-real-tiled-112)'s steps 4 to 8
-> in your Tiled 1.12 before relying on those, and report what differs in
-> `docs/tiled-extension-plan.md` (section 5).
+> "Unchanged", the save hook files the sample map's mistakes, the *Configure* dialog is built with
+> Tiled's own widgets and saved. What a headless run cannot reach is the editor: the Issues'
+> double-click, the dialog's look, *Check map in Godot* on the active map, the reopen. Go through
+> the [manual checklist](#manual-checklist-in-a-real-tiled-112)'s steps 4 to 8 in your Tiled 1.12
+> before relying on those, and report what differs in `docs/tiled-extension-plan.md` (section 5)
+> or `docs/tiled-extension-ux-plan.md` (section 4).
 
 - Requires **Tiled 1.12** or newer (the custom-type API is new in 1.12).
 - The check action also needs **Godot 4.7** and the game's `addons/yati_native/` with
@@ -47,8 +48,9 @@ The settings are custom properties of the Tiled project (*Project > Project Prop
 are saved in the `.tiled-project` and shared with everyone who opens it. So the extension needs an
 open project: without one (Tiled starts without a project unless its session restores one; see
 *Project > Recent Projects*) the actions say so, and a saved map or tileset is validated without
-the project's custom types. *YATI: Configure…* asks
-for the first four. Paths are relative to the project file unless they are absolute.
+the project's custom types. *YATI: Configure…* is one dialog with a field for each of the first
+five; the other actions open it for you when the Godot project is not set. Paths are relative to
+the project file unless they are absolute.
 
 | Property | Default | Meaning |
 |----------|---------|---------|
@@ -60,8 +62,26 @@ for the first four. Paths are relative to the project file unless they are absol
 | `yati_generated` | (written by the extension) | which types and class members the extension made: `{"Type": ["member", ...]}` |
 | `yati_fixups` | (written by the extension) | what it wrote into the project file past the API (see [What the API cannot set](#what-the-api-cannot-set)) |
 
-In *Configure…*, cancelling the first folder dialog cancels everything. An empty answer keeps a
-text setting as it is. For the options, `-` clears them.
+### The Configure dialog
+
+Every field has a tooltip that says what the setting does, which actions use it, and the property
+it is saved as. *Godot project* and *Scenes folder* are folder pickers; *Godot binary* is text (a
+command on `PATH` must stay possible) with *Browse…* and *Test*, which runs the binary with
+`--version` and shows which Godot it is, or that it could not start; *Import options* is text,
+with the option names and their values in its tooltip and its mistakes shown under it as you
+type; *Validate maps and tilesets on save* is a check box. A line at the bottom says how many
+types the extension manages.
+
+*Save* checks everything first and refuses, naming each problem in red, while something cannot
+work: no Godot project or none with a `project.godot`, a binary path that does not exist, a
+scenes folder that does not exist, an option with a bad boolean, a `class_scenes`, or text that
+is no `name=value` pair. What may still work is a warning: a binary that `--version` could not
+start or that is not Godot 4 (*Check map in Godot* will not work until it is fixed; the other
+actions do not need Godot), a scenes folder outside the Godot project, an unknown option name
+(passed on: a newer importer may know it). A warning your change brought asks you to press
+*Save anyway*; the settings as they were save at once. *Cancel*, Escape and the window's close
+button change nothing. A save writes only the properties that changed (a default is left unset),
+and reports to the log, not a message box.
 
 ## Actions
 
@@ -70,7 +90,7 @@ after a separator, each named with the prefix *YATI:*.
 
 | Action | What it does | What it writes |
 |--------|--------------|----------------|
-| *YATI: Configure…* | asks for the settings with Tiled's dialogs | the settings above |
+| *YATI: Configure…* | one dialog with a field per setting, tooltips, and a check of every field before it closes (above) | the settings above |
 | *YATI: Sync Godot project…* | reads `project.godot` | the enums `GodotPhysicsLayers`, `GodotNavigationLayers`, `GodotRenderLayers` (flags, stored as int, one value per layer up to the highest named one, an unnamed layer as `Layer N`, so a value's index is its bit); `GodotNodeType` (the mapping table's class names, stored as string, for a `godot_node_type` property); the class `MapRef` (`map`: file, `object`: int), the Reference's convention for a reference into another map |
 | *YATI: Import scenes as classes…* | scans `godot_scenes_dir` for `.tscn` files whose root node has a script (asks first) | one class per scene (below); the enums its exports use; `Vector2` / `Vector2i` when an export needs them |
 | *YATI: Check map in Godot* | runs the game's check script on the active map (offers to save it first) | Issues: one per error or warning of the import |
@@ -180,15 +200,22 @@ printed.
 
 `tiled-extension/sample/` has a tiny Godot project (`godot/`) and the project file the sync and
 the scenes action are expected to make from it (`tiled/sample.tiled-project`; a test asserts it).
-Steps 1 to 3 and the findings of step 5 are what `test/real_tiled.test.mjs` runs headless; the
-rest needs the editor, so do it by hand.
+Steps 1 to 3 (the dialog's fields and a save, but not its look) and the findings of step 5 are
+what `test/real_tiled.test.mjs` runs headless; the rest needs the editor, so do it by hand.
 
 1. Copy `tiled-extension/sample/` somewhere, and `yati-godot/` into its `tiled/extensions/`. Rename
    `tiled/sample.tiled-project` to `expected.tiled-project`, and copy
    `tiled-extension/test/fixtures/sample_start.tiled-project` (only the `godot_project` setting, no
    types) to `tiled/sample.tiled-project`. Open that in Tiled 1.12 and enable its extensions. The
    log shows the module imported and no error. The Map menu ends with the four *YATI:* entries.
-2. *YATI: Sync Godot project…*: the message lists four created types and asks you to reopen. (The
+2. *YATI: Configure…*: one dialog. Hover each field for its tooltip. Clear the Godot project and
+   press *Save*: the dialog stays open and says so in red. Set it to `godot/`, type an import
+   option such as `warn_unknown_classes=maybe` and see the message under the field; correct it to
+   `false` and press *Save*: the dialog closes, *Help > Show Log* has "YATI: Configured." and the
+   settings. (Without Godot on `PATH`, *Save* first warns that `godot` could not start and asks for
+   *Save anyway*; *Test* says the same.) Clear the option again before going on, or expect it in
+   the project file. Then *YATI: Sync Godot project…*: the message lists four created types and
+   asks you to reopen. (The
    sample names no navigation layer, so there is no `GodotNavigationLayers`, and the report says
    so.) Reopen the project. In *View > Custom Types Editor*, `GodotPhysicsLayers` has `World,
    Player, Enemies, Layer 4, Pickups` with *Allow multiple values (flags)* checked. Run it again:
@@ -217,10 +244,14 @@ its relative imports; `ClassPropertyType` and its constants exist on the global,
 `storageType` and `usageFlags`; `setMember` with `tiled.filePath(...)`, `tiled.objectRef(0)` and
 `tiled.propertyValue(...)` saving what the tests expect; type names with a dot (`Slime.Mood`);
 member values read back through `members` comparing equal ("Unchanged" on a second run); the
-project file Tiled writes equal to the fake's. Not confirmed yet, for the editor: a `res://` file
-property read as an empty `localFile` with the URL in `url`; `Process.exec` finding `godot` on
-`PATH`; an Issue's activation; `tiled.extendMenu` (headless there is no Map menu, and the
-extension logs that instead of failing).
+project file Tiled writes equal to the fake's; `new Dialog(title)` with `addFilePicker`
+(`isDirectory`, `fileName` a plain path), `addTextInput` (`text`, `placeholderText`),
+`addCheckBox` (`checked`), `addButton` (`click()` reaching the connected handler), `addLabel`
+(`text`), tooltips read back, a `Process` run from a handler, properties written from the
+handler reaching the project file. Not confirmed yet, for the editor: the dialog's look; a
+`res://` file property read as an empty `localFile` with the URL in `url`; `Process.exec`
+finding `godot` on `PATH`; an Issue's activation; `tiled.extendMenu` (headless there is no Map
+menu, and the extension logs that instead of failing).
 
 ## Limits
 
@@ -244,7 +275,8 @@ the importers' fixtures from `test/fixtures/`; `fixtures/check_output*.txt`, the
 written by hand, two captured from the real `check_map.gd` with Godot's colour codes), the expected `.tiled-project` fragments
 (`expected/`; `UPDATE_EXPECTED=1` rewrites them and the sample's project, then review the diff),
 and the fake API (`helpers/fake_tiled.mjs`). `helpers/api_surface.mjs` lists every Tiled member the
-extension uses, each with the reference page that documents it. The tests fail when the glue uses
+extension uses, each with the reference page that documents it (the Qt widgets of `Dialog` have
+no page: they are cited as `@mapeditor/tiled-api` 1.12.0's `index.d.ts` declares them). The tests fail when the glue uses
 another member or stops using one of them. With `acorn` installed (or `YATI_ACORN=<path to
 acorn.mjs>`), a test also parses the modules as ECMAScript 2016, the language of Tiled's
 JavaScript engine.
@@ -254,9 +286,10 @@ the release pinned in `.tiled-version` (the Linux x86_64 AppImage, extracted int
 so no FUSE is needed) and prints a `tiled` wrapper; the test runs it as `tiled --project <file>
 --evaluate helpers/real_tiled_harness.mjs <steps>`, under `xvfb-run` when there is no display (the
 AppImage has only Qt's xcb platform plugin) and with a config directory of its own (no user
-extensions, no session). The harness installs the extension through `install(api)` with the dialogs
-stubbed (a confirmation is yes, a prompt keeps the setting) and drives the actions and the save hook
-(a map read through Tiled's own format). Each run is a fresh Tiled, so "reopen the project" is the
+extensions, no session). The harness installs the extension through `install(api)` with the message
+boxes stubbed (a confirmation is yes) and drives the actions, the Configure dialog (built with the
+real `Dialog`, filled through its widgets, *Save* pressed with `click()`; `exec()` would block) and
+the save hook (a map read through Tiled's own format). Each run is a fresh Tiled, so "reopen the project" is the
 next run. Without a Tiled the test is skipped; on another platform install Tiled 1.12 and set
 `TILED=<binary>`. CI installs Tiled and runs it.
 
@@ -264,6 +297,7 @@ next run. Without a Tiled the test is skipped; on another platform install Tiled
 |------|------|
 | `yati-godot/yati-godot.mjs` | the glue: actions, menu, save hook, Issues, the API read into plain models |
 | `yati-godot/lib/settings.mjs` | the settings, the import options, paths |
+| `yati-godot/lib/configure.mjs` | the Configure dialog's fields, tooltips, validation and stored values, as data and rules |
 | `yati-godot/lib/godot_project.mjs` | `project.godot`, layer names |
 | `yati-godot/lib/scene_exports.mjs` | `.tscn` roots, `.gd` exports and enums, GDScript literals, the scene scan |
 | `yati-godot/lib/types.mjs` | the generated types as data |

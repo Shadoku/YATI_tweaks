@@ -15,9 +15,12 @@
 // tiled-extension/test/helpers/api_surface.mjs; the tests fail when it uses another.
 
 import {
-	SETTING_NAMES, readSettings, settingsProblem, stringifyGenerated, stringifyFixups, storedPath, joinPath,
-	baseName, localToGodot, cleanPath, parseImportOptions,
+	SETTING_NAMES, readSettings, settingsProblem, stringifyGenerated, stringifyFixups, joinPath, baseName,
 } from "./lib/settings.mjs";
+import {
+	TITLE as CONFIGURE_TITLE, TEXTS, FIELDS, initialValues, managedSummary, godotProjectStatus, godotVersionStatus,
+	validateConfiguration, configuredLines,
+} from "./lib/configure.mjs";
 import { readGodotProject } from "./lib/godot_project.mjs";
 import { indexClassNames, scanScenes, walkFiles } from "./lib/scene_exports.mjs";
 import { syncDefinitions, sceneClassDefinitions } from "./lib/types.mjs";
@@ -45,7 +48,7 @@ const TITLE = "YATI";
 // Installation
 
 // Registers the actions, the menu entries and the save hook. `api` holds Tiled's globals:
-// {tiled, TextFile, File, Process, ClassPropertyType, StorageType} (the last two may be null).
+// {tiled, TextFile, File, Process, Dialog, ClassPropertyType, StorageType} (the last two may be null).
 export function install(api) {
 	const t = api.tiled;
 	const handlers = {
@@ -120,79 +123,244 @@ function currentProject(api) {
 	return project === null || project === undefined ? null : project;
 }
 
-function currentSettings(api) {
+export function currentSettings(api) {
 	const project = currentProject(api);
 	if (project === null)
 		return readSettings(function () { return undefined; }, "");
 	return readSettings(function (name) { return project.property(name); }, project.fileName);
 }
 
-// The settings, or null after telling the user what is missing.
+function godotProjectExists(api, s) {
+	return s.godotProject !== "" && api.File.exists(joinPath(s.godotProject, "project.godot"));
+}
+
+// The settings, or null after telling the user what is missing. Without a Godot project the
+// user is offered the Configure dialog at once, and the action goes on with what it saved.
 function requireSettings(api) {
-	const s = currentSettings(api);
-	const problem = settingsProblem(s, s.godotProject !== "" && api.File.exists(joinPath(s.godotProject, "project.godot")));
-	if (problem !== "") {
+	let s = currentSettings(api);
+	let problem = settingsProblem(s, godotProjectExists(api, s));
+	if (problem === "")
+		return s;
+	if (s.projectFile === "") {
 		api.tiled.alert(problem, TITLE);
 		return null;
 	}
-	return s;
+	if (!api.tiled.confirm(problem + "\n\nOpen " + ACTION_TEXTS.configure + " now?", TITLE))
+		return null;
+	if (!configure(api))
+		return null;
+	s = currentSettings(api);
+	problem = settingsProblem(s, godotProjectExists(api, s));
+	return problem === "" ? s : null;
 }
 
 // ---------------------------------------------------------------------------------------------
 // YATI: Configure...
 
+// The dialog, shown until it is saved or cancelled. Returns whether it was saved.
 function configure(api) {
 	const t = api.tiled;
-	const project = t.project;
 	const s = currentSettings(api);
 	if (s.projectFile === "") {
 		t.alert(settingsProblem(s, false), TITLE);
-		return;
+		return false;
 	}
-	const dir = t.promptDirectory(s.godotProject !== "" ? s.godotProject : s.projectDir,
-		"YATI: the Godot project (the folder that holds project.godot)");
-	if (dir === "")
-		return;
-	const godotDir = cleanPath(dir);
-	if (!api.File.exists(joinPath(godotDir, "project.godot"))) {
-		t.alert("'" + godotDir + "' holds no project.godot. Choose the Godot project's own folder.", TITLE);
-		return;
-	}
-	const binary = t.prompt("The Godot binary: a path, or a command on PATH (empty: keep '" +
-		(s.godotBinaryRaw !== "" ? s.godotBinaryRaw : "godot") + "').", s.godotBinaryRaw !== "" ? s.godotBinaryRaw : "godot", TITLE).trim();
-	const scenes = t.promptDirectory(s.scenesDirRaw !== "" ? s.scenesDir : godotDir,
-		"YATI: the folder to scan for scenes (Cancel: the whole Godot project)");
-	const options = t.prompt("Import options for Check map in Godot, as name=value pairs " +
-		"(e.g. warn_unknown_classes=false); empty: keep; '-': none.", s.importOptionsRaw, TITLE).trim();
-
-	const lines = [];
-	setIfChanged(project, SETTING_NAMES.godotProject, storedPath(s.projectDir, godotDir));
-	if (binary !== "")
-		setIfChanged(project, SETTING_NAMES.godotBinary, binary);
-	let scenesValue = "";
-	if (scenes !== "" && cleanPath(scenes) !== godotDir) {
-		const res = localToGodot(godotDir, cleanPath(scenes));
-		scenesValue = res !== null ? res : cleanPath(scenes);
-	}
-	setIfChanged(project, SETTING_NAMES.scenesDir, scenesValue);
-	if (options === "-")
-		setIfChanged(project, SETTING_NAMES.importOptions, "");
-	else if (options !== "")
-		setIfChanged(project, SETTING_NAMES.importOptions, options);
-	const after = currentSettings(api);
-	lines.push("Godot project: " + after.godotProject);
-	lines.push("Godot binary: " + after.godotBinary);
-	lines.push("Scenes scanned under: " + after.scenesDir);
-	lines.push("Import options: " + (after.importOptionsRaw !== "" ? after.importOptionsRaw : "(none)"));
-	const optionWarnings = parseImportOptions(after.importOptionsRaw).warnings;
-	for (let i = 0; i < optionWarnings.length; i++)
-		lines.push(optionWarnings[i]);
-	report(api, "Configured.", lines);
+	const d = configureDialog(api, s);
+	d.dialog.exec();
+	return d.saved();
 }
 
+// Builds the dialog without showing it: {dialog, widgets, save(), cancel(), saved()}, so that a
+// test (and the headless harness, where exec() cannot return) can fill the widgets and press Save.
+export function configureDialog(api, settings) {
+	const t = api.tiled;
+	const D = api.Dialog;
+	const values = initialValues(settings);
+	const dialog = new D(CONFIGURE_TITLE);
+	dialog.newRowMode = D.ManualRows;
+	const widgets = {};
+	const state = { saved: false, tested: null, warnedFor: null };
+
+	dialog.addHeading(TEXTS.heading, true);
+	dialog.addNewRow();
+	dialog.addLabel(TEXTS.intro(settings.projectFile));
+	dialog.addNewRow();
+	dialog.addSeparator();
+	dialog.addNewRow();
+
+	const io = {
+		exists: function (p) { return api.File.exists(p); },
+		godotVersion: function (binary) { return runGodotVersion(api, binary); },
+	};
+
+	for (let i = 0; i < FIELDS.length; i++) {
+		const f = FIELDS[i];
+		if (f.kind === "directory") {
+			const w = dialog.addFilePicker(f.label, values[f.key], f.tooltip);
+			w.isDirectory = true;
+			widgets[f.key] = w;
+		} else if (f.kind === "bool") {
+			widgets[f.key] = dialog.addCheckBox(f.label, values[f.key], f.tooltip);
+		} else {
+			const w = dialog.addTextInput(f.label, values[f.key], f.tooltip);
+			w.placeholderText = f.placeholder;
+			widgets[f.key] = w;
+		}
+		if (f.key === "godotBinary") {
+			const browse = dialog.addButton(TEXTS.browse, TEXTS.browseTip);
+			browse.clicked.connect(function () {
+				const chosen = t.promptOpenFile(settings.projectDir, "", CONFIGURE_TITLE + ": the Godot binary");
+				if (chosen !== "")
+					widgets.godotBinary.text = chosen;
+			});
+			const test = dialog.addButton(TEXTS.test, TEXTS.testTip);
+			test.clicked.connect(function () {
+				const binary = widgets.godotBinary.text.trim();
+				const status = godotVersionStatus(binary, io.godotVersion(binary));
+				state.tested = { binary: binary, result: status };
+				widgets.binaryStatus.text = status.text;
+			});
+		}
+		dialog.addNewRow();
+		if (f.key === "godotProject" || f.key === "godotBinary" || f.key === "importOptions") {
+			widgets[f.key + "Status"] = dialog.addLabel("");
+			dialog.addNewRow();
+		}
+	}
+	widgets.binaryStatus = widgets.godotBinaryStatus;
+
+	// Live feedback on the fields whose mistakes are cheap to see.
+	const projectStatus = function () {
+		const status = godotProjectStatus(widgets.godotProject.fileName, settings, io.exists);
+		widgets.godotProjectStatus.text = status.text;
+	};
+	widgets.godotProject.fileUrlChanged.connect(projectStatus);
+	projectStatus();
+	const optionsStatus = function () {
+		const v = validateOptionsOnly(widgets.importOptions.text);
+		widgets.importOptionsStatus.text = v.join("\n");
+	};
+	widgets.importOptions.textChanged.connect(optionsStatus);
+	optionsStatus();
+
+	dialog.addSeparator();
+	dialog.addNewRow();
+	widgets.managed = dialog.addLabel(managedSummary(settings), TEXTS.managedTip);
+	dialog.addNewRow();
+	widgets.status = dialog.addLabel("");
+	dialog.addNewRow();
+	widgets.save = dialog.addButton(TEXTS.save, TEXTS.saveTip);
+	widgets.cancel = dialog.addButton(TEXTS.cancel, TEXTS.cancelTip);
+
+	const readValues = function () {
+		return {
+			godotProject: widgets.godotProject.fileName,
+			godotBinary: widgets.godotBinary.text,
+			scenesDir: widgets.scenesDir.fileName,
+			importOptions: widgets.importOptions.text,
+			validate: widgets.validate.checked,
+		};
+	};
+	// The warnings the dialog opened with (the binary is not run then): saving the settings as they
+	// were never asks twice; a warning the user's change brings asks for a second Save.
+	const initialWarnings = validateConfiguration(readValues(), settings, { exists: io.exists, godotVersion: null }).warnings;
+	const showStatus = function (lines, isError) {
+		widgets.status.text = lines.join("\n");
+		widgets.status.styleSheet = isError ? "color: #c0392b" : "color: #b9770e";
+	};
+	const save = function () {
+		const v = readValues();
+		// --version runs once per binary text (the Test button's run, or the first Save's); its
+		// result stays under the field and its warning is repeated on every Save.
+		const binaryText = v.godotBinary.trim();
+		const check = {
+			exists: io.exists,
+			godotVersion: function (binary) {
+				if (state.tested === null || state.tested.binary !== binaryText) {
+					state.tested = { binary: binaryText, result: godotVersionStatus(binary, io.godotVersion(binary)) };
+					widgets.binaryStatus.text = state.tested.result.text;
+				}
+				return null;
+			},
+		};
+		const result = validateConfiguration(v, settings, check);
+		if (state.tested !== null && state.tested.binary === binaryText && state.tested.result.warning !== "")
+			result.warnings.unshift("Godot binary: " + state.tested.result.warning);
+		if (result.errors.length > 0) {
+			showStatus(result.errors, true);
+			widgets.save.text = TEXTS.save;
+			state.warnedFor = null;
+			return false;
+		}
+		const key = JSON.stringify(v);
+		const newWarnings = result.warnings.filter(function (w) { return initialWarnings.indexOf(w) < 0; });
+		if (newWarnings.length > 0 && state.warnedFor !== key) {
+			showStatus(result.warnings.concat([TEXTS.anyway]), false);
+			widgets.save.text = TEXTS.saveAnyway;
+			state.warnedFor = key;
+			return false;
+		}
+		const project = t.project;
+		const names = Object.keys(result.stored);
+		for (let i = 0; i < names.length; i++)
+			setIfChanged(project, names[i], result.stored[names[i]]);
+		state.saved = true;
+		const lines = configuredLines(result);
+		t.log("YATI: " + TEXTS.saved);
+		for (let i = 0; i < lines.length; i++)
+			t.log("YATI:   " + lines[i]);
+		dialog.accept();
+		return true;
+	};
+	widgets.save.clicked.connect(save);
+	widgets.cancel.clicked.connect(function () { dialog.reject(); });
+
+	return {
+		dialog: dialog,
+		widgets: widgets,
+		save: save,
+		cancel: function () { dialog.reject(); },
+		saved: function () { return state.saved; },
+		readValues: readValues,
+	};
+}
+
+// The import options field's own messages (the validator's, without the other fields).
+function validateOptionsOnly(text) {
+	const v = validateConfiguration({ godotProject: "", godotBinary: "", scenesDir: "", importOptions: text, validate: true },
+		{ projectDir: "" }, { exists: function () { return false; } });
+	const out = [];
+	const all = v.errors.concat(v.warnings);
+	for (let i = 0; i < all.length; i++) {
+		if (all[i].indexOf("Import options: ") === 0)
+			out.push(all[i].substring("Import options: ".length));
+	}
+	return out;
+}
+
+// `<binary> --version`: {code, output}, code -1 when it did not start.
+function runGodotVersion(api, binary) {
+	const p = new api.Process();
+	try {
+		const code = p.exec(binary === "" ? "godot" : binary, ["--version"], false);
+		return { code: code, output: p.readStdOut() + "\n" + p.readStdErr() };
+	} catch (e) {
+		return { code: -1, output: "" };
+	} finally {
+		p.close();
+	}
+}
+
+// Writes a property only when its value changes (a write saves the project): an unset property
+// stays unset for "" and for true (the defaults), so a fresh project gains only what is set.
 function setIfChanged(project, name, value) {
 	const old = project.property(name);
-	if (old === undefined ? value !== "" : String(old) !== value)
+	if (old === undefined) {
+		if (value !== "" && value !== true)
+			project.setProperty(name, value);
+		return;
+	}
+	if (typeof value === "boolean" ? (old !== value && String(old) !== String(value)) : String(old) !== String(value))
 		project.setProperty(name, value);
 }
 
@@ -631,13 +799,14 @@ function findLayer(layers, id) {
 // ---------------------------------------------------------------------------------------------
 // In Tiled: install with Tiled's globals. (Under Node, the tests call install() with a fake.)
 
-/* global tiled, TextFile, File, Process, ClassPropertyType, StorageType */
+/* global tiled, TextFile, File, Process, Dialog, ClassPropertyType, StorageType */
 if (typeof tiled !== "undefined" && typeof tiled.registerAction === "function") {
 	install({
 		tiled: tiled,
 		TextFile: TextFile,
 		File: File,
 		Process: Process,
+		Dialog: typeof Dialog !== "undefined" ? Dialog : null,
 		ClassPropertyType: typeof ClassPropertyType !== "undefined" ? ClassPropertyType : null,
 		StorageType: typeof StorageType !== "undefined" ? StorageType : null,
 	});

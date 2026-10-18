@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Tiled extension, *YATI: Configure…*: one dialog with a field per setting (folder pickers, the binary
+  with *Browse…* and a *Test* that runs `--version`, the import options with their mistakes shown as you
+  type, a check box for the validation on save), a tooltip on every field, and a check of every field
+  before *Save* closes it: what cannot work is refused with the reason, what may still work warns and
+  asks for *Save anyway*. *Sync*, *Import scenes* and *Check map* open it when the Godot project is not
+  set. The settings and their storage are unchanged (`docs/tiled-extension-ux-plan.md`, stage 1).
 - `docs/tiled-extension-plan.md`: the plan for the Tiled extension (part C of the runtime improvement
   plan): what Tiled 1.12's API allows, what the importers already read, the decisions and stages.
 - Node properties (`assign_node_properties`, both importers): a `class` value whose members are exactly `x` and `y`,

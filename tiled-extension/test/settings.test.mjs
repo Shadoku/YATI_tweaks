@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
 	cleanPath, joinPath, dirName, baseName, stem, relativePath, fileUrl, godotToLocal, localToGodot,
-	isAbsolutePath, readSettings, settingsProblem, parseImportOptions, parseGenerated,
+	isAbsolutePath, readSettings, settingsProblem, parseImportOptions, describeImportOptions, parseGenerated,
 	stringifyGenerated, parseFixups, stringifyFixups, storedPath, SETTING_NAMES,
 } from "../yati-godot/lib/settings.mjs";
 
@@ -78,7 +78,20 @@ test("import options: name=value pairs, warnings", () => {
 	assert.match(r.warnings[1], /true or false/);
 	assert.match(r.warnings[2], /Dictionary/);
 	assert.match(r.warnings[3], /junk/);
+	// What the Configure dialog refuses: the bad boolean, the Dictionary, the junk; not the unknown name.
+	assert.deepEqual(r.blocking, [r.warnings[1], r.warnings[2], r.warnings[3]]);
 	assert.deepEqual(parseImportOptions("").options, []);
+	assert.deepEqual(parseImportOptions("").blocking, []);
+	// A string option with a listed value set: an unlisted value warns, without blocking.
+	const v = parseImportOptions("parallax_mode=sideways object_refs=both unknown_class_fallback=area");
+	assert.deepEqual(v.options.map((o) => o.arg), ["--parallax_mode=sideways", "--object_refs=both", "--unknown_class_fallback=area"]);
+	assert.deepEqual(v.warnings, ["Option 'parallax_mode' takes parallax2d, legacy; 'sideways' is passed on as it is."]);
+	assert.deepEqual(v.blocking, []);
+	const lines = describeImportOptions();
+	assert.ok(lines.indexOf("use_default_filter=true|false") >= 0);
+	assert.ok(lines.indexOf("object_refs=nodepath|geometry|both") >= 0);
+	assert.ok(lines.indexOf("custom_data_prefix=<text>") >= 0);
+	assert.ok(!lines.some((l) => l.indexOf("class_scenes") === 0));
 });
 
 test("records: yati_generated and yati_fixups round trip, junk is empty", () => {

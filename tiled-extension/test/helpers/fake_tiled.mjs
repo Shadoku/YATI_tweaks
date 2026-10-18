@@ -801,19 +801,19 @@ function fakeFileModule() {
 // ---------------------------------------------------------------------------------------------
 // The fake
 
-// options: {projectFile, prompts: [answers], directories: [answers], confirms: [answers],
+// options: {projectFile, files: [promptOpenFile answers], confirms: [answers], dialogs: [functions],
 //           process: function (binary, args) -> {code, stdout, stderr}}
 export function createFakeTiled(options) {
 	const opts = options || {};
 	const rec = new Recorder();
 	const out = {
 		alerts: [], logs: [], warnings: [], errors: [], actions: {}, menus: {}, issues: [],
-		processes: [],
+		processes: [], dialogs: [],
 	};
 	const signals = { assetAboutToBeSaved: [] };
-	const prompts = (opts.prompts || []).slice();
-	const directories = (opts.directories || []).slice();
+	const files = (opts.files || []).slice();
 	const confirms = (opts.confirms || []).slice();
+	const dialogs = (opts.dialogs || []).slice();
 
 	const fake = {
 		_rec: rec,
@@ -873,11 +873,8 @@ export function createFakeTiled(options) {
 			out.logs.push("confirm: " + text);
 			return confirms.length > 0 ? confirms.shift() : true;
 		},
-		prompt(label, text, title) {
-			return prompts.length > 0 ? prompts.shift() : "";
-		},
-		promptDirectory(defaultDir, title) {
-			return directories.length > 0 ? directories.shift() : "";
+		promptOpenFile(defaultDir, filters, title) {
+			return files.length > 0 ? files.shift() : "";
 		},
 		log(text) { out.logs.push(text); },
 		warn(text, activated) { out.warnings.push(text); out.issues.push({ severity: "warning", text: text, activate: activated }); },
@@ -898,6 +895,140 @@ export function createFakeTiled(options) {
 			return { __propertyValue: true, typeName: typeName, value: value };
 		},
 	};
+
+	// Dialog and its widgets (classes/Dialog.html; the Qt widgets as index.d.ts declares them).
+	// Reading a value goes through the wrapper (recorded); a test sets values and presses buttons
+	// on the raw objects, as the user would, and the signals reach the extension's handlers.
+	class FakeSignal {
+		constructor() { this._cbs = []; }
+		connect(cb) { this._cbs.push(cb); }
+		_emit(arg) { for (const cb of this._cbs.slice()) cb(arg); }
+	}
+	class FakeWidget {
+		constructor(toolTip) {
+			this.toolTip = toolTip === undefined ? "" : String(toolTip);
+			this.styleSheet = "";
+			this.enabled = true;
+			this.visible = true;
+		}
+	}
+	class FakeLineEdit extends FakeWidget {
+		constructor(text, toolTip) {
+			super(toolTip);
+			this._text = text === undefined ? "" : String(text);
+			this.placeholderText = "";
+			this._textChanged = new FakeSignal();
+			this._editingFinished = new FakeSignal();
+		}
+		get text() { return this._text; }
+		set text(v) { this._text = String(v); this._textChanged._emit(this._text); }
+		get textChanged() { return rec.wrap(this._textChanged, "Signal"); }
+		get editingFinished() { return rec.wrap(this._editingFinished, "Signal"); }
+	}
+	class FakeFileEdit extends FakeWidget {
+		constructor(fileName, toolTip) {
+			super(toolTip);
+			this._fileName = fileName === undefined ? "" : String(fileName);
+			this.isDirectory = false;
+			this.filter = "";
+			this._fileUrlChanged = new FakeSignal();
+		}
+		get fileName() { return this._fileName; }
+		set fileName(v) { this._fileName = String(v); this._fileUrlChanged._emit(this.fileUrl); }
+		get fileUrl() { return this._fileName === "" ? "" : "file://" + this._fileName; }
+		get fileUrlChanged() { return rec.wrap(this._fileUrlChanged, "Signal"); }
+	}
+	class FakeCheckBox extends FakeWidget {
+		constructor(text, checked, toolTip) {
+			super(toolTip);
+			this.text = text === undefined ? "" : String(text);
+			this._checked = !!checked;
+			this._stateChanged = new FakeSignal();
+			this._clicked = new FakeSignal();
+		}
+		get checked() { return this._checked; }
+		set checked(v) { this._checked = !!v; this._stateChanged._emit(this._checked ? 2 : 0); }
+		get stateChanged() { return rec.wrap(this._stateChanged, "Signal"); }
+		get clicked() { return rec.wrap(this._clicked, "Signal"); }
+	}
+	class FakePushButton extends FakeWidget {
+		constructor(text, toolTip) {
+			super(toolTip);
+			this.text = text === undefined ? "" : String(text);
+			this._clicked = new FakeSignal();
+		}
+		get clicked() { return rec.wrap(this._clicked, "Signal"); }
+		// QAbstractButton::click(), a slot: what a test presses.
+		click() { this._clicked._emit(); }
+	}
+	class FakeLabel extends FakeWidget {
+		constructor(text, toolTip) {
+			super(toolTip);
+			this.text = text === undefined ? "" : String(text);
+		}
+	}
+	class FakeDialog {
+		constructor(title) {
+			this.windowTitle = title === undefined ? "Script" : String(title);
+			this.newRowMode = 0;
+			this.toolTip = "";
+			this.styleSheet = "";
+			this.enabled = true;
+			this.visible = false;
+			// The test's view: every widget in order, with the label text the dialog put before it.
+			this.widgets = [];
+			this.rows = 0;
+			this.result = null;
+			this.execs = 0;
+			out.dialogs.push(this);
+		}
+		_add(kind, label, w, className) {
+			this.widgets.push({ kind: kind, label: label === undefined ? "" : String(label), widget: w, row: this.rows });
+			return rec.wrap(w, className);
+		}
+		addHeading(text, fillRow) { return this._add("heading", text, new FakeLabel(text), "QLabel"); }
+		addLabel(text, toolTip) { return this._add("label", text, new FakeLabel(text, toolTip), "QLabel"); }
+		addSeparator(text) { return this._add("separator", text, new FakeWidget(), "QWidget"); }
+		addTextInput(label, defaultValue, toolTip) { return this._add("text", label, new FakeLineEdit(defaultValue, toolTip), "QLineEdit"); }
+		addFilePicker(label, defaultValue, toolTip) { return this._add("file", label, new FakeFileEdit(defaultValue, toolTip), "FileEdit"); }
+		addCheckBox(text, defaultValue, toolTip) { return this._add("check", text, new FakeCheckBox(text, defaultValue, toolTip), "QCheckBox"); }
+		addButton(text, toolTip) { return this._add("button", text, new FakePushButton(text, toolTip), "QPushButton"); }
+		addNewRow() { this.rows++; }
+		accept() { this.result = 1; this.visible = false; }
+		reject() { this.result = 0; this.visible = false; }
+		// Modal: the test's scripted function acts on the dialog (fills widgets, presses buttons);
+		// without one the dialog is closed, as a user pressing Escape.
+		exec() {
+			this.execs++;
+			this.visible = true;
+			this.result = null;
+			const fn = dialogs.length > 0 ? dialogs.shift() : null;
+			if (fn !== null)
+				fn(this);
+			if (this.result === null)
+				this.reject();
+			return this.result;
+		}
+		// Helpers for the tests.
+		field(label) {
+			const e = this.widgets.find((x) => x.label === label && x.kind !== "heading" && x.kind !== "label" && x.kind !== "button");
+			if (!e)
+				throw new Error("no field '" + label + "'");
+			return e.widget;
+		}
+		button(text) {
+			const e = this.widgets.find((x) => x.kind === "button" && x.label === text);
+			if (!e)
+				throw new Error("no button '" + text + "'");
+			return e.widget;
+		}
+		labels() { return this.widgets.filter((x) => x.kind === "label").map((x) => x.widget); }
+	}
+	FakeDialog.ManualRows = 1;
+	FakeDialog.SameWidgetRows = 0;
+	FakeDialog.SingleWidgetRows = 2;
+	FakeDialog.Accepted = 1;
+	FakeDialog.Rejected = 0;
 
 	class FakeProcess {
 		constructor() {
@@ -921,6 +1052,7 @@ export function createFakeTiled(options) {
 		TextFile: rec.wrapClass(FakeTextFile, "TextFile"),
 		File: rec.wrap(fakeFileModule(), "File"),
 		Process: rec.wrapClass(FakeProcess, "Process"),
+		Dialog: rec.wrapClass(FakeDialog, "Dialog"),
 		ClassPropertyType: rec.wrap({ PropertyValueType: USAGE.PropertyValueType, MapObjectClass: USAGE.MapObjectClass, TileClass: USAGE.TileClass }, "ClassPropertyType"),
 		StorageType: rec.wrap({ StringValue: 0, IntValue: 1 }, "StorageType"),
 	};
@@ -931,8 +1063,9 @@ export function createFakeTiled(options) {
 		used: rec.used,
 		project: fake._project,
 		mapView: mapView,
-		// The answers the dialogs give, in order (push more after creating the fake).
-		answers: { prompts: prompts, directories: directories, confirms: confirms },
+		// The answers the dialogs give, in order (push more after creating the fake): `dialogs` holds
+		// functions, one per Dialog.exec(), that act on the raw FakeDialog (fill fields, press buttons).
+		answers: { files: files, confirms: confirms, dialogs: dialogs },
 		// Opens a map or tileset file as the active asset (as the user would), without recording.
 		openFile(fileName) {
 			const a = fileName.endsWith(".tsx") ? new FakeTileset(fake, fileName) : new FakeMap(fake, fileName);

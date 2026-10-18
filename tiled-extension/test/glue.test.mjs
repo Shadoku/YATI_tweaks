@@ -31,20 +31,206 @@ test("install: four actions in the Map menu after a separator, the save hook", (
 	assert.deepEqual(out.menus.Map, [{ separator: true }, { action: "YatiConfigure" }, { action: "YatiSyncGodotProject" }, { action: "YatiImportScenes" }, { action: "YatiCheckMap" }]);
 });
 
-test("configure: refuses without a project, stops on cancel, checks for project.godot", () => {
+// A --version run that answers like Godot 4 for the check's fake process, the check output for the rest.
+const godot4 = (binary, args) => (args[0] === "--version" ? { code: 0, stdout: "4.7.1.stable.official.abcdef123\n", stderr: "" } : { code: 1, stdout: CHECK_OUTPUT, stderr: "" });
+
+test("configure: one dialog with a field per setting, each with its tooltip; Cancel writes nothing", () => {
 	const none = make({ noProject: true });
 	none.fake.trigger(ACTIONS.configure);
 	assert.match(none.fake.out.alerts[0], /No Tiled project is open/);
+	assert.equal(none.fake.out.dialogs.length, 0);
 
-	const s = make();
-	s.fake.answers.directories.push("");
+	const s = make({ fakeOptions: { process: godot4 } });
+	let seen = null;
+	s.fake.answers.dialogs.push((d) => { seen = d; });
 	s.fake.trigger(ACTIONS.configure);
+	assert.equal(seen.windowTitle, "YATI: Configure");
+	assert.equal(seen.newRowMode, 1);	// ManualRows
+	assert.equal(seen.execs, 1);
+	assert.equal(seen.result, 0);		// closed without Save: rejected
+	assert.deepEqual(seen.widgets.filter((w) => ["file", "text", "check"].indexOf(w.kind) >= 0).map((w) => w.label),
+		["Godot project", "Godot binary", "Scenes folder", "Import options", "Validate maps and tilesets on save"]);
+	assert.deepEqual(seen.widgets.filter((w) => w.kind === "button").map((w) => w.label), ["Browse…", "Test", "Save", "Cancel"]);
+	for (const w of seen.widgets.filter((x) => ["file", "text", "check", "button"].indexOf(x.kind) >= 0))
+		assert.ok(w.widget.toolTip.length > 20, w.label + " has a tooltip");
+	assert.match(seen.field("Godot project").toolTip, /project\.godot/);
+	assert.match(seen.field("Import options").toolTip, /warn_unknown_classes=true\|false/);
+	assert.match(seen.field("Validate maps and tilesets on save").toolTip, /Issues view/);
+	assert.equal(seen.field("Godot project").isDirectory, true);
+	assert.equal(seen.field("Scenes folder").isDirectory, true);
+	assert.equal(seen.field("Godot binary").placeholderText, "godot");
+	assert.match(seen.widgets[1].widget.text, /custom properties of the project file \(game\.tiled-project\)/);
+	assert.match(seen.labels()[seen.labels().length - 2].text, /^No types made by the extension yet/);
 	assert.deepEqual(s.fake.out.alerts, []);
 	assert.equal(s.property("godot_project"), undefined);
-
-	s.fake.answers.directories.push(s.root);
+	assert.equal(s.projectJson().properties.length, 0);
+	// An explicit Cancel.
+	s.fake.answers.dialogs.push((d) => { d.field("Godot project").fileName = s.godot; d.button("Cancel").click(); });
 	s.fake.trigger(ACTIONS.configure);
-	assert.match(s.fake.out.alerts[0], /holds no project\.godot/);
+	assert.equal(s.projectJson().properties.length, 0);
+	assert.equal(s.fake.out.dialogs[1].result, 0);
+});
+
+test("configure: Save validates first and keeps the dialog open; the status says what is wrong", () => {
+	const s = make({ fakeOptions: { process: godot4 } });
+	let d = null;
+	s.fake.answers.dialogs.push((dialog) => {
+		d = dialog;
+		const status = () => d.labels()[d.labels().length - 1];
+		// Nothing set: the Godot project is required; live status under the field.
+		assert.equal(d.labels()[1].text, "Choose the folder that holds project.godot.");
+		d.button("Save").click();
+		assert.equal(d.result, null);
+		assert.match(status().text, /^Godot project: Choose the folder that holds project\.godot\.$/);
+		assert.match(status().styleSheet, /color/);
+		// A folder without project.godot.
+		d.field("Godot project").fileName = s.root;
+		assert.match(d.labels()[1].text, /holds no project\.godot/);
+		d.button("Save").click();
+		assert.equal(d.result, null);
+		assert.match(status().text, /holds no project\.godot/);
+		// The right folder, a binary path that does not exist, a scenes folder that does not exist,
+		// options with a bad boolean and junk: every error at once.
+		d.field("Godot project").fileName = s.godot;
+		assert.equal(d.labels()[1].text, "project.godot found.");
+		d.field("Godot binary").text = "tools/godot4";
+		d.field("Scenes folder").fileName = path.join(s.godot, "nowhere");
+		d.field("Import options").text = "add_id_as_metadata=maybe junk class_scenes={}";
+		d.button("Save").click();
+		assert.equal(d.result, null);
+		assert.deepEqual(status().text.split("\n"), [
+			"Godot binary: '" + path.join(s.root, "tools", "godot4") + "' does not exist.",
+			"Scenes folder: '" + path.join(s.godot, "nowhere") + "' does not exist.",
+			"Import options: Option 'add_id_as_metadata' takes true or false, not 'maybe'.",
+			"Import options: Option 'class_scenes' is a Dictionary and cannot be given here; set it in the game's code.",
+			"Import options: Ignored in the import options: 'junk' (expected name=value pairs).",
+		]);
+		assert.equal(s.projectJson().properties.length, 0);
+	});
+	s.fake.trigger(ACTIONS.configure);
+	assert.equal(d.execs, 1);
+	assert.equal(d.result, 0);
+	assert.equal(s.projectJson().properties.length, 0);
+});
+
+test("configure: Save stores the settings relative to the project file; defaults are left unset", () => {
+	const s = make({ fakeOptions: { process: godot4 } });
+	s.fake.answers.dialogs.push((d) => {
+		d.field("Godot project").fileName = s.godot;
+		d.field("Godot binary").text = "godot4";
+		d.field("Scenes folder").fileName = path.join(s.godot, "scenes");
+		d.field("Import options").text = " warn_unknown_classes=false bogus=1 ";
+		d.button("Save").click();
+		// The unknown option is a warning: shown, and Save asks to be pressed again.
+		assert.equal(d.result, null);
+		assert.equal(d.button("Save").text, "Save anyway");
+		assert.match(d.labels()[d.labels().length - 1].text, /^Import options: Unknown import option 'bogus' \(passed on as it is\)\.\nPress Save anyway/);
+		d.button("Save").click();
+	});
+	s.fake.trigger(ACTIONS.configure);
+	const d = s.fake.out.dialogs[0];
+	assert.equal(d.result, 1);
+	assert.equal(s.property("godot_project"), "godot_project");
+	assert.equal(s.property("godot_binary"), "godot4");
+	assert.equal(s.property("godot_scenes_dir"), "res://scenes");
+	assert.equal(s.property("yati_import_options"), "warn_unknown_classes=false bogus=1");
+	assert.equal(s.property("yati_validate"), undefined);
+	assert.deepEqual(s.fake.out.alerts, []);
+	assert.ok(s.fake.out.logs.indexOf("YATI: Configured.") >= 0);
+	assert.ok(s.fake.out.logs.indexOf("YATI:   Godot binary: godot4") >= 0);
+	assert.ok(s.fake.out.logs.indexOf("YATI:   Scenes scanned under: " + path.join(s.godot, "scenes")) >= 0);
+	assert.ok(s.fake.out.logs.indexOf("YATI:   Import options: Unknown import option 'bogus' (passed on as it is).") >= 0);
+	// --version was run on Save, once, for the typed binary.
+	assert.deepEqual(s.fake.out.processes, [{ binary: "godot4", args: ["--version"] }]);
+	// Again: the dialog starts from the saved values; the scenes folder cleared and validation off.
+	s.fake.answers.dialogs.push((d2) => {
+		assert.equal(d2.field("Godot project").fileName, s.godot);
+		assert.equal(d2.field("Godot binary").text, "godot4");
+		assert.equal(d2.field("Scenes folder").fileName, path.join(s.godot, "scenes"));
+		assert.equal(d2.field("Import options").text, "warn_unknown_classes=false bogus=1");
+		assert.equal(d2.field("Validate maps and tilesets on save").checked, true);
+		d2.field("Scenes folder").fileName = "";
+		d2.field("Validate maps and tilesets on save").checked = false;
+		d2.button("Save").click();
+	});
+	s.fake.trigger(ACTIONS.configure);
+	assert.equal(s.property("godot_scenes_dir"), "");
+	assert.equal(s.property("yati_validate"), false);
+	assert.equal(s.property("godot_binary"), "godot4");
+	// A third time with nothing changed: no write (the project is not saved again).
+	const saves = s.fake.project.saves;
+	s.fake.answers.dialogs.push((d3) => { d3.button("Save").click(); });
+	s.fake.trigger(ACTIONS.configure);
+	assert.equal(s.fake.project.saves, saves);
+	assert.equal(s.fake.out.dialogs[2].result, 1);
+});
+
+test("configure: Browse and Test; a binary that does not start warns, and Save asks to be pressed again", () => {
+	const s = make({ fakeOptions: { files: ["/usr/bin/godot4"], process: (binary, args) => (binary === "/usr/bin/godot4" ? { code: 0, stdout: "4.7.1.stable.official\n" } : { code: -1 }) } });
+	s.fake.answers.dialogs.push((d) => {
+		d.field("Godot project").fileName = s.godot;
+		d.button("Browse…").click();
+		assert.equal(d.field("Godot binary").text, "/usr/bin/godot4");
+		d.button("Test").click();
+		assert.equal(d.labels()[2].text, "Godot 4.7.1.stable.official");
+		// A command PATH does not have: Test says so; Save warns and waits for a second press.
+		d.field("Godot binary").text = "godot-nowhere";
+		d.button("Test").click();
+		assert.equal(d.labels()[2].text, "Could not start 'godot-nowhere'.");
+		d.button("Save").click();
+		assert.equal(d.result, null);
+		const status = d.labels()[d.labels().length - 1];
+		assert.deepEqual(status.text.split("\n"), [
+			"Godot binary: Could not start 'godot-nowhere': Check map in Godot will not work until the Godot binary is a full path or a command on PATH.",
+			"Press Save anyway to keep these settings regardless.",
+		]);
+		assert.equal(d.button("Save").text, "Save anyway");
+		d.button("Save").click();
+	});
+	s.fake.trigger(ACTIONS.configure);
+	assert.equal(s.fake.out.dialogs[0].result, 1);
+	assert.equal(s.property("godot_binary"), "godot-nowhere");
+	// The Test button's run was reused by Save: two --version runs in all, one per binary.
+	assert.deepEqual(s.fake.out.processes.map((p) => p.binary + " " + p.args.join(" ")), ["/usr/bin/godot4 --version", "godot-nowhere --version"]);
+	// A Godot 3 and a non-Godot answer: warnings too (a binary with a slash must exist).
+	const t = make({ fakeOptions: { process: (binary) => (binary === "godot3" ? { code: 0, stdout: "3.5.3.stable.official\n" } : { code: 0, stdout: "usage: thing\n" }) } });
+	t.fake.answers.dialogs.push((d) => {
+		d.field("Godot project").fileName = t.godot;
+		d.field("Godot binary").text = "godot3";
+		d.button("Save").click();
+		assert.match(d.labels()[d.labels().length - 1].text, /is Godot 3\.5\.3\.stable\.official; Check map in Godot needs Godot 4/);
+		d.field("Godot binary").text = "thing";
+		d.button("Save").click();
+		assert.match(d.labels()[d.labels().length - 1].text, /does not look like Godot \(no version in its --version output: usage: thing\)/);
+		d.button("Save").click();
+	});
+	t.fake.trigger(ACTIONS.configure);
+	assert.equal(t.property("godot_binary"), "thing");
+});
+
+test("configure: a scenes folder outside the Godot project warns and is stored absolute; res:// typed in is accepted", () => {
+	const s = make({ fakeOptions: { process: godot4 } });
+	const outside = path.join(s.root, "importer");
+	s.fake.answers.dialogs.push((d) => {
+		d.field("Godot project").fileName = s.godot;
+		d.field("Scenes folder").fileName = outside;
+		d.button("Save").click();
+		assert.match(d.labels()[d.labels().length - 1].text, /is outside the Godot project; scenes found there get absolute paths/);
+		d.button("Save").click();
+	});
+	s.fake.trigger(ACTIONS.configure);
+	assert.equal(s.property("godot_scenes_dir"), outside);
+	s.fake.answers.dialogs.push((d) => { d.field("Scenes folder").fileName = "res://scenes"; d.button("Save").click(); });
+	s.fake.trigger(ACTIONS.configure);
+	assert.equal(s.property("godot_scenes_dir"), "res://scenes");
+	// The live status under the options field.
+	s.fake.answers.dialogs.push((d) => {
+		d.field("Import options").text = "object_refs=both parallax_mode=sideways";
+		assert.equal(d.labels()[3].text, "Option 'parallax_mode' takes parallax2d, legacy; 'sideways' is passed on as it is.");
+		d.field("Import options").text = "";
+		assert.equal(d.labels()[3].text, "");
+	});
+	s.fake.trigger(ACTIONS.configure);
 });
 
 // Tiled starts without a project unless its session restores one, and tiled.project is null then
@@ -66,43 +252,30 @@ test("without a project (tiled.project is null): the actions say so, a save stil
 	assert.deepEqual(s.fake.out.errors, []);
 });
 
-test("configure: stores the settings relative to the project file; empty keeps, '-' clears", () => {
-	const s = make();
-	const a = s.fake.answers;
-	a.directories.push(s.godot, path.join(s.godot, "scenes"));
-	a.prompts.push("/opt/godot/godot4", "warn_unknown_classes=false bogus=1");
-	s.fake.trigger(ACTIONS.configure);
-	assert.equal(s.property("godot_project"), "godot_project");
-	assert.equal(s.property("godot_binary"), "/opt/godot/godot4");
-	assert.equal(s.property("godot_scenes_dir"), "res://scenes");
-	assert.equal(s.property("yati_import_options"), "warn_unknown_classes=false bogus=1");
-	assert.match(s.fake.out.alerts[0], /^Configured\./);
-	assert.match(s.fake.out.alerts[0], /Unknown import option 'bogus'/);
-	// Again: empty answers keep the binary and the options, a cancelled scenes folder is the whole project.
-	a.directories.push(s.godot, "");
-	a.prompts.push("", "");
-	s.fake.trigger(ACTIONS.configure);
-	assert.equal(s.property("godot_binary"), "/opt/godot/godot4");
-	assert.equal(s.property("godot_scenes_dir"), "");
-	assert.equal(s.property("yati_import_options"), "warn_unknown_classes=false bogus=1");
-	a.directories.push(s.godot, "");
-	a.prompts.push("", "-");
-	s.fake.trigger(ACTIONS.configure);
-	assert.equal(s.property("yati_import_options"), "");
-});
-
-test("sync and scenes refuse until the Godot project is set", () => {
-	const s = make();
+test("sync, scenes and check offer the Configure dialog until the Godot project is set, and go on with it", () => {
+	const s = make({ fakeOptions: { process: godot4 } });
+	// Declined: nothing happens. Accepted but cancelled: nothing happens either.
+	s.fake.answers.confirms.push(false);
 	s.fake.trigger(ACTIONS.sync);
 	s.fake.trigger(ACTIONS.scenes);
 	s.fake.trigger(ACTIONS.check);
-	assert.equal(s.fake.out.alerts.length, 3);
-	assert.match(s.fake.out.alerts[0], /The Godot project is not set/);
-	assert.match(s.fake.out.alerts[1], /The Godot project is not set/);
-	assert.match(s.fake.out.alerts[2], /Open the map to check first/);
+	assert.deepEqual(s.fake.out.alerts, ["Open the map to check first (Check map in Godot runs on the active map)."]);
+	const offers = s.fake.out.logs.filter((l) => l.indexOf("confirm: The Godot project is not set") === 0);
+	assert.equal(offers.length, 2);
+	assert.match(offers[0], /YATI needs the folder that holds project\.godot\.\n\nOpen YATI: Configure… now\?$/);
+	assert.equal(s.fake.out.dialogs.length, 1);	// the second offer was accepted (the fake's default), then cancelled
+	assert.equal(s.projectJson().propertyTypes.length, 0);
+	// Accepted and saved: the sync runs at once with the new settings.
+	s.fake.answers.dialogs.push((d) => { d.field("Godot project").fileName = s.godot; d.button("Save").click(); });
+	s.fake.trigger(ACTIONS.sync);
+	assert.equal(s.property("godot_project"), "godot_project");
+	assert.match(s.fake.out.alerts[1], /^Synced with the Godot project 'Extension Fixture'/);
+	// A project folder that went missing: the same offer, naming the folder.
 	const t = make({ properties: [{ name: "godot_project", type: "string", value: "nowhere" }] });
+	t.fake.answers.confirms.push(false);
 	t.fake.trigger(ACTIONS.sync);
-	assert.match(t.fake.out.alerts[0], /No project\.godot in/);
+	assert.deepEqual(t.fake.out.alerts, []);
+	assert.ok(t.fake.out.logs.some((l) => /^confirm: No project\.godot in '.*nowhere' \(the setting godot_project\)\.\n\nOpen YATI: Configure… now\?$/.test(l)));
 });
 
 test("sync: the layer enums with flags (patched into the file), GodotNodeType, MapRef; then nothing to do", () => {

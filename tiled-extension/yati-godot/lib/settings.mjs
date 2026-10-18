@@ -37,6 +37,35 @@ export const IMPORT_OPTIONS = {
 	object_refs: "string",
 };
 
+// The values a string option takes (Runtime.md's table); an option not listed is free text.
+// unknown_class_fallback also takes any mapping-table class (types.mjs lists them; the validator
+// warns, not refuses, about a value outside this list).
+export const IMPORT_OPTION_VALUES = {
+	parallax_mode: ["parallax2d", "legacy"],
+	animation_mode: ["strip", "atlas"],
+	object_refs: ["nodepath", "geometry", "both"],
+	unknown_class_fallback: ["staticbody", "collision", "characterbody", "rigidbody", "animatablebody", "area",
+		"navigation", "occluder", "line", "path", "polygon", "instance", "parallax", "node2d"],
+};
+
+// One line per option, for a tooltip or a report: "name=true|false", "name=a|b", "name=<text>".
+export function describeImportOptions() {
+	const names = Object.keys(IMPORT_OPTIONS);
+	const lines = [];
+	for (let i = 0; i < names.length; i++) {
+		const kind = IMPORT_OPTIONS[names[i]];
+		if (kind === "dictionary")
+			continue;
+		let values = "<text>";
+		if (kind === "bool")
+			values = "true|false";
+		else if (IMPORT_OPTION_VALUES[names[i]] !== undefined)
+			values = IMPORT_OPTION_VALUES[names[i]].join("|");
+		lines.push(names[i] + "=" + values);
+	}
+	return lines;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Paths. Tiled hands out paths with "/" on every platform (Qt), Windows ones with a drive letter
 // ("C:/games/x"). These helpers work on that form; backslashes are turned into "/" first.
@@ -214,20 +243,23 @@ export function settingsProblem(settings, projectGodotExists) {
 		return "No Tiled project is open. Open or create one (Project > Open Project...) first: " +
 			"the extension keeps its settings in the project.";
 	if (settings.missing.length > 0)
-		return "The Godot project is not set. Run YATI: Configure... and choose the folder that holds " +
-			"project.godot.";
+		return "The Godot project is not set: YATI needs the folder that holds project.godot.";
 	if (!projectGodotExists)
 		return "No project.godot in '" + settings.godotProject + "' (the setting " +
-			SETTING_NAMES.godotProject + "). Run YATI: Configure... again.";
+			SETTING_NAMES.godotProject + ").";
 	return "";
 }
 
 // "assign_node_properties=false  warn_unknown_classes=false" -> options as {name, value, arg} with
 // arg "--name=value" for check_map.gd; unknown names and bad values become warnings (still passed:
-// a newer importer may know them). A value may be quoted: object_refs="both".
+// a newer importer may know them). A value may be quoted: object_refs="both". `blocking` is the
+// part of `warnings` the Configure dialog refuses to save: a boolean that is not true or false,
+// a Dictionary option, text that is no name=value pair. An unknown name or an unlisted value of
+// a string option only warns.
 export function parseImportOptions(text) {
 	const options = [];
 	const warnings = [];
+	const blocking = [];
 	const re = /([A-Za-z_][A-Za-z0-9_]*)\s*=\s*("([^"]*)"|'([^']*)'|(\S*))/g;
 	let rest = String(text || "");
 	let m;
@@ -241,20 +273,27 @@ export function parseImportOptions(text) {
 			warnings.push("Unknown import option '" + name + "' (passed on as it is).");
 		} else if (kind === "bool") {
 			const low = value.toLowerCase();
-			if (low !== "true" && low !== "false")
+			if (low !== "true" && low !== "false") {
 				warnings.push("Option '" + name + "' takes true or false, not '" + value + "'.");
-			else
+				blocking.push(warnings[warnings.length - 1]);
+			} else {
 				value = low;
+			}
 		} else if (kind === "dictionary") {
 			warnings.push("Option '" + name + "' is a Dictionary and cannot be given here; set it in the game's code.");
+			blocking.push(warnings[warnings.length - 1]);
 			continue;
+		} else if (IMPORT_OPTION_VALUES[name] !== undefined && IMPORT_OPTION_VALUES[name].indexOf(value) < 0) {
+			warnings.push("Option '" + name + "' takes " + IMPORT_OPTION_VALUES[name].join(", ") + "; '" + value + "' is passed on as it is.");
 		}
 		options.push({ name: name, value: value, arg: "--" + name + "=" + value });
 	}
 	const leftover = rest.replace(re, "").trim();
-	if (leftover !== "")
+	if (leftover !== "") {
 		warnings.push("Ignored in the import options: '" + leftover + "' (expected name=value pairs).");
-	return { options: options, warnings: warnings };
+		blocking.push(warnings[warnings.length - 1]);
+	}
+	return { options: options, warnings: warnings, blocking: blocking };
 }
 
 // The record of what the extension generated: {typeName: [member names]} (JSON in the project

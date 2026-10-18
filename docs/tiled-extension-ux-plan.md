@@ -211,3 +211,24 @@ extension reopen the project itself.
 ## 4. Status
 
 - 2026-10-18: planned.
+- 2026-10-18, **stage 1 done**: `lib/configure.mjs` (`FIELDS`, `TEXTS`, `initialValues`,
+  `managedSummary`, `godotProjectStatus`, `godotVersionStatus`, `validateConfiguration`,
+  `configuredLines`), `configureDialog(api, settings)` in the glue (builds the dialog without
+  `exec()`; `configure()` calls `exec()`), `requireSettings` offering the dialog, the fake
+  `Dialog` with its widgets (`answers.dialogs`: a function per `exec()`), `configure.test.mjs`
+  and five glue tests, `api_surface.mjs` with the `Dialog`, `FileEdit` and Qt widget members
+  (`index.d.ts#...` for the widgets without a page), the harness's `configure` and
+  `configure:<options>` steps, the README. Decisions past section 2: the second *Save* is asked
+  only for a warning the user's change brought (the warnings the dialog opened with, the binary
+  not run, are saved at once), so a project that keeps an unknown option does not ask twice;
+  `--version` runs once per binary text (the *Test* button's run is reused by *Save*); a save
+  reports to the log only; an absent property stays absent for a default (`""`, `true`).
+  **Confirmed in the real Tiled 1.12.0, headless** (`real_tiled.test.mjs`, the Tiled AppImage
+  needing `libegl1`, `libxkbcommon-x11-0` and the `libxcb-*` set on the container): `Dialog` is
+  a global and constructs without a main window; `FileEdit.fileName` reads a plain path;
+  `QLineEdit.text` and `placeholderText`, `QCheckBox.checked`, `QLabel.text` and `toolTip` read
+  and write; `QPushButton.click()` reaches the handler `clicked.connect` registered; a `Process`
+  run from the handler; `setProperty` from the handler reaches the file; the sample's project
+  file is unchanged by a save that changes nothing. Not confirmed, for the editor: the layout
+  under `ManualRows` (the binary row with its two buttons, the status labels' wrapping), the
+  red status, `exec()` returning on *Save*, `promptOpenFile` from *Browse…*.

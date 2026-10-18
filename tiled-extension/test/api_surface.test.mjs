@@ -17,17 +17,32 @@ test("every member the extension touches is documented, and every documented one
 	const used = new Set();
 	const run = (s) => { scenarios.push(s); return s; };
 
-	// Configure, sync, scenes twice (the second after an export was removed), on a fresh project.
-	const a = run(scenario({ checkScript: true, fakeOptions: { process: () => ({ code: 1, stdout: CHECK_OUTPUT, stderr: "" }) } }));
-	a.fake.answers.directories.push(a.godot, "");
-	a.fake.answers.prompts.push("godot", "warn_unknown_classes=false");
+	// Configure (the dialog: Browse, Test, a refused Save, a Save), sync, scenes twice (the second
+	// after an export was removed), on a fresh project.
+	const a = run(scenario({ checkScript: true, fakeOptions: {
+		files: ["/usr/bin/godot"],
+		process: (binary, args) => (args[0] === "--version" ? { code: 0, stdout: "4.7.1.stable\n", stderr: "" } : { code: 1, stdout: CHECK_OUTPUT, stderr: "" }),
+	} }));
+	a.fake.answers.dialogs.push((d) => {
+		d.button("Save").click();
+		d.field("Godot project").fileName = a.godot;
+		d.button("Browse…").click();
+		d.field("Godot binary").text = "godot";
+		d.button("Test").click();
+		d.field("Scenes folder").fileName = path.join(a.godot, "scenes");
+		d.field("Import options").text = "warn_unknown_classes=false";
+		d.field("Validate maps and tilesets on save").checked = true;
+		d.button("Save").click();
+	});
+	a.fake.trigger(ACTIONS.configure);
+	a.fake.answers.dialogs.push((d) => { d.button("Cancel").click(); });
 	a.fake.trigger(ACTIONS.configure);
 	a.fake.trigger(ACTIONS.sync);
 	a.fake.trigger(ACTIONS.scenes);
 	const door = path.join(a.godot, "scripts", "door.gd");
 	fs.writeFileSync(door, fs.readFileSync(door, "utf8").replace("@export var width: float = 32.0\n", ""));
 	a.fake.trigger(ACTIONS.scenes);
-	assert.ok(a.fake.out.alerts[3].indexOf("Removed Door.width") >= 0);
+	assert.ok(a.fake.out.alerts[2].indexOf("Removed Door.width") >= 0);
 	// The check on a modified map (saved first), and the activation of its Issues.
 	const map = a.fake.openFile(path.join(a.maps, "mistakes.tmx"));
 	map._modified = true;
@@ -54,8 +69,10 @@ test("every member the extension touches is documented, and every documented one
 	assert.deepEqual(documented.filter((k) => !used.has(k)), [], "listed but not used: the list should be exactly what the extension uses");
 	assert.equal(touched.length, documented.length);
 	assert.equal(REFERENCE, "https://www.mapeditor.org/docs/scripting/");
+	// A page and anchor of the reference, or (the Qt widgets, which have no page) a declaration
+	// in @mapeditor/tiled-api 1.12.0's index.d.ts.
 	for (const k of documented)
-		assert.match(API_SURFACE[k], /^(modules|classes|interfaces|enums)\/[A-Za-z]+\.html#[A-Za-z]+/, k);
+		assert.match(API_SURFACE[k], /^((modules|classes|interfaces|enums)\/[A-Za-z]+\.html#[A-Za-z]+|index\.d\.ts#Q[A-Za-z]+\.[A-Za-z]+)/, k);
 });
 
 test("the fake implements nothing beyond the documented surface", async () => {

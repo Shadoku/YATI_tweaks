@@ -11,9 +11,9 @@ import { EXTENSION_DIR } from "./helpers/node_io.mjs";
 const files = [path.join(EXTENSION_DIR, "yati-godot.mjs")].concat(
 	fs.readdirSync(path.join(EXTENSION_DIR, "lib")).filter((f) => f.endsWith(".mjs")).map((f) => path.join(EXTENSION_DIR, "lib", f)));
 
-test("the extension's modules: lib/ has the plan's seven, nothing else is shipped", () => {
+test("the extension's modules: lib/ has the plans' eight, nothing else is shipped", () => {
 	assert.deepEqual(fs.readdirSync(path.join(EXTENSION_DIR, "lib")).sort(), [
-		"apply.mjs", "check_output.mjs", "godot_project.mjs", "scene_exports.mjs", "settings.mjs", "types.mjs", "validate.mjs",
+		"apply.mjs", "check_output.mjs", "configure.mjs", "godot_project.mjs", "scene_exports.mjs", "settings.mjs", "types.mjs", "validate.mjs",
 	]);
 	assert.deepEqual(fs.readdirSync(EXTENSION_DIR).sort(), ["lib", "yati-godot.mjs"]);
 });
