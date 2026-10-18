@@ -334,7 +334,10 @@ impl Loader {
             return Ok(());
         };
         match Project::from_json(&bytes) {
-            Ok(p) => self.project = Some(Arc::new(p)),
+            Ok(mut p) => {
+                p.path = path.to_string();
+                self.project = Some(Arc::new(p));
+            }
             Err(_) => self.errors.push(Error::new(
                 ErrorKind::Parse,
                 format!("ERROR: Tiled project file '{path}' could not be parsed."),

@@ -1,0 +1,182 @@
+{
+  "height": 16,
+  "infinite": false,
+  "layers": [
+    {
+      "id": 1,
+      "name": "Units",
+      "objects": [
+        {
+          "class": "Enemy",
+          "height": 16,
+          "id": 1,
+          "name": "Grunt",
+          "properties": [
+            {
+              "name": "drops",
+              "type": "list",
+              "value": [
+                {
+                  "type": "int",
+                  "value": 1
+                },
+                {
+                  "type": "int",
+                  "value": 2
+                }
+              ]
+            },
+            {
+              "name": "faction",
+              "value": "orcs"
+            },
+            {
+              "name": "hp",
+              "type": "int",
+              "value": 10
+            },
+            {
+              "name": "icon",
+              "type": "file",
+              "value": "tiles.png"
+            },
+            {
+              "name": "loot",
+              "propertytype": "Loot",
+              "type": "class",
+              "value": {
+                "gold": 5
+              }
+            },
+            {
+              "name": "mood",
+              "value": "ANGRY"
+            },
+            {
+              "name": "note",
+              "value": "hello"
+            },
+            {
+              "name": "patrol",
+              "type": "object",
+              "value": 3
+            },
+            {
+              "name": "speed",
+              "type": "int",
+              "value": 3
+            },
+            {
+              "name": "tag",
+              "value": "boss"
+            }
+          ],
+          "width": 16,
+          "x": 32,
+          "y": 48
+        },
+        {
+          "gid": 3,
+          "height": 32,
+          "id": 2,
+          "name": "TileGrunt",
+          "width": 32,
+          "x": 64,
+          "y": 96
+        },
+        {
+          "id": 3,
+          "name": "Waypoint",
+          "point": true,
+          "x": 128,
+          "y": 48
+        },
+        {
+          "class": "enemy",
+          "height": 16,
+          "id": 4,
+          "name": "Plain",
+          "width": 16,
+          "x": 160,
+          "y": 48
+        },
+        {
+          "class": "Enemy",
+          "height": 16,
+          "id": 5,
+          "name": "Typed",
+          "properties": [
+            {
+              "name": "godot_node_type",
+              "value": "area"
+            }
+          ],
+          "width": 16,
+          "x": 192,
+          "y": 48
+        },
+        {
+          "class": "Enemy",
+          "height": 16,
+          "id": 6,
+          "name": "Broken",
+          "properties": [
+            {
+              "name": "hp",
+              "value": "lots"
+            }
+          ],
+          "width": 16,
+          "x": 32,
+          "y": 160
+        },
+        {
+          "class": "Enemy",
+          "height": 16,
+          "id": 7,
+          "name": "Elite",
+          "properties": [
+            {
+              "name": "godot_scene",
+              "type": "file",
+              "value": "ref_target.tscn"
+            }
+          ],
+          "width": 16,
+          "x": 64,
+          "y": 160
+        }
+      ],
+      "type": "objectgroup"
+    }
+  ],
+  "nextlayerid": 2,
+  "nextobjectid": 10,
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "tiledversion": "1.12.0",
+  "tileheight": 16,
+  "tilesets": [
+    {
+      "columns": 8,
+      "firstgid": 1,
+      "image": "tiles.png",
+      "imageheight": 64,
+      "imagewidth": 128,
+      "name": "scene_tiles",
+      "tilecount": 32,
+      "tileheight": 16,
+      "tiles": [
+        {
+          "class": "Enemy",
+          "id": 2
+        }
+      ],
+      "tilewidth": 16
+    }
+  ],
+  "tilewidth": 16,
+  "type": "map",
+  "version": "1.10",
+  "width": 16
+}

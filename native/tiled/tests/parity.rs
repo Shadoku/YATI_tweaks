@@ -43,8 +43,16 @@ fn every_map_matches_the_runtime_dictionary() {
         "template_files.tmx",
         "templates.tmx",
         "unknown_class.tmx",
+        // Its part B fixtures (object references, scenes, masks, the world's maps)
+        "object_refs.tmx",
+        "scenes.tmx",
+        "masks.tmx",
+        "world/hub.tmx",
+        "world/area_0_0.tmx",
+        "world/area_0_1.tmj",
+        "world/area_1_0.tmx",
     ] {
-        map_parity(name, None, &format!("{name}.json"));
+        map_parity(name, None, &format!("{}.json", name.replace('/', "_")));
     }
 }
 
@@ -59,6 +67,16 @@ fn maps_with_custom_types_match() {
         "classes.tmx",
         Some("classes.tiled-project"),
         "classes.tmx+classes.json",
+    );
+    map_parity(
+        "scenes.tmx",
+        Some("scenes.tiled-project"),
+        "scenes.tmx+scenes.json",
+    );
+    map_parity(
+        "masks.tmx",
+        Some("masks.tiled-project"),
+        "masks.tmx+masks.json",
     );
 }
 

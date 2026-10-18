@@ -2,19 +2,21 @@
 //! class, in the runtime's order: the first matching rule wins), groups, scripts, and
 //! everything else as metadata.
 
+use super::refs::{PendingRef, RefKind};
 use super::Build;
 use crate::files::load_resource;
 use crate::gd::{
-    bitmask, cleanup_path, gd_str, is_absolute_path, property_color, to_float, to_int, typed_value,
-    PV,
+    cleanup_path, gd_str, is_absolute_path, property_color, to_float, to_int, typed_value, PV,
 };
-use crate::props::GProp;
+use crate::props::{mask_value, GProp};
 use godot::classes::{Node, Resource, ResourceLoader};
 use godot::prelude::*;
 use tiled_core::Value;
 
 /// What a node is, for the rules (`target_node is ...`), checked once per node.
 struct Kind {
+    /// The node's class name.
+    class: String,
     tml: bool,
     p2d: bool,
     co: bool,
@@ -33,6 +35,7 @@ struct Kind {
 impl Kind {
     fn none() -> Kind {
         Kind {
+            class: String::new(),
             tml: false,
             p2d: false,
             co: false,
@@ -53,7 +56,8 @@ impl Kind {
     /// know (a GDExtension class, say) is asked with `is_class` for each.
     fn of(n: &Gd<Node>) -> Kind {
         let mut k = Kind::none();
-        match n.get_class().to_string().as_str() {
+        let class = n.get_class().to_string();
+        match class.as_str() {
             "TileMapLayer" => k.tml = true,
             "Parallax2D" => k.p2d = true,
             "StaticBody2D" => (k.co, k.sb) = (true, true),
@@ -72,6 +76,7 @@ impl Kind {
             _ => {
                 let is = |c: &str| n.is_class(c);
                 k = Kind {
+                    class: String::new(),
                     tml: is("TileMapLayer"),
                     p2d: is("Parallax2D"),
                     co: is("CollisionObject2D"),
@@ -88,6 +93,7 @@ impl Kind {
                 };
             }
         }
+        k.class = class;
         k
     }
 }
@@ -108,8 +114,14 @@ fn vec_part(n: &mut Gd<Node>, prop: &str, x: Option<f32>, y: Option<f32>) {
 }
 
 impl Build<'_> {
-    /// `handle_list_property`: a list property's items, typed.
-    fn list_value(&mut self, items: &Value) -> VarArray {
+    /// `handle_list_property`: a list property's items, typed. `refs`: `None` for the target's
+    /// geometry in place of an object item, else it gets (array, index, id) of every object
+    /// item, whose placeholder `NodePath()` `resolve_object_refs` replaces.
+    fn list_value(
+        &mut self,
+        items: &Value,
+        mut refs: Option<&mut Vec<(VarArray, usize, i64)>>,
+    ) -> VarArray {
         let mut out = VarArray::new();
         let Value::Array(items) = items else {
             return out;
@@ -120,16 +132,22 @@ impl Build<'_> {
                 .map(gd_str)
                 .unwrap_or_else(|| "string".into());
             let val = item.get("value").cloned().unwrap_or(Value::Null);
+            let id = || match &val {
+                Value::Int(i) => *i,
+                Value::Float(f) => *f as i64,
+                Value::String(s) => to_int(s),
+                _ => 0,
+            };
             if ty == "list" {
-                out.push(&self.list_value(&val).to_variant());
+                let inner = self.list_value(&val, refs.as_deref_mut());
+                out.push(&inner.to_variant());
+            } else if ty == "object" && refs.is_some() {
+                if let Some(r) = refs.as_mut() {
+                    r.push((out.clone(), out.len(), id()));
+                }
+                out.push(&NodePath::default().to_variant());
             } else if ty == "object" {
-                let id = match &val {
-                    Value::Int(i) => *i,
-                    Value::Float(f) => *f as i64,
-                    Value::String(s) => to_int(s),
-                    _ => 0,
-                };
-                match self.object_polygon(id) {
+                match self.object_polygon(id()) {
                     Some(v) => out.push(&v),
                     None => out.push(&typed_value(&ty, &gd_str(&val))),
                 }
@@ -164,11 +182,32 @@ impl Build<'_> {
         let k = Kind::of(node);
         let body = k.sb || k.area || k.cb || k.rb || k.ab;
         let has_children = body && node.get_child_count() > 0;
+        // First pass: the script, so that its variables exist when the other properties are
+        // assigned (F1)
+        for p in props {
+            let ty = p.kind.as_str();
+            if p.name.len() != 12 || p.name.to_lowercase() != "godot_script" {
+                continue;
+            }
+            if ty == "file" || ty == "string" {
+                let val = p.val();
+                let mut path = val.clone();
+                if ty == "file" && !is_absolute_path(&val) {
+                    path = cleanup_path(&format!("{}/{}", file_base.replace("res://", ""), val));
+                }
+                let script = ResourceLoader::singleton().load(path.as_str());
+                node.set("script", &script.to_variant());
+                self.scripts_set += 1;
+            }
+        }
+        let geometry = self.object_refs == "geometry";
+        let mut assignable = None;
         for p in props {
             let name = p.name.as_str();
             let ty = p.kind.as_str();
             let is_class_dict = ty == "class" && p.value.as_ref().is_none_or(PV::is_dict);
             let mut list_val = VarArray::new();
+            let mut list_refs: Vec<(VarArray, usize, i64)> = Vec::new();
             let mut val = String::new();
             if ty == "list" {
                 let items = p
@@ -177,7 +216,8 @@ impl Build<'_> {
                     .and_then(PV::core)
                     .cloned()
                     .unwrap_or(Value::Null);
-                list_val = self.list_value(&items);
+                let refs = (!geometry).then_some(&mut list_refs);
+                list_val = self.list_value(&items, refs);
             } else if !is_class_dict {
                 val = p.val();
             }
@@ -185,16 +225,21 @@ impl Build<'_> {
             if name.is_empty() || lname == "godot_node_type" || lname == "res_path" {
                 continue;
             }
+            if lname == "godot_scene" && self.opts.read_godot_scene_from_custom_types {
+                continue;
+            }
             if name.starts_with("__") && has_children {
-                let forwarded = GProp {
-                    name: name.chars().skip(2).collect(),
-                    kind: p.kind.clone(),
-                    value: if ty == "list" || is_class_dict {
+                let mut forwarded = GProp::new(
+                    name.chars().skip(2).collect(),
+                    p.kind.clone(),
+                    if ty == "list" || is_class_dict {
                         p.value.clone()
                     } else {
                         Some(PV::Str(val.clone()))
                     },
-                };
+                );
+                // The enum of a mask property goes with it (F5)
+                forwarded.propertytype = p.propertytype.clone();
                 for mut child in node.get_children().iter_shared() {
                     self.handle_properties(&mut child, std::slice::from_ref(&forwarded), base_dir);
                 }
@@ -206,6 +251,8 @@ impl Build<'_> {
             let fv = || to_float(&val) as f32;
             let color = || property_color(ty, &val);
             let sc = ty == "string" || ty == "color";
+            // A layer mask: layer numbers, an int, or a flags enum's value names (F5)
+            let mask = ty == "string" || ty == "int";
 
             // Node properties
             if lname == "godot_group" && ty == "string" {
@@ -213,12 +260,7 @@ impl Build<'_> {
                     node.add_to_group_ex(g.trim()).persistent(true).done();
                 }
             } else if lname == "godot_script" && (ty == "file" || ty == "string") {
-                let mut path = val.clone();
-                if ty == "file" && !is_absolute_path(&val) {
-                    path = cleanup_path(&format!("{}/{}", file_base.replace("res://", ""), val));
-                }
-                let script = ResourceLoader::singleton().load(path.as_str());
-                node.set("script", &script.to_variant());
+                // Set in the first pass above
             }
             // CanvasItem properties
             else if lname == "modulate" && sc {
@@ -233,10 +275,12 @@ impl Build<'_> {
                 if i() < 3 {
                     set(node, "clip_children", i().to_variant());
                 }
-            } else if lname == "light_mask" && ty == "string" {
-                set(node, "light_mask", bitmask(&val, 20).to_variant());
-            } else if lname == "visibility_layer" && ty == "string" {
-                set(node, "visibility_layer", bitmask(&val, 20).to_variant());
+            } else if lname == "light_mask" && mask {
+                let m = self.mask(p, 20);
+                set(node, "light_mask", m.to_variant());
+            } else if lname == "visibility_layer" && mask {
+                let m = self.mask(p, 20);
+                set(node, "visibility_layer", m.to_variant());
             } else if lname == "z_index" && ty == "int" {
                 set(node, "z_index", i().to_variant());
             } else if lname == "z_as_relative" && ty == "bool" {
@@ -304,10 +348,12 @@ impl Build<'_> {
                 if i() < 3 {
                     set(node, "disable_mode", i().to_variant());
                 }
-            } else if lname == "collision_layer" && ty == "string" && k.co {
-                set(node, "collision_layer", bitmask(&val, 32).to_variant());
-            } else if lname == "collision_mask" && ty == "string" && k.co {
-                set(node, "collision_mask", bitmask(&val, 32).to_variant());
+            } else if lname == "collision_layer" && mask && k.co {
+                let m = self.mask(p, 32);
+                set(node, "collision_layer", m.to_variant());
+            } else if lname == "collision_mask" && mask && k.co {
+                let m = self.mask(p, 32);
+                set(node, "collision_mask", m.to_variant());
             } else if lname == "collision_priority" && num && k.co {
                 set(node, "collision_priority", fl().to_variant());
             } else if lname == "input_pickable" && ty == "bool" && k.co {
@@ -362,19 +408,20 @@ impl Build<'_> {
                 set(node, "sync_to_physics", b().to_variant());
             }
             // CharacterBody2D properties
-            else if k.cb && self.character_prop(node, &lname, ty, &val) {
+            else if k.cb && self.character_prop(node, &lname, p, &val) {
             }
             // RigidBody2D properties
             else if k.rb && self.rigid_prop(node, &lname, ty, &val, &file_base) {
             }
             // NavigationRegion2D properties
-            else if k.nr && self.navigation_prop(node, &lname, ty, &val, &file_base) {
+            else if k.nr && self.navigation_prop(node, &lname, p, &val, &file_base) {
             }
             // LightOccluder2D properties
             else if lname == "sdf_collision" && ty == "bool" && k.lo {
                 set(node, "sdf_collision", b().to_variant());
-            } else if lname == "occluder_light_mask" && ty == "string" && k.lo {
-                set(node, "occluder_light_mask", bitmask(&val, 20).to_variant());
+            } else if lname == "occluder_light_mask" && mask && k.lo {
+                let m = self.mask(p, 20);
+                set(node, "occluder_light_mask", m.to_variant());
             }
             // Polygon2D, Line2D, Marker2D properties
             else if lname == "color" && sc && k.poly {
@@ -387,27 +434,77 @@ impl Build<'_> {
                 set(node, "gizmo_extents", fl().to_variant());
             }
             // Other properties are added as metadata
-            else {
-                let key = self.sn(name);
-                if ty == "object" {
-                    match self.object_polygon(to_int(&val)) {
-                        Some(v) => node.set_meta(&key, &v),
-                        None => node.set_meta(&key, &typed_value(ty, &val)),
+            else if ty == "object" && !geometry {
+                // A NodePath once every node exists (resolve_object_refs, F2)
+                let id = to_int(&val);
+                self.pending_refs.push(PendingRef {
+                    node: node.clone(),
+                    name: name.to_string(),
+                    what: RefKind::Single(id),
+                });
+                if self.object_refs == "both" {
+                    if let Some(shape) = self.object_polygon(id) {
+                        let key = self.sn(&format!("{name}_shape"));
+                        node.set_meta(&key, &shape);
                     }
-                } else if ty == "list" {
-                    node.set_meta(&key, &list_val.to_variant());
-                } else if is_class_dict {
-                    let v = p
+                }
+            } else if ty == "object" {
+                let key = self.sn(name);
+                match self.object_polygon(to_int(&val)) {
+                    Some(v) => node.set_meta(&key, &v),
+                    None => node.set_meta(&key, &typed_value(ty, &val)),
+                }
+            } else if ty == "list" && !list_refs.is_empty() {
+                self.pending_refs.push(PendingRef {
+                    node: node.clone(),
+                    name: name.to_string(),
+                    what: RefKind::List {
+                        list: list_val,
+                        refs: list_refs,
+                    },
+                });
+                if self.object_refs == "both" {
+                    let items = p
                         .value
                         .as_ref()
+                        .and_then(PV::core)
+                        .cloned()
+                        .unwrap_or(Value::Null);
+                    let shapes = self.list_value(&items, None);
+                    let key = self.sn(&format!("{name}_shape"));
+                    node.set_meta(&key, &shapes.to_variant());
+                }
+            } else {
+                let value = if ty == "list" {
+                    list_val.to_variant()
+                } else if is_class_dict {
+                    p.value
+                        .as_ref()
                         .map(PV::to_variant)
-                        .unwrap_or_else(|| VarDictionary::new().to_variant());
-                    node.set_meta(&key, &v);
+                        .unwrap_or_else(|| VarDictionary::new().to_variant())
                 } else {
-                    node.set_meta(&key, &typed_value(ty, &val));
+                    typed_value(ty, &val)
+                };
+                // Into the node's property of that name when there is one (F1)
+                if self.opts.assign_node_properties && assignable.is_none() {
+                    assignable = Some(self.assignable(node, &k.class));
+                }
+                match assignable.as_ref().and_then(|a| a.get(name)).cloned() {
+                    Some(info) => {
+                        self.set_property_or_meta(node, name, ty, value, &file_base, &info)
+                    }
+                    None => {
+                        let key = self.sn(name);
+                        node.set_meta(&key, &value);
+                    }
                 }
             }
         }
+    }
+
+    /// `CommonUtils.get_mask_value` of a property, with the project's enums (F5).
+    fn mask(&mut self, p: &GProp, max_len: i64) -> i64 {
+        mask_value(p, max_len, &self.enums, &mut self.diag)
     }
 
     /// The numeric Parallax2D properties (vector components and scalars).
@@ -483,8 +580,10 @@ impl Build<'_> {
         true
     }
 
-    fn character_prop(&self, node: &mut Gd<Node>, lname: &str, ty: &str, val: &str) -> bool {
+    fn character_prop(&mut self, node: &mut Gd<Node>, lname: &str, p: &GProp, val: &str) -> bool {
+        let ty = p.kind.as_str();
         let num = ty == "float" || ty == "int";
+        let mask = ty == "string" || ty == "int";
         let b = val.to_lowercase() == "true";
         let i = to_int(val);
         let fl = to_float(val);
@@ -514,18 +613,22 @@ impl Build<'_> {
                     set(node, "platform_on_leave", i.to_variant())
                 }
             }
-            "platform_floor_layers" if ty == "string" => {
-                set(node, "platform_floor_layers", bitmask(val, 32).to_variant())
+            "platform_floor_layers" if mask => {
+                let m = self.mask(p, 32);
+                set(node, "platform_floor_layers", m.to_variant())
             }
-            "platform_wall_layers" if ty == "string" => {
-                set(node, "platform_wall_layers", bitmask(val, 32).to_variant())
+            "platform_wall_layers" if mask => {
+                let m = self.mask(p, 32);
+                set(node, "platform_wall_layers", m.to_variant())
             }
             "safe_margin" if num => set(node, "safe_margin", fl.to_variant()),
-            "collision_layer" if ty == "string" => {
-                set(node, "collision_layer", bitmask(val, 32).to_variant())
+            "collision_layer" if mask => {
+                let m = self.mask(p, 32);
+                set(node, "collision_layer", m.to_variant())
             }
-            "collision_mask" if ty == "string" => {
-                set(node, "collision_mask", bitmask(val, 32).to_variant())
+            "collision_mask" if mask => {
+                let m = self.mask(p, 32);
+                set(node, "collision_mask", m.to_variant())
             }
             "collision_priority" if num => set(node, "collision_priority", fl.to_variant()),
             _ => return false,
@@ -604,11 +707,13 @@ impl Build<'_> {
         &mut self,
         node: &mut Gd<Node>,
         lname: &str,
-        ty: &str,
+        p: &GProp,
         val: &str,
         file_base: &str,
     ) -> bool {
+        let ty = p.kind.as_str();
         let num = ty == "float" || ty == "int";
+        let mask = ty == "string" || ty == "int";
         let b = val.to_lowercase() == "true";
         let i = to_int(val);
         let fl = to_float(val);
@@ -619,8 +724,9 @@ impl Build<'_> {
                 set(node, "navigation_polygon", r.to_variant())
             }
             "enabled" if ty == "bool" => set(node, "enabled", b.to_variant()),
-            "navigation_layers" if ty == "string" => {
-                set(node, "navigation_layers", bitmask(val, 32).to_variant())
+            "navigation_layers" if mask => {
+                let m = self.mask(p, 32);
+                set(node, "navigation_layers", m.to_variant())
             }
             "use_edge_connection" if ty == "bool" => {
                 set(node, "use_edge_connection", b.to_variant())
@@ -635,9 +741,10 @@ impl Build<'_> {
                     }
                 }
             }
-            "parsed_collision_mask" if ty == "string" => {
+            "parsed_collision_mask" if mask => {
                 if let Some(mut np) = nav(node) {
-                    np.set("parsed_collision_mask", &bitmask(val, 32).to_variant());
+                    let m = self.mask(p, 32);
+                    np.set("parsed_collision_mask", &m.to_variant());
                 }
             }
             "source_geometry_mode" if ty == "int" => {

@@ -44,6 +44,26 @@ pub struct TiledImportOptions {
     /// class name of the mapping table, or `node2d`.
     #[var]
     pub unknown_class_fallback: GString,
+    /// What an object property (a reference to another object) becomes: `nodepath` (a NodePath
+    /// from the node to the target object's node, or the node itself for a Node-typed property
+    /// of that name), `geometry` (the target's points, as before 3.1) or `both` (the NodePath,
+    /// and the geometry as metadata `<name>_shape`).
+    #[var]
+    pub object_refs: GString,
+    /// Tiled class name (case-insensitive) -> scene path. Objects and tiles of that class are
+    /// instantiated like class `instance` with `res_path`. Takes precedence over the class
+    /// field mapping (not over a `godot_node_type` property). A relative path is relative to
+    /// the map.
+    #[var]
+    pub class_scenes: VarDictionary,
+    /// Also accept a `godot_scene` (file) member on Tiled custom class types (needs the project
+    /// file).
+    #[var]
+    pub read_godot_scene_from_custom_types: bool,
+    /// Custom properties that match a property on the created node are assigned with `set()`;
+    /// properties that match nothing become metadata (as before). Off: the old behaviour.
+    #[var]
+    pub assign_node_properties: bool,
     base: Base<Resource>,
 }
 
@@ -63,6 +83,10 @@ impl IResource for TiledImportOptions {
             animation_mode: GString::from(d.animation_mode.as_str()),
             always_wrap_root: d.always_wrap_root,
             unknown_class_fallback: GString::from(d.unknown_class_fallback.as_str()),
+            object_refs: GString::from(d.object_refs.as_str()),
+            class_scenes: VarDictionary::new(),
+            read_godot_scene_from_custom_types: d.read_godot_scene_from_custom_types,
+            assign_node_properties: d.assign_node_properties,
             base,
         }
     }
@@ -86,6 +110,20 @@ impl TiledImportOptions {
             animation_mode: self.animation_mode.to_string(),
             always_wrap_root: self.always_wrap_root,
             unknown_class_fallback: self.unknown_class_fallback.to_string(),
+            object_refs: self.object_refs.to_string(),
+            // `set_class_scenes`: keys in lower case, both sides as `str()` prints them
+            class_scenes: self
+                .class_scenes
+                .iter_shared()
+                .map(|(k, v)| {
+                    (
+                        k.stringify().to_string().to_lowercase(),
+                        v.stringify().to_string(),
+                    )
+                })
+                .collect(),
+            read_godot_scene_from_custom_types: self.read_godot_scene_from_custom_types,
+            assign_node_properties: self.assign_node_properties,
         }
     }
 }
@@ -104,6 +142,23 @@ pub struct Options {
     pub animation_mode: String,
     pub always_wrap_root: bool,
     pub unknown_class_fallback: String,
+    pub object_refs: String,
+    /// `class_scenes`, its keys in lower case, in the dictionary's order.
+    pub class_scenes: Vec<(String, String)>,
+    pub read_godot_scene_from_custom_types: bool,
+    pub assign_node_properties: bool,
+}
+
+impl Options {
+    /// The scene `class_scenes` maps a class to (compared in lower case), if any.
+    pub fn class_scene(&self, class: &str) -> Option<&str> {
+        let lower = class.to_lowercase();
+        self.class_scenes
+            .iter()
+            .rev() // a later key wins, as in a Dictionary filled in order
+            .find(|(k, _)| *k == lower)
+            .map(|(_, v)| v.as_str())
+    }
 }
 
 impl Default for Options {
@@ -120,6 +175,10 @@ impl Default for Options {
             animation_mode: "strip".to_string(),
             always_wrap_root: false,
             unknown_class_fallback: "staticbody".to_string(),
+            object_refs: "nodepath".to_string(),
+            class_scenes: Vec::new(),
+            read_godot_scene_from_custom_types: true,
+            assign_node_properties: true,
         }
     }
 }

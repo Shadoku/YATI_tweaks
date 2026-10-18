@@ -67,9 +67,6 @@ jobs:
 
       # The same suite against the native importer's facade (stage 2's gate).
       - name: Test the native importer's facade
-        # Informational again until stage 2b (docs/native-importer-plan.md, section 7) teaches the
-        # builder the improvement plan's part B (F1, F2, F3, F5: 13 tests); required from then on.
-        continue-on-error: true
         run: '"$GODOT" --headless -s test/run_tests.gd -- --runtime=res://addons/yati_native'
 
       # No leaks over 20 rounds of every fixture, the small map's time, the engine's floor
