@@ -61,6 +61,7 @@ they apply to every following call on that instance. See the [Reference](Referen
 | `custom_data_prefix` | String | `"data_"` | Tile properties with this name prefix become TileSet custom data layers |
 | `save_tileset_to` | String | `""` | If set, the generated TileSet is saved to this resource path |
 | `parallax_mode` | String | `"parallax2d"` | Layers with a parallax factor: `"parallax2d"` wraps each in a Parallax2D at its place in the hierarchy; `"legacy"` moves them into one ParallaxBackground (ParallaxLayers), as before 3.1 |
+| `animation_mode` | String | `"strip"` | Tile animations: `"strip"` gives each animated tile an atlas of its frames in their order (any sequence); `"atlas"` animates in the tileset's atlas as before 3.1 (only frames that follow the tile at equal steps) |
 | `unknown_class_fallback` | String | `"staticbody"` | What an object whose class is no Godot node type becomes: `"staticbody"`, another class of the mapping table (e.g. `"area"`) or `"node2d"` (a Node2D with the shape as metadata) |
 
 ```gdscript

@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in a `Parallax2D` at its place in the hierarchy, its `scroll_offset` derived from the map's parallax
   origin (`parallaxoriginx` / `parallaxoriginy`, unused until now) and factors of nested parallax groups
   multiplied as in Tiled; `"legacy"` keeps the ParallaxBackground of 3.0.
+- B9: importer option `animation_mode`: `"strip"` (the default) composes each animated tile's frames,
+  in the animation's order, into an atlas source of its own (any frame sequence, image collection tiles
+  too) carrying the tile's data; `"atlas"` animates in the tileset's atlas as before. Tile objects of
+  animated tiles become an `AnimatedSprite2D` (looping animation `"default"`, autoplay) in both modes.
+  (The plan's per-(tileset, tile) strip cache belongs to F4's tileset cache, which the GDScript runtime
+  does not get; each import composes its strips once.)
 
 ### Changed
 - `test/run_tests.gd` checks that a runtime has `DataLoader.gd` / `CommonUtils.gd` before loading them,
@@ -52,6 +58,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   around each parallax layer where the layer is, and the background colour stays a child of the root.
   Set `parallax_mode = "legacy"` for the 3.0 tree. Layers of class `parallax` take the parallax origin
   and their offset into `scroll_offset`.
+- B9: with the new default `animation_mode = "strip"` an animated tile's cells use a strip atlas source
+  (source ids after the tilesets' own, atlas coords `(0, 0)`) instead of the tile in the tileset's atlas,
+  which keeps no animation; `animation_mode = "atlas"` gives the 3.0 result.
 
 ### Fixed
 - B5 (`docs/runtime-improvement-plan.md`): the Area2D gravity properties were misspelt in
@@ -84,6 +93,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CanvasLayer at -100): its groups' offset, opacity and visibility were lost, a foreground factor > 1
   drew behind everything, and the map background colour was moved along (fixed by the new default
   `parallax_mode`).
+- B9: tile animations: frame 0 was taken to be the animated tile itself (tile 0 with frames 1, 2 showed
+  0 -> 1); a sequence the atlas can't show (ping-pong 8, 9, 10, 9) printed "Skipped" after the first
+  frames had been set up, leaving a partial animation; an animation without room for all frames was cut
+  short; image collection animations did not work; tile objects of animated tiles were static Sprite2Ds.
+  In `"atlas"` mode the sequence is now validated before the atlas is touched, and an animation that does
+  not start with its tile, or belongs to an image collection, falls back to a strip with a warning.
 
 ## [3.0.0] — runtime-only fork (2026-10-17)
 

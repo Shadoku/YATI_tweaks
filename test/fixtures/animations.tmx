@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- B9: tile animations the atlas can't show (first frame not the tile, ping-pong), one it can
+     (with collision and properties), one of an image collection, animated tile objects. -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="4" height="4" tilewidth="16" tileheight="16" infinite="0" nextlayerid="3" nextobjectid="3">
+ <tileset firstgid="1" name="anim" tilewidth="16" tileheight="16" tilecount="32" columns="8">
+  <image source="tiles.png" width="128" height="64"/>
+  <tile id="0">
+   <animation>
+    <frame tileid="1" duration="100"/>
+    <frame tileid="2" duration="200"/>
+   </animation>
+  </tile>
+  <tile id="8">
+   <animation>
+    <frame tileid="8" duration="100"/>
+    <frame tileid="9" duration="100"/>
+    <frame tileid="10" duration="100"/>
+    <frame tileid="9" duration="100"/>
+   </animation>
+  </tile>
+  <tile id="16">
+   <properties>
+    <property name="kind" value="lava"/>
+    <property name="data_damage" type="int" value="5"/>
+   </properties>
+   <objectgroup draworder="index" id="2">
+    <object id="1" name="Hot" x="0" y="8" width="16" height="8"/>
+   </objectgroup>
+   <animation>
+    <frame tileid="16" duration="100"/>
+    <frame tileid="17" duration="100"/>
+    <frame tileid="18" duration="100"/>
+   </animation>
+  </tile>
+ </tileset>
+ <tileset firstgid="33" name="pictures" tilewidth="16" tileheight="16" tilecount="2" columns="0">
+  <grid orientation="orthogonal" width="1" height="1"/>
+  <tile id="0">
+   <image source="small.png" width="16" height="16"/>
+   <animation>
+    <frame tileid="0" duration="250"/>
+    <frame tileid="1" duration="250"/>
+   </animation>
+  </tile>
+  <tile id="1">
+   <image source="obj.png" width="16" height="16"/>
+  </tile>
+ </tileset>
+ <layer id="1" name="Tiles" width="4" height="4">
+  <data encoding="csv">
+1,9,17,33,
+0,0,0,0,
+0,0,0,0,
+0,0,0,0
+</data>
+ </layer>
+ <objectgroup id="2" name="Objects">
+  <object id="1" name="Lava" gid="17" x="0" y="48" width="16" height="16"/>
+  <object id="2" name="LavaWall" class="staticbody" gid="17" x="32" y="48" width="32" height="32"/>
+ </objectgroup>
+</map>

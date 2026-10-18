@@ -98,6 +98,7 @@ var _custom_data_prefix: String = ""
 var _tileset_save_path: String = ""
 var _object_groups
 var _parallax_mode: String = "parallax2d"
+var _animation_mode: String = "strip"
 var _parallax_scale := Vector2.ONE			# parallax2d mode: product of the enclosing groups' parallax factors
 var _unknown_class_fallback: String = "staticbody"
 var _unknown_class_type = _godot_type.BODY
@@ -203,6 +204,11 @@ func set_parallax_mode(value: String):
 		_parallax_mode = "parallax2d"
 
 
+# How tile animations are created: "strip" or "atlas" (see TilesetCreator.set_animation_mode)
+func set_animation_mode(value: String):
+	_animation_mode = value
+
+
 # What objects of an unknown class become: a GODOT_TYPE_MAP key (except instance/parallax) or "node2d"
 func set_unknown_class_fallback(value: String):
 	_unknown_class_fallback = value.to_lower()
@@ -281,6 +287,7 @@ func create(source_file: String):
 		if _map_wangset_to_terrain:
 			tileset_creator.map_wangset_to_terrain()
 		tileset_creator.set_custom_data_prefix(_custom_data_prefix)
+		tileset_creator.set_animation_mode(_animation_mode)
 		_tileset = tileset_creator.create_from_dictionary_array(tilesets)
 		_atlas_sources = tileset_creator.get_registered_atlas_sources()
 		if _atlas_sources != null:
@@ -1081,6 +1088,8 @@ func load_template(template_file: String) -> Dictionary:
 			tileset_creator.set_map_parameters(Vector2i(_map_tile_width, _map_tile_height))
 			if _map_wangset_to_terrain:
 				tileset_creator.map_wangset_to_terrain()
+			# (an unsupported value was reported by the map's tileset creator already)
+			tileset_creator._animation_mode = "atlas" if _animation_mode.to_lower() == "atlas" else "strip"
 			entry["tileset"] = tileset_creator.create_from_dictionary_array(tilesets)
 	_template_cache[template_file_full_path] = entry
 	return entry
@@ -1252,6 +1261,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 		obj_sprite.rotation_degrees = obj_rot
 		obj_sprite.visible = obj_visible
 		var td
+		var tile_coords := Vector2i.ZERO
 		if is_partitioned_tileset(source_id):
 			# Object is tile from partitioned tileset 
 			var atlas_width: int = gid_source.get_atlas_grid_size().x
@@ -1265,6 +1275,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 			if not gid_source.has_tile(atlas_coords):
 				gid_source.create_tile(atlas_coords)
 			td = gid_source.get_tile_data(atlas_coords, 0)
+			tile_coords = Vector2i(atlas_coords)
 			obj_sprite.region_enabled = true
 			var region_size = Vector2(gid_source.texture_region_size)
 			var separation = Vector2(gid_source.separation)
@@ -1348,6 +1359,14 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				if obj.has("properties"):
 					handle_properties(instance, obj["properties"])
 			return
+
+		# An animated tile is shown animated
+		if gid_source.get_tile_animation_frames_count(tile_coords) > 1:
+			if get_property(obj, "clip_artifacts", "bool") == "true":
+				print_rich("[color=" + WARNING_COLOR + "] -- Tile object '" + str(obj_sprite.name) + "': 'clip_artifacts' needs a Sprite2D region. -> Not animated[/color]")
+				CommonUtils.warning_count += 1
+			else:
+				obj_sprite = replace_with_animated_sprite(obj_sprite, gid_source, tile_coords, layer_node)
 
 		# Tile objects may already have been classified as ...body in the tileset
 		if tile_class != "" and godot_type == _godot_type.EMPTY:
@@ -1726,6 +1745,40 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 						handle_properties(polygon, obj["properties"])	
 
 
+# Replaces a tile object's Sprite2D (already in layer_node) by an AnimatedSprite2D playing the tile's
+# animation: one animation "default" (looped, autoplay) with a frame per animation frame and its duration.
+func replace_with_animated_sprite(sprite: Sprite2D, source: TileSetAtlasSource, coords: Vector2i, layer_node: Node) -> AnimatedSprite2D:
+	var frames := SpriteFrames.new()
+	frames.set_animation_speed("default", 1.0)
+	frames.set_animation_loop("default", true)
+	for i in range(source.get_tile_animation_frames_count(coords)):
+		var tex := AtlasTexture.new()
+		tex.atlas = source.texture
+		tex.region = Rect2(source.get_tile_texture_region(coords, i))
+		# With an animation speed of 1 fps a frame's relative duration is its duration in seconds
+		frames.add_frame("default", tex, source.get_tile_animation_frame_duration(coords, i))
+	var anim := AnimatedSprite2D.new()
+	anim.sprite_frames = frames
+	anim.animation = "default"
+	anim.autoplay = "default"
+	anim.position = sprite.position
+	anim.rotation_degrees = sprite.rotation_degrees
+	anim.scale = sprite.scale
+	anim.offset = sprite.offset
+	anim.centered = sprite.centered
+	anim.visible = sprite.visible
+	var sprite_name := sprite.name
+	var index := sprite.get_index()
+	sprite.owner = null
+	layer_node.remove_child(sprite)
+	sprite.free()
+	layer_node.add_child(anim)
+	layer_node.move_child(anim, index)
+	anim.owner = _base_node
+	anim.name = sprite_name
+	return anim
+
+
 # A shape object of an unknown class with unknown_class_fallback "node2d": a Node2D at the object's
 # position and rotation, the shape as metadata "shape" in object coordinates (Rect2 for a rectangle,
 # and the bounds of an ellipse or capsule; PackedVector2Array for a polygon or polyline) and "size".
@@ -2042,9 +2095,16 @@ func get_atlas_source_index(gid: int) -> int:
 
 
 func find_atlas_source_index(gid: int) -> int:
-	var idx = -1
 	if _atlas_sources == null:
 		return -1
+	var tileset_first_gid: int = _first_gids[get_first_gid_index(gid)] if not _first_gids.is_empty() else -1
+	# Animation strips first: a strip stands in for its tile in the tileset's atlas or image collection
+	var idx = -1
+	for src in _atlas_sources:
+		idx += 1
+		if src.get("isStrip", false) and gid - int(src["firstGid"]) == int(src["assignedId"]) and int(src["firstGid"]) == tileset_first_gid:
+			return idx
+	idx = -1
 	for src in _atlas_sources:
 		idx += 1
 		var first_gid: int = src["firstGid"]
@@ -2052,14 +2112,13 @@ func find_atlas_source_index(gid: int) -> int:
 		var assigned_id: int = src["assignedId"]
 		if assigned_id < 0:
 			var limit: int = src["numTiles"]
-			if effective_gid <= limit and first_gid == _first_gids[get_first_gid_index(gid)]:
+			if effective_gid <= limit and first_gid == tileset_first_gid:
 				return idx
 		elif effective_gid == (assigned_id + 1):
 			return idx
-		
 	return -1
-	
-	
+
+
 func get_matching_source_id(gid: int):
 	var idx = get_atlas_source_index(gid)
 	if idx < 0:

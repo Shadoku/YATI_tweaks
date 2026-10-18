@@ -87,6 +87,9 @@ var _current_first_gid = -1
 var _has_transparent_color: bool = false
 var _current_shader_material: ShaderMaterial = null
 var _godot_version: int = Engine.get_version_info()["hex"]
+var _animation_mode: String = "strip"
+var _collection_tiles: Dictionary = {}	# tile id -> TileSetAtlasSource of the current image collection tileset
+var _pending_strips: Array = []			# animations composed into strip atlases once every tileset is done
 
 
 enum layer_type {
@@ -115,6 +118,16 @@ func map_wangset_to_terrain():
 
 func set_custom_data_prefix(value: String):
 	_custom_data_prefix = value
+
+
+# How tile animations are created: "strip" (each animation gets an atlas of its frames in order) or
+# "atlas" (Godot's animation in the tileset's own atlas, where the frame layout allows it)
+func set_animation_mode(value: String):
+	_animation_mode = value.to_lower()
+	if _animation_mode != "strip" and _animation_mode != "atlas":
+		print_rich("[color="+WARNING_COLOR+"] -- Option animation_mode '" + value + "' is not supported. -> Using 'strip'[/color]")
+		CommonUtils.warning_count += 1
+		_animation_mode = "strip"
 
 
 func create_from_dictionary_array(tileSets: Array):
@@ -148,6 +161,9 @@ func create_from_dictionary_array(tileSets: Array):
 		create_or_append(tile_set_dict)
 		_append = true
 
+	# After all tilesets: strip atlases get source ids after the tilesets' own, and see the final
+	# tile data (collision, properties, terrains) of the tiles they animate
+	create_animation_strips()
 	return _tileset
 
 
@@ -199,6 +215,7 @@ func create_or_append(tile_set: Dictionary):
 
 	if _append:
 		_terrain_counter = 0
+	_collection_tiles = {}
 
 	if tile_set.has("transparentcolor"):
 		_has_transparent_color = true
@@ -341,6 +358,7 @@ func handle_tiles(tiles: Array):
 			_current_atlas_source = TileSetAtlasSource.new()
 			var added_source_id = _tileset.add_source(_current_atlas_source, get_special_property(tile, GODOT_ATLAS_ID_PROPERTY))
 			register_atlas_source(added_source_id, 1, tile_id, _tile_offset)
+			_collection_tiles[tile_id] = _current_atlas_source
 			_current_atlas_source.texture = tile_texture
 
 			_current_atlas_source.resource_name = texture_path.get_file().get_basename()
@@ -404,59 +422,202 @@ func handle_tiles(tiles: Array):
 
 
 func handle_animation(frames: Array, tile_id: int) -> void:
-	var frame_count: int = 0
-	var separation_x: int = 0
-	var separation_y: int = 0
-	var separation_vect = Vector2(separation_x, separation_y)
-	var anim_columns: int = 0
+	if frames.is_empty(): return
+	if _animation_mode == "strip":
+		queue_animation_strip(frames, tile_id)
+		return
+	# "atlas" mode: Godot animates a tile through the atlas cells following it, so the first frame
+	# must be the tile itself and the frames equidistant in a row or column
+	if _collection_tiles.has(tile_id) or _columns <= 0:
+		print_rich("[color="+WARNING_COLOR+"] -- Animated tile " + str(tile_id) + " of an image collection has no atlas to animate in. -> Using a strip[/color]")
+		CommonUtils.warning_count += 1
+		queue_animation_strip(frames, tile_id)
+		return
+	if int(frames[0]["tileid"]) != tile_id:
+		print_rich("[color="+WARNING_COLOR+"] -- Animated tile " + str(tile_id) + ": the first frame (tile " + str(frames[0]["tileid"]) + ") is not the tile itself. -> Using a strip[/color]")
+		CommonUtils.warning_count += 1
+		queue_animation_strip(frames, tile_id)
+		return
+
 	@warning_ignore("integer_division")
-	var tile_coords = Vector2(tile_id % _columns, tile_id / _columns)
+	var tile_coords = Vector2i(tile_id % _columns, tile_id / _columns)
 	var max_diff_x = _columns - tile_coords.x
 	@warning_ignore("integer_division")
 	var max_diff_y = _tile_count / _columns - tile_coords.y
-	var diff_x = 0
-	var diff_y = 0
-	for frame in frames:
-		frame_count += 1
-		var frame_tile_id: int = frame["tileid"]
-		if frame_count == 2:
-			diff_x = (frame_tile_id - tile_id) % _columns
-			@warning_ignore("integer_division")
-			diff_y = (frame_tile_id - tile_id) / _columns
-			if diff_x == 0 and diff_y > 0 and diff_y < max_diff_y:
-				separation_y = diff_y - 1
-				anim_columns = 1
-			elif diff_y == 0 and diff_x > 0 and diff_x < max_diff_x:
-				separation_x = diff_x - 1
-				anim_columns = 0
-			else:
-				print_rich("[color="+WARNING_COLOR+"] -- Animated tile " + str(tile_id) + ": Succession of tiles not supported in Godot 4. -> Skipped[/color]")
-				CommonUtils.warning_count += 1
-				return
-			separation_vect = Vector2(separation_x, separation_y)
-
-		if frame_count > 1 and frame_count < frames.size():
-			var next_frame_tile_id: int = frames[frame_count]["tileid"]
-			var compare_diff_x = (next_frame_tile_id - frame_tile_id) % _columns
-			@warning_ignore("integer_division")
-			var compare_diff_y = (next_frame_tile_id - frame_tile_id) / _columns
-			if compare_diff_x != diff_x or compare_diff_y != diff_y:
-				print_rich("[color="+WARNING_COLOR+"] -- Animated tile " + str(tile_id) + ": Succession of tiles not supported in Godot 4. -> Skipped[/color]")
-				CommonUtils.warning_count += 1
-				return
-
-		if _current_atlas_source.has_room_for_tile(tile_coords, Vector2.ONE, anim_columns, separation_vect, frame_count, tile_coords):
-			_current_atlas_source.set_tile_animation_separation(tile_coords, separation_vect)
-			_current_atlas_source.set_tile_animation_columns(tile_coords, anim_columns)
-			_current_atlas_source.set_tile_animation_frames_count(tile_coords, frame_count)
-			var duration_in_secs = 1.0
-			if "duration" in frame:
-				duration_in_secs = float(frame["duration"]) / 1000.0
-			_current_atlas_source.set_tile_animation_frame_duration(tile_coords, frame_count-1, duration_in_secs)
-		else:
-			print_rich("[color="+WARNING_COLOR+"] -- TileId " + str(tile_id) +": Not enough room for all animation frames, could only set " + str(frame_count) + " frames.[/color]")
+	var separation_vect := Vector2i.ZERO
+	var anim_columns: int = 0
+	# The whole sequence is validated before the atlas source is touched
+	if frames.size() > 1:
+		var step: int = int(frames[1]["tileid"]) - tile_id
+		var diff_x = step % _columns
+		@warning_ignore("integer_division")
+		var diff_y = step / _columns
+		var valid := false
+		if diff_x == 0 and diff_y > 0 and diff_y < max_diff_y:
+			separation_vect = Vector2i(0, diff_y - 1)
+			anim_columns = 1
+			valid = true
+		elif diff_y == 0 and diff_x > 0 and diff_x < max_diff_x:
+			separation_vect = Vector2i(diff_x - 1, 0)
+			anim_columns = 0
+			valid = true
+		for i in range(1, frames.size()):
+			if int(frames[i]["tileid"]) - int(frames[i - 1]["tileid"]) != step:
+				valid = false
+		if not valid:
+			print_rich("[color="+WARNING_COLOR+"] -- Animated tile " + str(tile_id) + ": Succession of tiles not supported in Godot 4 (use animation_mode 'strip'). -> Skipped[/color]")
 			CommonUtils.warning_count += 1
-			break
+			return
+	if not _current_atlas_source.has_room_for_tile(tile_coords, Vector2i.ONE, anim_columns, separation_vect, frames.size(), tile_coords):
+		print_rich("[color="+WARNING_COLOR+"] -- TileId " + str(tile_id) + ": Not enough room for all " + str(frames.size()) + " animation frames (use animation_mode 'strip'). -> Skipped[/color]")
+		CommonUtils.warning_count += 1
+		return
+	_current_atlas_source.set_tile_animation_separation(tile_coords, separation_vect)
+	_current_atlas_source.set_tile_animation_columns(tile_coords, anim_columns)
+	_current_atlas_source.set_tile_animation_frames_count(tile_coords, frames.size())
+	for i in range(frames.size()):
+		_current_atlas_source.set_tile_animation_frame_duration(tile_coords, i, get_frame_duration(frames[i]))
+
+
+static func get_frame_duration(frame: Dictionary) -> float:
+	if frame.has("duration"):
+		return float(frame["duration"]) / 1000.0
+	return 1.0
+
+
+# Remembers an animation for create_animation_strips(), with what it needs of the current tileset
+func queue_animation_strip(frames: Array, tile_id: int) -> void:
+	var item := {}
+	item["tileId"] = tile_id
+	item["frames"] = frames
+	item["collection"] = _collection_tiles		# per tileset: frames may name tiles that come later
+	item["atlasSource"] = _current_atlas_source if not _collection_tiles.has(tile_id) else null
+	item["columns"] = _columns
+	item["tileCount"] = _tile_count
+	item["tileOffset"] = _tile_offset
+	item["tilesetOrientation"] = _tileset_orientation
+	item["objectAlignment"] = _object_alignment
+	item["firstGid"] = _current_first_gid
+	item["shaderMaterial"] = _current_shader_material
+	_pending_strips.append(item)
+
+
+# The atlas source and coordinates of a tile id of a queued animation's tileset (null if unknown)
+static func get_strip_frame_tile(item: Dictionary, tile_id: int):
+	var collection: Dictionary = item["collection"]
+	if collection.has(tile_id):
+		return [collection[tile_id], Vector2i.ZERO]
+	var source = item["atlasSource"]
+	var columns: int = item["columns"]
+	if source == null or columns <= 0 or tile_id < 0 or tile_id >= int(item["tileCount"]):
+		return null
+	@warning_ignore("integer_division")
+	return [source, Vector2i(tile_id % columns, tile_id / columns)]
+
+
+static func get_rgba_image(texture: Texture2D, cache: Dictionary):
+	if cache.has(texture):
+		return cache[texture]
+	var img: Image = texture.get_image() if texture != null else null
+	if img != null:
+		if img.is_compressed():
+			img.decompress()
+		if img.get_format() != Image.FORMAT_RGBA8:
+			img.convert(Image.FORMAT_RGBA8)
+	cache[texture] = img
+	return img
+
+
+# "strip" animations: each animated tile gets an atlas source holding its frames in a row, in the
+# animation's order (any tiles, repeats allowed), one tile animated over them with the frame
+# durations. The animated tile's data is copied onto it and gid lookups are redirected to it
+# (a registered source with the tile's id as assignedId, matched before the tileset's atlas).
+func create_animation_strips() -> void:
+	if _tileset == null:
+		_pending_strips.clear()
+		return
+	var images := {}
+	for item in _pending_strips:
+		var tile_id: int = item["tileId"]
+		var frames: Array = item["frames"]
+		var base = get_strip_frame_tile(item, tile_id)
+		if base == null or not base[0].has_tile(base[1]):
+			print_rich("[color="+WARNING_COLOR+"] -- Animated tile " + str(tile_id) + " not found. -> Animation skipped[/color]")
+			CommonUtils.warning_count += 1
+			continue
+		var base_source: TileSetAtlasSource = base[0]
+		var regions := []
+		var frame_size := Vector2i.ZERO
+		var failed := ""
+		for frame in frames:
+			var ft = get_strip_frame_tile(item, int(frame["tileid"]))
+			if ft == null:
+				failed = "frame tile " + str(frame["tileid"]) + " does not exist"
+				break
+			var img = get_rgba_image(ft[0].texture, images)
+			if img == null:
+				failed = "the image of frame tile " + str(frame["tileid"]) + " can't be read"
+				break
+			var fs: TileSetAtlasSource = ft[0]
+			# Computed: get_tile_texture_region() needs the tile to exist, frames need not
+			var region := Rect2i(fs.margins + ft[1] * (fs.texture_region_size + fs.separation), fs.texture_region_size)
+			if frame_size == Vector2i.ZERO:
+				frame_size = region.size
+			elif region.size != frame_size:
+				failed = "the frames differ in size"
+				break
+			regions.append([img, region])
+		if failed == "" and frame_size.x <= 0:
+			failed = "the frames are empty"
+		if failed != "":
+			print_rich("[color="+WARNING_COLOR+"] -- Animated tile " + str(tile_id) + ": " + failed + ". -> Animation skipped[/color]")
+			CommonUtils.warning_count += 1
+			continue
+
+		var strip := Image.create(frame_size.x * frames.size(), frame_size.y, false, Image.FORMAT_RGBA8)
+		for i in range(regions.size()):
+			strip.blit_rect(regions[i][0], regions[i][1], Vector2i(i * frame_size.x, 0))
+		var strip_source := TileSetAtlasSource.new()
+		strip_source.texture = ImageTexture.create_from_image(strip)
+		strip_source.texture_region_size = frame_size
+		var base_name: String = base_source.resource_name
+		if base_name == "" and base_source.texture != null:
+			base_name = base_source.texture.resource_path.get_file().get_basename()
+		strip_source.resource_name = base_name
+		var strip_id: int = _tileset.add_source(strip_source)
+		strip_source.create_tile(Vector2i.ZERO)
+		copy_tile_data(base_source.get_tile_data(base[1], 0), strip_source.get_tile_data(Vector2i.ZERO, 0))
+		strip_source.set_tile_animation_columns(Vector2i.ZERO, 0)
+		strip_source.set_tile_animation_frames_count(Vector2i.ZERO, frames.size())
+		for i in range(frames.size()):
+			strip_source.set_tile_animation_frame_duration(Vector2i.ZERO, i, get_frame_duration(frames[i]))
+
+		if _atlas_sources == null:
+			_atlas_sources = []
+		var atlas_source_item = {}
+		atlas_source_item["sourceId"] = strip_id
+		atlas_source_item["numTiles"] = 1
+		atlas_source_item["assignedId"] = tile_id
+		atlas_source_item["tileOffset"] = item["tileOffset"]
+		atlas_source_item["tilesetOrientation"] = item["tilesetOrientation"]
+		atlas_source_item["objectAlignment"] = item["objectAlignment"]
+		atlas_source_item["firstGid"] = item["firstGid"]
+		atlas_source_item["shaderMaterial"] = item["shaderMaterial"]
+		atlas_source_item["isStrip"] = true
+		_atlas_sources.push_back(atlas_source_item)
+	_pending_strips.clear()
+
+
+# Copies everything stored in a TileData (collision, navigation and occlusion polygons, custom data,
+# terrains, texture origin, material, probability ...) and its metadata onto another of the same TileSet
+static func copy_tile_data(from: TileData, to: TileData) -> void:
+	for prop in from.get_property_list():
+		if not (prop["usage"] & PROPERTY_USAGE_STORAGE): continue
+		var prop_name: String = prop["name"]
+		if prop_name == "script" or prop_name.begins_with("metadata/"): continue
+		to.set(prop_name, from.get(prop_name))
+	for meta_name in from.get_meta_list():
+		to.set_meta(meta_name, from.get_meta(meta_name))
 
 
 func handle_objectgroup(object_group: Dictionary, current_tile: TileData, tile_id: int):

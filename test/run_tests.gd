@@ -492,7 +492,8 @@ func test_hexagonal_map() -> bool:
 # Tilesets (tilesets.tmx)
 
 func test_tileset_sources() -> bool:
-	var n := _import("tilesets.tmx")
+	# animation_mode "atlas": no strip source for the animated tile (B9 made "strip" the default)
+	var n := _import("tilesets.tmx", {"animation_mode": "atlas"})
 	var ts := tileset_of(n, "Main")
 	if ts == null: return done()
 	eq(ts.get_source_count(), 5, "source count (1 atlas + 1 embedded + 3 image collection)")
@@ -516,7 +517,7 @@ func test_tileset_sources() -> bool:
 
 
 func test_tileset_main_layer_cells() -> bool:
-	var n := _import("tilesets.tmx")
+	var n := _import("tilesets.tmx", {"animation_mode": "atlas"})
 	var l := layer(n, "Main")
 	if l == null: return done()
 	eq(l.get_used_cells().size(), 15, "used cells")
@@ -584,7 +585,7 @@ func test_tile_probability() -> bool:
 
 
 func test_tile_animation() -> bool:
-	var src := atlas(tileset_of(_import("tilesets.tmx"), "Main"), 0)
+	var src := atlas(tileset_of(_import("tilesets.tmx", {"animation_mode": "atlas"}), "Main"), 0)
 	if src == null: return done()
 	var c := Vector2i(4, 0)
 	eq(src.get_tile_animation_frames_count(c), 3, "frame count")
@@ -1548,6 +1549,116 @@ func test_new_parallax_mode_legacy() -> bool:
 			eq(pl.motion_scale, Vector2(1.2, 1), "Fg motion_scale")
 			is_type(pl.get_node_or_null("Fg"), "TileMapLayer", "Fg (PL)/Fg")
 		is_type(pbg.get_node_or_null("Background Color"), "ColorRect", "background colour in the ParallaxBackground")
+	return done()
+
+
+## The pixels of one frame of a tile animation, and of an atlas tile, for comparisons
+func _frame_pixels(src: TileSetAtlasSource, coords: Vector2i, frame: int) -> PackedByteArray:
+	var img := src.texture.get_image()
+	if img.is_compressed(): img.decompress()
+	img.convert(Image.FORMAT_RGBA8)
+	return img.get_region(src.get_tile_texture_region(coords, frame)).get_data()
+
+
+func _tile_pixels(ts: TileSet, source_id: int, coords: Vector2i) -> PackedByteArray:
+	var src := atlas(ts, source_id)
+	if src == null: return PackedByteArray()
+	var img := src.texture.get_image()
+	if img.is_compressed(): img.decompress()
+	img.convert(Image.FORMAT_RGBA8)
+	var region := Rect2i(src.margins + coords * (src.texture_region_size + src.separation), src.texture_region_size)
+	return img.get_region(region).get_data()
+
+
+## The source of an animated cell; checks frame count and that each frame shows the expected atlas tile
+func _check_strip(l: TileMapLayer, cell_coords: Vector2i, expect_tiles: Array, expect_durations: Array, msg: String) -> TileSetAtlasSource:
+	var sid := l.get_cell_source_id(cell_coords)
+	var src := atlas(l.tile_set, sid)
+	if src == null: return null
+	var c := l.get_cell_atlas_coords(cell_coords)
+	if not eq(src.get_tile_animation_frames_count(c), expect_tiles.size(), msg + " frame count"): return src
+	for i in range(expect_tiles.size()):
+		check(_frame_pixels(src, c, i) == _tile_pixels(l.tile_set, 0, expect_tiles[i]), "%s frame %d does not show tile %s" % [msg, i, str(expect_tiles[i])])
+		eq(src.get_tile_animation_frame_duration(c, i), expect_durations[i], "%s frame %d duration" % [msg, i])
+	return src
+
+
+func test_bug_animation_first_frame() -> bool:
+	# B9a: Godot animates a tile through the atlas cells that follow it, so frame 0 was always the
+	# tile itself: tile 0 with frames [1, 2] showed 0 -> 1. The strip shows 1 -> 2; "atlas" mode
+	# falls back to a strip with a warning.
+	for mode in ["strip", "atlas"]:
+		var imp := _new_importer({"animation_mode": mode})
+		var n := _import_with(imp, "animations.tmx")
+		var l := layer(n, "Tiles")
+		if l == null: continue
+		var src := _check_strip(l, Vector2i(0, 0), [Vector2i(1, 0), Vector2i(2, 0)], [0.1, 0.2], mode + ": tile 0")
+		if src: check(l.get_cell_source_id(Vector2i(0, 0)) != 0, mode + ": tile 0 still animated in the atlas")
+		if mode == "atlas": check(int(imp.get("last_warning_count")) >= 1, "atlas: no warning about the strip fallback")
+	return done()
+
+
+func test_bug_animation_pingpong() -> bool:
+	# B9b: frames 8, 9, 10, 9 are no equidistant run; the atlas path printed "Skipped" after it
+	# had already set up two frames. The strip shows all four; "atlas" mode validates the whole
+	# sequence first and leaves the tile unanimated.
+	var l := layer(_import("animations.tmx"), "Tiles")
+	if l: _check_strip(l, Vector2i(1, 0), [Vector2i(0, 1), Vector2i(1, 1), Vector2i(2, 1), Vector2i(1, 1)], [0.1, 0.1, 0.1, 0.1], "strip: tile 8")
+	var imp := _new_importer({"animation_mode": "atlas"})
+	var a := layer(_import_with(imp, "animations.tmx"), "Tiles")
+	if a:
+		cell(a, Vector2i(1, 0), 0, Vector2i(0, 1))
+		var src := atlas(a.tile_set, 0)
+		if src: eq(src.get_tile_animation_frames_count(Vector2i(0, 1)), 1, "atlas: tile 8 frame count (no partial animation)")
+		check(int(imp.get("last_warning_count")) >= 1, "atlas: no warning for the skipped animation")
+	return done()
+
+
+func test_new_animation_strip_tile_data() -> bool:
+	# B9: the strip tile carries the animated tile's data (collision, custom data, metadata), and an
+	# image collection's tiles animate too (atlas mode failed on columns = 0).
+	var n := _import("animations.tmx")
+	var l := layer(n, "Tiles")
+	if l == null: return done()
+	var src := _check_strip(l, Vector2i(2, 0), [Vector2i(0, 2), Vector2i(1, 2), Vector2i(2, 2)], [0.1, 0.1, 0.1], "tile 16")
+	if src:
+		var td := src.get_tile_data(l.get_cell_atlas_coords(Vector2i(2, 0)), 0)
+		check(l.tile_set.get_physics_layers_count() > 0 and td.get_collision_polygons_count(0) == 1, "tile 16 strip: collision polygon not copied")
+		eq(td.get_meta("kind", ""), "lava", "tile 16 strip: metadata")
+		eq(td.get_custom_data("damage"), 5, "tile 16 strip: custom data")
+	var pic := atlas(l.tile_set, l.get_cell_source_id(Vector2i(3, 0)))
+	if pic:
+		var c := l.get_cell_atlas_coords(Vector2i(3, 0))
+		eq(pic.get_tile_animation_frames_count(c), 2, "image collection animation frame count")
+		eq(pic.get_tile_animation_frame_duration(c, 1), 0.25, "image collection frame duration")
+	return done()
+
+
+func test_new_animated_tile_object() -> bool:
+	# B9c: a tile object of an animated tile was a static Sprite2D; now an AnimatedSprite2D
+	# (one looping animation "default", autoplay) in both animation modes.
+	for mode in ["strip", "atlas"]:
+		var n := _import("animations.tmx", {"animation_mode": mode})
+		if n == null: continue
+		var s := need(n, "Lava", "AnimatedSprite2D") as AnimatedSprite2D
+		if s:
+			eq(s.autoplay, "default", mode + ": autoplay")
+			var f := s.sprite_frames
+			if check(f != null and f.has_animation("default"), mode + ": no animation 'default'"):
+				eq(f.get_frame_count("default"), 3, mode + ": frame count")
+				check(f.get_animation_loop("default"), mode + ": animation does not loop")
+				for i in range(f.get_frame_count("default")):
+					eq(f.get_frame_duration("default", i) / f.get_animation_speed("default"), 0.1, mode + ": frame %d seconds" % i)
+				var t := f.get_frame_texture("default", 1) as AtlasTexture
+				if is_type(t, "AtlasTexture", mode + ": frame texture"): eq(t.region.size, Vector2(16, 16), mode + ": frame size")
+			eq(s.position, Vector2(0, 48), mode + ": position")
+			eq(s.offset, Vector2(8, -8), mode + ": offset (bottom-left alignment)")
+		var body := need(n, "LavaWall", "StaticBody2D")
+		if body:
+			check(not children_of_type(body, "AnimatedSprite2D").is_empty(), mode + ": LavaWall has no AnimatedSprite2D child")
+			check(not children_of_type(body, "CollisionShape2D").is_empty(), mode + ": LavaWall has no collision shape")
+			var a := children_of_type(body, "AnimatedSprite2D")
+			if not a.is_empty(): eq((a[0] as AnimatedSprite2D).scale, Vector2(2, 2), mode + ": LavaWall sprite scale")
 	return done()
 
 

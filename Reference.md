@@ -107,6 +107,30 @@ Layers of class `parallax` are a `Parallax2D` themselves in both modes; in `"par
 same scroll scale, origin and repeat, and an object or group layer's offset goes into `scroll_offset`
 (a Parallax2D overwrites its `position`).
 
+### animation_mode
+
+Type `String`, default: `"strip"`
+
+How Tiled tile animations are created. Godot animates a tile through the atlas cells that follow it
+(in a row or a column, at equal steps), always starting with the tile itself; Tiled allows any tiles in
+any order.
+
+- `"strip"`: every animated tile gets an atlas source of its own holding its frames side by side in the
+  animation's order (composed from the tileset image(s) when the map is imported; repeats, other rows and
+  image collection tiles of equal size are fine), with one tile animated over them using the frame durations.
+  That tile carries all data of the animated tile (collision, navigation and occlusion polygons, custom data,
+  metadata, terrain, texture origin, material, probability), and every cell or tile object of the animated
+  tile uses it. The strip sources get the source ids after those of the tilesets. The tileset's own atlas is
+  left without animations, so the frame tiles can be placed on their own.
+- `"atlas"`: as before 3.1, the animation is set on the tile in the tileset's atlas. Only animations whose
+  frames start with the tile and follow it at equal steps in a row or column, with room for all of them, can
+  be shown; any other animation is skipped as a whole with a warning. An animation that does not start with
+  the tile itself, and any animation of an image collection tile, falls back to a strip (with a warning).
+
+In both modes a tile object of an animated tile becomes an `AnimatedSprite2D` (one looping animation
+`"default"`, autoplay, a frame per animation frame with its duration) instead of a `Sprite2D`, unless the
+object has the `clip_artifacts` property (which needs a Sprite2D region; a warning is printed).
+
 ### unknown_class_fallback
 
 Type `String`, default: `"staticbody"`
@@ -194,9 +218,9 @@ If the Tiled name entry is empty a default Godot element name is created to avoi
 |                            |                               | occlusion_layer (int)  | Occlusion layer polygon                     |
 | Tile collision ellipse     |                               |                        | same as polygon (approximated)              |
 | Tile collision capsule     |                               |                        | same as polygon (approximated)              |
-| Tile animation             |                               |                        | Tile animation (limited)                    |
+| Tile animation             |                               |                        | Tile animation ([animation_mode](#animation_mode)) |
 |                            |
-| Tile object                |                               |                        | Sprite2D                                    |
+| Tile object                |                               |                        | Sprite2D (AnimatedSprite2D for an animated tile) |
 |                            | area                          |                        | Area2D + Sprite2d + Coll.(*)                |
 |                            | staticbody                    |                        | StaticBody2D + Sprite2D + Coll.(*)          |
 |                            | animatablebody                |                        | AnimatableBody2D + Sprite2D + Coll.(*)      |
@@ -477,6 +501,8 @@ Supported by this runtime fork in addition to upstream YATI 2.2.x:
 | Class-typed properties (nested properties) | Metadata (and tile custom data) of type `Dictionary` `{member_name: value}`, nested classes as nested Dictionaries - same for .tmx and .tmj |
 | Layer parallax factor inside groups, map parallax origin (`parallaxoriginx` / `parallaxoriginy`) | A `Parallax2D` wrapping the layer at its place in the hierarchy, `scroll_offset` from the origin (see [parallax_mode](#parallax_mode)) |
 | Image layer `repeatx` / `repeaty` on a plain (non-parallax) image layer | `TextureRect` with `STRETCH_TILE` and texture repeat, extended over the map area on the repeated axis |
+| Tile animations of any frame sequence (frames not starting with the tile, ping-pong, other rows, image collections) | A strip atlas per animated tile ([animation_mode](#animation_mode)) |
+| Tile objects of animated tiles | `AnimatedSprite2D` |
 | Object references (`object` properties) to objects inside group layers | Resolved like references to top-level objects |
 | Deprecated XML tile layer data (`<tile gid="..."/>` children, no encoding) | Imported like CSV data |
 | Tileset class | Metadata `class` on the generated TileSet |
