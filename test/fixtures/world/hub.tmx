@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- F3: a world map listed explicitly in test.world (it matches no pattern) -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="10" height="10" tilewidth="16" tileheight="16" infinite="0" nextlayerid="2" nextobjectid="1">
+ <tileset firstgid="1" name="world_tiles" tilewidth="16" tileheight="16" tilecount="32" columns="8">
+  <image source="../tiles.png" width="128" height="64"/>
+ </tileset>
+ <layer id="1" name="Ground" width="10" height="10">
+  <data encoding="csv">
+3,0,0,3,0,0,3,0,0,3,
+0,0,3,0,0,3,0,0,3,0,
+0,3,0,0,3,0,0,3,0,0,
+3,0,0,3,0,0,3,0,0,3,
+0,0,3,0,0,3,0,0,3,0,
+0,3,0,0,3,0,0,3,0,0,
+3,0,0,3,0,0,3,0,0,3,
+0,0,3,0,0,3,0,0,3,0,
+0,3,0,0,3,0,0,3,0,0,
+3,0,0,3,0,0,3,0,0,3
+</data>
+ </layer>
+</map>

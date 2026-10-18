@@ -22,7 +22,9 @@ fn cells_of(blob: &[u8]) -> Vec<(i16, i16, i16, i16, i16, u16)> {
     assert_eq!(&blob[..2], &[0, 0], "format version");
     assert_eq!((blob.len() - 2) % 12, 0);
     blob[2..]
-        .chunks_exact(12)
+        .as_chunks::<12>()
+        .0
+        .iter()
         .map(|c| {
             let v = |i: usize| i16::from_le_bytes([c[i], c[i + 1]]);
             (

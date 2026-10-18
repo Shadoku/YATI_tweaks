@@ -1159,7 +1159,8 @@ func test_object_property_types() -> bool:
 
 
 func test_object_reference_top_level() -> bool:
-	var p := need(_objects(), "Props (Area)", "Area2D")
+	# object_refs "geometry": the target's points (F2 made "nodepath" the default)
+	var p := need(_import("objects.tmx", {"object_refs": "geometry"}, "custom.tiled-project"), "Props (Area)", "Area2D")
 	if p == null: return done()
 	meta(p, "p_obj_poly", PackedVector2Array([Vector2(160, 160), Vector2(192, 160), Vector2(192, 192)]))
 	meta(p, "p_obj_point", Vector2(200, 100))
@@ -1167,8 +1168,8 @@ func test_object_reference_top_level() -> bool:
 
 
 func test_new_object_reference_in_group() -> bool:
-	# T6: object inside a group layer.
-	var p := need(_objects(), "Props (Area)", "Area2D")
+	# T6: object inside a group layer (object_refs "geometry", see above).
+	var p := need(_import("objects.tmx", {"object_refs": "geometry"}, "custom.tiled-project"), "Props (Area)", "Area2D")
 	if p: meta(p, "p_obj_group", PackedVector2Array([Vector2(100, 100), Vector2(110, 100), Vector2(110, 110), Vector2(100, 110)]))
 	return done()
 
@@ -1726,6 +1727,431 @@ func test_clip_artifacts_xml_and_json() -> bool:
 			eq(c.scale, Vector2(1, 1), f + ": Clipped scale")
 		var u := need(n, "Unclipped", "Sprite2D") as Sprite2D
 		if u: eq(u.region_rect, Rect2(16, 0, 16, 16), f + ": Unclipped region")
+	return done()
+
+
+# ---------------------------------------------------------------------------
+# Runtime improvement plan, part B (docs/runtime-improvement-plan.md, F1-F3, F5)
+
+## The node a NodePath stored on `from` points at (null when it does not resolve).
+func _ref(from: Node, path: Variant) -> Node:
+	if from == null or typeof(path) != TYPE_NODE_PATH or (path as NodePath).is_empty(): return null
+	return from.get_node_or_null(path)
+
+
+func _check_ref(from: Node, path: Variant, target_name: String, msg: String) -> void:
+	if not check(typeof(path) == TYPE_NODE_PATH, "%s is %s (%s), expected NodePath" % [msg, type_string(typeof(path)), str(path)]): return
+	var t := _ref(from, path)
+	if check(t != null, "%s: %s does not resolve" % [msg, str(path)]):
+		eq(String(t.name), target_name, msg + " target")
+
+
+func test_new_object_ref_nodepath() -> bool:
+	# F2: an object property became the target's geometry. With object_refs = "nodepath" (the
+	# default) it is a NodePath from the node to the target's node, resolved after every layer is
+	# built; lists of objects become Array[NodePath]; an unset (0) or dangling id an empty
+	# NodePath with a warning.
+	var imp := _new_importer()
+	if not _require_option(imp, "object_refs"): return done()
+	eq(imp.get("object_refs"), "nodepath", "default object_refs")
+	var n := _import_with(imp, "object_refs.tmx")
+	if n == null: return done()
+	eq(imp.get("last_warning_count"), 2, "warnings (unset and dangling reference)")
+	eq(imp.get("last_error_count"), 0, "errors")
+	var door := need(n, "Door (Area)", "Area2D")
+	if door:
+		if door.has_meta("target"): _check_ref(door, door.get_meta("target"), "Spawn", "Door target")
+		else: fail("Door: meta 'target' missing")
+		meta(door, "unset", NodePath())
+		meta(door, "missing", NodePath())
+		var targets: Variant = door.get_meta("targets", null)
+		if check(targets is Array, "Door targets is %s, expected Array" % type_string(typeof(targets))):
+			var a: Array = targets
+			check(a.is_typed() and a.get_typed_builtin() == TYPE_NODE_PATH, "Door targets is not an Array[NodePath]")
+			if eq(a.size(), 2, "Door targets size"):
+				_check_ref(door, a[0], "Spawn", "Door targets[0]")
+				_check_ref(door, a[1], "Lever", "Door targets[1]")
+	var mixed := need(n, "Mixed", "Marker2D")
+	if mixed:
+		var stuff: Variant = mixed.get_meta("stuff", null)
+		if check(stuff is Array and (stuff as Array).size() == 2, "Mixed stuff: " + str(stuff)):
+			check(not (stuff as Array).is_typed(), "a list with other items is typed")
+			_check_ref(mixed, stuff[0], "Lever", "Mixed stuff[0]")
+			eq(stuff[1], 7, "Mixed stuff[1]")
+	# The map's own properties resolve from the root
+	if n.has_meta("start"): _check_ref(n, n.get_meta("start"), "Spawn", "map start")
+	else: fail("root: meta 'start' missing")
+	return done()
+
+
+func test_new_object_ref_in_group_layer() -> bool:
+	# F2: references into and out of group layers; a shape object's reference names its body.
+	var n := _import("object_refs.tmx")
+	if n == null: return done()
+	var lever := need(n, "Lever", "Polygon2D")
+	if lever:
+		if lever.has_meta("opens"):
+			_check_ref(lever, lever.get_meta("opens"), "Door (Area)", "Lever opens")
+			is_type(_ref(lever, lever.get_meta("opens")), "Area2D", "Lever opens target")
+		else: fail("Lever: meta 'opens' missing")
+	var crate := need(n, "Crate (SB)", "StaticBody2D")
+	if crate:
+		if crate.has_meta("sibling"): _check_ref(crate, crate.get_meta("sibling"), "Lever", "Crate sibling")
+		else: fail("Crate: meta 'sibling' missing")
+	return done()
+
+
+func test_new_object_ref_export() -> bool:
+	# F2: a node with a property of the reference's name gets it there: a NodePath export the
+	# path, a Node export the node, an Array[NodePath] export the list; no metadata.
+	var n := _import("object_refs.tmx")
+	if n == null: return done()
+	var sw := need(n, "Switch")
+	if sw == null: return done()
+	if not check(sw.get_script() != null, "Switch has no script (ref_target.tscn)"): return done()
+	_check_ref(sw, sw.get("target"), "Spawn", "Switch.target")
+	var tn: Variant = sw.get("target_node")
+	if check(tn is Node, "Switch.target_node is %s" % str(tn)):
+		eq(String((tn as Node).name), "Lever", "Switch.target_node")
+	var wp: Variant = sw.get("waypoints")
+	if check(wp is Array and (wp as Array).size() == 2, "Switch.waypoints: " + str(wp)):
+		_check_ref(sw, wp[0], "Spawn", "Switch.waypoints[0]")
+		_check_ref(sw, wp[1], "Lever", "Switch.waypoints[1]")
+	for k in ["target", "target_node", "waypoints"]:
+		check(not sw.has_meta(k), "Switch: '" + k + "' also stored as metadata")
+	return done()
+
+
+func test_new_object_ref_geometry_mode() -> bool:
+	# F2: object_refs = "geometry" keeps the 3.0 result (the target's points); "both" gives the
+	# NodePath and the geometry as metadata '<name>_shape'.
+	var lever_poly := PackedVector2Array([Vector2(48, 96), Vector2(64, 96), Vector2(64, 112)])
+	var imp := _new_importer({"object_refs": "geometry"})
+	if not _require_option(imp, "object_refs"): return done()
+	var g := _import_with(imp, "object_refs.tmx")
+	if g:
+		# Switch's waypoints (points, not NodePaths) do not fit its Array[NodePath]: metadata, a warning
+		eq(imp.get("last_warning_count"), 1, "geometry mode warnings")
+		var door := need(g, "Door (Area)")
+		if door:
+			meta(door, "target", Vector2(80, 48))
+			meta(door, "targets", [Vector2(80, 48), lever_poly])
+			check(not door.has_meta("target_shape"), "geometry mode wrote target_shape")
+	var b := _import("object_refs.tmx", {"object_refs": "both"})
+	if b:
+		var door := need(b, "Door (Area)")
+		if door:
+			if door.has_meta("target"): _check_ref(door, door.get_meta("target"), "Spawn", "both: Door target")
+			meta(door, "target_shape", Vector2(80, 48))
+			meta(door, "targets_shape", [Vector2(80, 48), lever_poly])
+			var t: Variant = door.get_meta("targets", null)
+			if check(t is Array and (t as Array).size() == 2, "both: Door targets " + str(t)):
+				_check_ref(door, t[1], "Lever", "both: Door targets[1]")
+	return done()
+
+
+const ENEMY_SCENE := "res://test/fixtures/enemy.tscn"
+
+
+func _is_scene(n: Node, scene_path: String, msg: String) -> bool:
+	if not check(n != null, msg + ": node missing"): return false
+	return eq(n.scene_file_path, scene_path, msg + " scene")
+
+
+func test_new_class_scenes() -> bool:
+	# F1: an object of class Enemy needed class 'instance' and its own res_path. class_scenes maps the
+	# class (case-insensitively) to a scene, and a custom property that names an exported property of
+	# the node is assigned to it (typed: int -> float, an enum's name, a file -> its resource, ...)
+	# instead of becoming metadata.
+	var imp := _new_importer()
+	if not _require_option(imp, "class_scenes"): return done()
+	eq(imp.get("class_scenes"), {}, "default class_scenes")
+	eq(imp.get("assign_node_properties"), true, "default assign_node_properties")
+	imp.set("class_scenes", {"Enemy": ENEMY_SCENE})
+	var n := _import_with(imp, "scenes.tmx")
+	if n == null: return done()
+	eq(imp.get("last_warning_count"), 1, "warnings (Broken's hp is a string)")
+	eq(imp.get("last_error_count"), 0, "errors")
+	var g := need(n, "Grunt")
+	if _is_scene(g, ENEMY_SCENE, "Grunt"):
+		eq((g as Node2D).position, Vector2(32, 48), "Grunt position")
+		eq(g.get("hp"), 10, "Grunt.hp")
+		check(not g.has_meta("hp"), "Grunt: hp also stored as metadata")
+		eq(g.get("faction"), "orcs", "Grunt.faction")
+		var patrol: Variant = g.get("patrol")
+		if check(patrol is NodePath and not (patrol as NodePath).is_empty(), "Grunt.patrol: " + str(patrol)):
+			var wp := g.get_node_or_null(patrol)
+			check(wp != null and String(wp.name) == "Waypoint", "Grunt.patrol does not point at Waypoint")
+		eq(g.get("speed"), 3.0, "Grunt.speed (int -> float)")
+		eq(typeof(g.get("speed")), TYPE_FLOAT, "Grunt.speed type")
+		eq(g.get("mood"), 5, "Grunt.mood (enum name)")
+		eq(typeof(g.get("tag")), TYPE_STRING_NAME, "Grunt.tag type")
+		eq(g.get("tag"), &"boss", "Grunt.tag")
+		is_type(g.get("icon"), "Texture2D", "Grunt.icon (file -> resource)")
+		eq(g.get("loot"), {"gold": 5}, "Grunt.loot (class -> Dictionary)")
+		var drops: Variant = g.get("drops")
+		eq(drops, [1, 2], "Grunt.drops (list -> Array[int])")
+		meta(g, "note", "hello")
+		meta(g, "class", "Enemy")
+		check(not g.has_meta("godot_scene"), "Grunt: godot_scene as metadata")
+	_is_scene(need(n, "Plain"), ENEMY_SCENE, "Plain (class 'enemy')")
+	var tg := need(n, "TileGrunt")
+	if _is_scene(tg, ENEMY_SCENE, "TileGrunt (the tile's class)"):
+		eq((tg as Node2D).position, Vector2(64, 96), "TileGrunt position")
+		eq((tg as Node2D).scale, Vector2(2, 2), "TileGrunt scale (32x32 object of a 16x16 tile)")
+	need(n, "Typed (Area)", "Area2D") # godot_node_type wins over the scene
+	var b := need(n, "Broken")
+	if _is_scene(b, ENEMY_SCENE, "Broken"):
+		eq(b.get("hp"), 1, "Broken.hp (a string does not fit)")
+		meta(b, "hp", "lots")
+	# Without the mapping a class Enemy is an unknown class, reported once
+	var imp2 := _new_importer()
+	var d := _import_with(imp2, "scenes.tmx")
+	if d:
+		need(d, "Grunt (SB)", "StaticBody2D")
+		eq(imp2.get("last_warning_count"), 2, "warnings without class_scenes (classes Enemy and enemy)")
+	return done()
+
+
+func test_new_godot_scene_member() -> bool:
+	# F1: a class of the project file with a member 'godot_scene' (file, relative to the project file)
+	# maps the class to that scene; an object's own godot_scene (relative to the map) overrides it;
+	# class_scenes wins over the member.
+	var imp := _new_importer()
+	if not _require_option(imp, "read_godot_scene_from_custom_types"): return done()
+	eq(imp.get("read_godot_scene_from_custom_types"), true, "default read_godot_scene_from_custom_types")
+	var n := _import_with(imp, "scenes.tmx", "scenes.tiled-project")
+	if n == null: return done()
+	var g := need(n, "Grunt")
+	if _is_scene(g, ENEMY_SCENE, "Grunt"):
+		eq(g.get("hp"), 10, "Grunt.hp")
+		check(not g.has_meta("godot_scene"), "Grunt: godot_scene as metadata")
+	# The project's class names are case-sensitive, as in Tiled (class_scenes' are not)
+	need(n, "Plain (SB)", "StaticBody2D")
+	var tg := need(n, "TileGrunt")
+	if _is_scene(tg, ENEMY_SCENE, "TileGrunt (tile class, scope 'tile')"):
+		eq(tg.get("hp"), 1, "TileGrunt.hp (the member's default)")
+	_is_scene(need(n, "Elite"), "res://test/fixtures/ref_target.tscn", "Elite (own godot_scene)")
+	need(n, "Typed (Area)", "Area2D")
+	var off := _import("scenes.tmx", {"read_godot_scene_from_custom_types": false}, "scenes.tiled-project")
+	if off: need(off, "Grunt (SB)", "StaticBody2D")
+	var both := _import("scenes.tmx", {"class_scenes": {"enemy": "res://test/fixtures/ref_target.tscn"}}, "scenes.tiled-project")
+	if both: _is_scene(need(both, "Grunt"), "res://test/fixtures/ref_target.tscn", "Grunt (class_scenes over godot_scene)")
+	return done()
+
+
+func test_new_assign_props_off() -> bool:
+	# F1: assign_node_properties = false keeps every custom property metadata, as before.
+	var imp := _new_importer({"class_scenes": {"Enemy": ENEMY_SCENE}})
+	if not _require_option(imp, "assign_node_properties"): return done()
+	imp.set("assign_node_properties", false)
+	var n := _import_with(imp, "scenes.tmx")
+	if n == null: return done()
+	eq(imp.get("last_warning_count"), 0, "warnings")
+	var g := need(n, "Grunt")
+	if _is_scene(g, ENEMY_SCENE, "Grunt"):
+		eq(g.get("hp"), 1, "Grunt.hp untouched")
+		meta(g, "hp", 10)
+		meta(g, "speed", 3)
+		meta(g, "faction", "orcs")
+		eq(g.get("patrol"), NodePath(), "Grunt.patrol untouched")
+		if g.has_meta("patrol"): check(g.get_node_or_null(g.get_meta("patrol")) != null, "Grunt patrol meta does not resolve")
+		else: fail("Grunt: meta 'patrol' missing")
+	return done()
+
+
+func test_new_tiled_import_hook() -> bool:
+	# F1: a node with a method _tiled_import(info) gets it called once, after the whole map is built
+	# (object references resolved), with the object's id, name, class, typed properties and geometry.
+	var n := _import("scenes.tmx", {"class_scenes": {"Enemy": ENEMY_SCENE}})
+	if n == null: return done()
+	var g := need(n, "Grunt")
+	if not _is_scene(g, ENEMY_SCENE, "Grunt"): return done()
+	eq(g.get("hook_calls"), 1, "_tiled_import calls")
+	var info: Dictionary = g.get("imported")
+	eq(info.get("id"), 1, "info id")
+	eq(info.get("name"), "Grunt", "info name")
+	eq(info.get("class"), "Enemy", "info class")
+	eq(info.get("rect"), Rect2(32, 48, 16, 16), "info rect")
+	eq(info.get("shape"), Rect2(0, 0, 16, 16), "info shape")
+	eq(info.get("shape_type"), "rectangle", "info shape_type")
+	var props: Dictionary = info.get("properties", {})
+	eq(props.get("hp"), 10, "info properties hp")
+	eq(props.get("note"), "hello", "info properties note")
+	var patrol: Variant = props.get("patrol")
+	check(patrol is NodePath and g.get_node_or_null(patrol) != null, "info properties patrol: " + str(patrol))
+	var tg := need(n, "TileGrunt")
+	if tg:
+		eq(tg.get("hook_calls"), 1, "TileGrunt _tiled_import calls")
+		eq((tg.get("imported") as Dictionary).get("shape_type"), "tile", "TileGrunt shape_type")
+	return done()
+
+
+func _map_meta(n: Node, rect: Rect2, size_tiles: Vector2i, tile_size: Vector2i, orientation: String) -> void:
+	meta(n, "map_rect", rect)
+	meta(n, "map_size_tiles", size_tiles)
+	meta(n, "tile_size", tile_size)
+	meta(n, "orientation", orientation)
+
+
+func test_new_map_rect_finite() -> bool:
+	# F3: the root carries the map's bounds in pixels (Tiled's map size for each orientation), its
+	# size in tiles, the tile size and the orientation; also a single-layer root.
+	var n := _import("objects.tmx")
+	if n: _map_meta(n, Rect2(0, 0, 400, 320), Vector2i(25, 20), Vector2i(16, 16), "orthogonal")
+	var iso := _import("isometric.tmx")
+	if iso: _map_meta(iso, Rect2(0, 0, 96, 48), Vector2i(3, 3), Vector2i(32, 16), "isometric")
+	var st := _import("staggered.tmx")
+	if st: _map_meta(st, Rect2(0, 0, 144, 40), Vector2i(4, 4), Vector2i(32, 16), "staggered")
+	var hx := _import("hexagonal.tmx")
+	if hx: _map_meta(hx, Rect2(0, 0, 40, 56), Vector2i(3, 3), Vector2i(16, 16), "hexagonal")
+	var single := _import("single_layer.tmx")
+	if single and is_type(single, "TileMapLayer", "single layer root"):
+		_map_meta(single, Rect2(0, 0, 32, 32), Vector2i(2, 2), Vector2i(16, 16), "orthogonal")
+	var tc_script: Variant = _runtime_script("TilemapCreator.gd")
+	if check(tc_script != null, "no TilemapCreator.gd"):
+		var tc: Object = tc_script.new()
+		if check(tc.has_method("get_map_rect"), "TilemapCreator has no get_map_rect()"):
+			var r: Node = tc.call("create", FIX + "isometric.tmx")
+			if r: _to_free.append(r)
+			eq(tc.call("get_map_rect"), Rect2(0, 0, 96, 48), "TilemapCreator.get_map_rect()")
+	return done()
+
+
+func test_new_map_rect_infinite() -> bool:
+	# F3: an infinite map's bounds are the union of its chunks (in every tile layer), negative
+	# coordinates included.
+	for f in ["infinite.tmx", "infinite.tmj"]:
+		var n := _import(f)
+		if n: _map_meta(n, Rect2(-256, 0, 512, 512), Vector2i(32, 32), Vector2i(16, 16), "orthogonal")
+	return done()
+
+
+func _world_loader() -> Variant:
+	var wl: Variant = _runtime_script("WorldLoader.gd")
+	check(wl != null, "runtime has no WorldLoader.gd")
+	return wl
+
+
+func _world_entry(entries: Array, file: String) -> Dictionary:
+	for e in entries:
+		if e is Dictionary and str(e.get("path", "")).get_file() == file:
+			return e
+	fail("world entry '" + file + "' missing (have " + str(entries.map(func(e): return str(e.get("path", "")).get_file())) + ")")
+	return {}
+
+
+func test_new_world_explicit() -> bool:
+	# F3: WorldLoader.parse() reads a Tiled .world file: an explicit 'maps' entry gives its path
+	# (relative to the world file) and rect; import_world() imports every map placed at its rect.
+	var wl: Variant = _world_loader()
+	if wl == null: return done()
+	var entries: Array = wl.call("parse", FIX + "world/test.world")
+	eq(entries.size(), 4, "world entries")
+	if entries.size() > 0:
+		eq(entries[0].get("path"), FIX + "world/hub.tmx", "first entry: the explicit map")
+		eq(entries[0].get("rect"), Rect2i(-160, 0, 160, 160), "hub rect")
+	var imp := _new_importer()
+	if not check(imp.has_method("import_world"), "Importer has no import_world()"): return done()
+	var w: Node = imp.call("import_world", FIX + "world/test.world")
+	if not check(w != null, "import_world returned null"): return done()
+	_to_free.append(w)
+	eq(String(w.name), "test", "world root name")
+	eq(w.get_child_count(), 4, "world maps")
+	var hub := w.get_node_or_null("hub") as Node2D
+	if is_type(hub, "Node2D", "hub"):
+		eq(hub.position, Vector2(-160, 0), "hub position")
+		meta(hub, "map_rect", Rect2(0, 0, 160, 160))
+	eq(imp.get("last_error_count"), 0, "import_world errors")
+	return done()
+
+
+func test_new_world_pattern() -> bool:
+	# F3: a 'patterns' entry lists the .tmx/.tmj files of the world's directory whose name matches
+	# its regexp, captures 1 and 2 times the multipliers plus the offset as position, the size from
+	# the map's header; explicitly listed maps are not listed again. Also from a zip archive.
+	var wl: Variant = _world_loader()
+	if wl == null: return done()
+	var entries: Array = wl.call("parse", FIX + "world/test.world")
+	var files: Array = entries.map(func(e): return str(e.get("path", "")).get_file())
+	eq(files, ["hub.tmx", "area_0_0.tmx", "area_0_1.tmj", "area_1_0.tmx"], "entries in order")
+	eq(_world_entry(entries, "area_0_0.tmx").get("rect"), Rect2i(16, -32, 160, 160), "area_0_0 rect")
+	eq(_world_entry(entries, "area_1_0.tmx").get("rect"), Rect2i(176, -32, 160, 128), "area_1_0 rect (10 x 8 tiles)")
+	eq(_world_entry(entries, "area_0_1.tmj").get("rect"), Rect2i(16, 128, 192, 160), "area_0_1 rect (JSON, 12 x 10 tiles)")
+	eq(_world_entry(entries, "area_0_0.tmx").get("path"), FIX + "world/area_0_0.tmx", "area_0_0 path")
+	var w: Node = _new_importer().call("import_world", FIX + "world/test.world")
+	if check(w != null, "import_world returned null"):
+		_to_free.append(w)
+		var a := w.get_node_or_null("area_1_0") as Node2D
+		if is_type(a, "Node2D", "area_1_0"):
+			eq(a.position, Vector2(176, -32), "area_1_0 position")
+			# A single-layer map: its root is the layer (always_wrap_root off)
+			if is_type(a, "TileMapLayer", "area_1_0 root"):
+				check((a as TileMapLayer).get_used_cells().size() > 0, "area_1_0 has no cells")
+	# The same world from a zip archive
+	var zip_path := OUT + "world.zip"
+	var zp := ZIPPacker.new()
+	if not check(zp.open(zip_path) == OK, "cannot write " + zip_path): return done()
+	for f in ["test.world", "hub.tmx", "area_0_0.tmx", "area_1_0.tmx", "area_0_1.tmj", "area_5_5.tmx.bak"]:
+		zp.start_file("w/" + f)
+		zp.write_file(FileAccess.get_file_as_bytes(FIX + "world/" + f))
+		zp.close_file()
+	zp.close()
+	var zipped: Array = wl.call("parse", "w/test.world", zip_path)
+	eq(zipped.map(func(e): return str(e.get("path", ""))), ["w/hub.tmx", "w/area_0_0.tmx", "w/area_0_1.tmj", "w/area_1_0.tmx"], "zip entries")
+	if zipped.size() == 4:
+		eq(zipped[3].get("rect"), Rect2i(176, -32, 160, 128), "zip area_1_0 rect")
+	return done()
+
+
+func test_new_mask_int_and_enum() -> bool:
+	# F5: layer-mask properties (collision_layer, light_mask, navigation_layers, ..., and the
+	# tileset's collision_layer_n etc.) took only a string of layer numbers ("1,3,5-7"). An int is
+	# the bitmask itself (a Tiled flags enum stored as int saves that), a string of names of a flags
+	# enum (stored as string) maps each value's index to its bit, looked up in the project file.
+	var n := _import("masks.tmx", {}, "masks.tiled-project")
+	if n == null: return done()
+	var im := need(n, "IntMask (Area)", "Area2D") as Area2D
+	if im:
+		eq(im.collision_layer, 5, "IntMask collision_layer (int)")
+		eq(im.collision_mask, 10, "IntMask collision_mask (flags enum stored as int)")
+	var em := need(n, "EnumMask (Area)", "Area2D") as Area2D
+	if em:
+		eq(em.collision_layer, 6, "EnumMask collision_layer (Player, Enemy: bits 1 and 2)")
+		eq(em.collision_mask, 1, "EnumMask collision_mask (World: bit 0)")
+		eq(em.visibility_layer, 8, "EnumMask visibility_layer (Pickup: bit 3)")
+		check(not em.has_meta("collision_layer"), "EnumMask: collision_layer as metadata")
+	var sm := need(n, "StringMask (Area)", "Area2D") as Area2D
+	if sm:
+		eq(sm.collision_layer, 5, "StringMask collision_layer ('1,3')")
+		eq(sm.collision_mask, 14, "StringMask collision_mask ('2-4')")
+	var w := need(n, "Walker (CB)", "CharacterBody2D") as CharacterBody2D
+	if w:
+		eq(w.collision_layer, 2, "Walker collision_layer")
+		eq(w.platform_floor_layers, 3, "Walker platform_floor_layers")
+		eq(w.platform_wall_layers, 4, "Walker platform_wall_layers (Enemy)")
+	var nav := need(n, "Nav (NR)", "NavigationRegion2D") as NavigationRegion2D
+	if nav:
+		eq(nav.navigation_layers, 2, "Nav navigation_layers")
+		eq(nav.navigation_polygon.parsed_collision_mask, 12, "Nav parsed_collision_mask")
+	var occ := need(n, "Occ (LO)", "LightOccluder2D") as LightOccluder2D
+	if occ: eq(occ.occluder_light_mask, 4, "Occ occluder_light_mask")
+	var g := layer(n, "Ground")
+	if g:
+		eq(g.light_mask, 9, "Ground light_mask")
+		var ts := g.tile_set
+		eq(ts.get_physics_layer_collision_layer(0), 6, "tileset collision_layer (int)")
+		eq(ts.get_physics_layer_collision_mask(0), 9, "tileset collision_mask (World, Pickup)")
+		eq(ts.get_navigation_layer_layers(0), 3, "tileset layers (int)")
+		if check(ts.get_occlusion_layers_count() >= 2, "tileset occlusion layer 1 missing"):
+			eq(ts.get_occlusion_layer_light_mask(1), 2, "tileset light_mask_1 (Player)")
+	# Without the project file names are no layer numbers: nothing is set
+	var plain := _import("masks.tmx")
+	if plain:
+		var e2 := need(plain, "EnumMask (Area)", "Area2D") as Area2D
+		if e2: eq(e2.collision_layer, 0, "EnumMask collision_layer without the project file")
+		var i2 := need(plain, "IntMask (Area)", "Area2D") as Area2D
+		if i2: eq(i2.collision_mask, 10, "IntMask collision_mask without the project file")
 	return done()
 
 

@@ -72,8 +72,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - B10a: importer option `always_wrap_root` (default `false`): a map with a single layer returns a
   `Node2D` root holding the map's properties, the layer as its child, instead of the layer itself with the
   map's properties applied over its own. Recommended; planned as the default of 4.0.
+- F2: importer option `object_refs` (default `"nodepath"`): an object property becomes a `NodePath` from its node
+  to the node created for the target object, resolved after every layer is built (`TilemapCreator.register_object_node`
+  records each object's node, `resolve_object_refs` is the second pass); a property of the same name on the node
+  takes it (a `NodePath` export the path, a `Node` export the node); a list of objects becomes an
+  `Array[NodePath]`; an unset or dangling reference an empty NodePath with a warning. `"geometry"` keeps the target's
+  points (3.0), `"both"` writes the NodePath and the points as metadata `<name>_shape`. The Reference documents
+  a `MapRef { map, object }` class convention for references into other maps.
+- F1: importer options `class_scenes` (default `{}`: Tiled class, case-insensitive, -> scene path),
+  `read_godot_scene_from_custom_types` (default `true`: a custom class's `godot_scene` file member, relative to the
+  project file, does the same) and `assign_node_properties` (default `true`): objects and tile objects of a mapped
+  class become instances of the scene without a `res_path` on each (after a `godot_node_type` property, before the
+  class mapping and `unknown_class_fallback`), and a custom property named like a property of the created node
+  (an `@export var`, an engine property) is assigned to it, converted to its type (int to float or an enum, a
+  string to an enum by name, StringName or NodePath, a file to its resource, a list to a typed array), else it
+  stays metadata with a warning. `godot_script` is attached before the other properties, so the script's variables
+  exist. A node method `_tiled_import(info)` is called once the map is built, with the object's id, name, class,
+  typed properties, rect and shape. `CustomTypes.get_class_member()` reads a member of a custom class;
+  `TilemapCreator.instantiate_scene()` is the one place scenes are instantiated.
+- F3: every imported root (a single-layer one too) has metadata `map_rect` (the map's bounds in pixels: Tiled's
+  map size per orientation, an infinite map's union of chunks), `map_size_tiles`, `tile_size` and `orientation`;
+  `TilemapCreator.get_map_rect()`. `runtime/WorldLoader.gd`: `WorldLoader.parse(world_file, zip_file = "")` reads a
+  Tiled `.world` file into `{path, rect}` entries (explicit `maps`, and `patterns` matched against the world
+  directory's `.tmx`/`.tmj` files, sizes from the maps' headers, cached), from the file system or a zip;
+  `Importer.import_world(world_file, project_file = "")` imports a whole world under one Node2D.
+  `DataLoader.list_files(dir)` lists a directory in either mode.
+- F3, native: `tiled_core::world` (`native/tiled/src/world.rs`): `World::parse` for a world file's own content,
+  `WorldLoader` resolving its patterns through the file-request protocol (the world file, a `ListDir` request for
+  its directory, the matching maps' files; `WorldLoader::from_zip`, `load_world_from_fs`), and `Map::map_rect()` /
+  `tile_rect()` / `pixel_rect()` with the GDScript runtime's formula. `tiled_core` depends on `regex` for the patterns.
+- F5: layer-mask properties (`collision_layer`, `collision_mask`, `platform_floor_layers`, `platform_wall_layers`,
+  `navigation_layers`, `light_mask`, `visibility_layer`, `occluder_light_mask`, `parsed_collision_mask`, and the
+  tileset's `collision_layer_n`, `collision_mask_n`, `layers_n`, `light_mask_n`) accept an `int`, the bitmask itself
+  (a Tiled flags enum stored as int), and the value names of a flags enum stored as string (`Player,Enemy`), looked up
+  in the project file (`CustomTypes.get_enum_mask`, `CommonUtils.get_mask_value`); the `"1,3,5-7"` strings work as before.
 
 ### Changed
+- F1: with the new default `assign_node_properties = true` a custom property named like a property of the created
+  node sets that property instead of becoming metadata (e.g. a `rotation` float on an object, a `hp` int on an
+  instance whose script exports `hp`); set it `false` for the 3.0 result. B8's unknown-class warning names
+  `class_scenes` as a remedy.
+- F2: with the new default `object_refs = "nodepath"` an object property is a `NodePath` instead of the
+  target's geometry (`PackedVector2Array` / `Vector2`); set `object_refs = "geometry"` for the 3.0 values. A text
+  object's Label now gets metadata `id` with `add_id_as_metadata`, as every other object's node does.
 - CI runs the test suite against the native importer's facade as a required step, with
   `tools/native_gate.gd` and the benchmark, and tests, lints and formats both Rust crates.
 - `test/run_tests.gd` checks that a runtime has `DataLoader.gd` / `CommonUtils.gd` before loading them,

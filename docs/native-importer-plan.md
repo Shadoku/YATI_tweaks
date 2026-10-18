@@ -577,3 +577,10 @@ now). They are taken up, and this is where each lands:
 - **F1's `_tiled_import` hook and property assignment** run on the main thread in the
   builder; the type coercions listed there are the builder's, from the model's typed
   property values.
+- **Status, 2026-10-18:** part A (B1 to B10) and F1, F2, F3 and F5 are done in the GDScript
+  runtime, each with its tests (`CHANGELOG.md`, `[Unreleased]`); F3's world parsing and
+  `Map::map_rect` are in `tiled_core` too (`native/tiled/src/world.rs`, tested on the same
+  fixtures). The runtime's new options for the facades: `object_refs = "nodepath"`,
+  `class_scenes = {}`, `read_godot_scene_from_custom_types = true`,
+  `assign_node_properties = true`; new methods `Importer.import_world()` and
+  `WorldLoader.parse()`.

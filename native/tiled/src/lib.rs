@@ -31,6 +31,7 @@ pub mod model;
 pub mod parse;
 pub mod path;
 pub mod value;
+pub mod world;
 
 pub use error::{Error, ErrorKind};
 pub use load::{Loader, Status};

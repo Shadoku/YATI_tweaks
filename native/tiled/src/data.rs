@@ -145,8 +145,10 @@ pub fn decode_base64(text: &str, compression: &str, cells: usize) -> Result<Vec<
     let bytes = decompress(&raw, compression, cells * 4)?;
     let n = (bytes.len() / 4).min(if cells > 0 { cells } else { usize::MAX });
     Ok(bytes[..n * 4]
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
         .collect())
 }
 

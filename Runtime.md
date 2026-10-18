@@ -18,6 +18,7 @@ Create an importer instance from `Importer.gd`, optionally set options on it and
 | `import_from_zip` | path to the zip file, path *inside* the zip to the .tmx/.tmj, optional path inside the zip to the project file |
 | `import_with_post_processing` | path to the .tmx/.tmj, path to the post-processing script, optional project file |
 | `import_from_zip_with_post_processing` | zip file, map path inside the zip, path to the post-processing script, optional project file inside the zip |
+| `import_world` | path to a Tiled world file (.world), optional project file: every map of the world under one `Node2D`, each at its place |
 
 - Paths may be `res://`, `user://` or absolute paths. References inside the map (tilesets, images, templates)
   are resolved relative to the file that contains them, as in Tiled.
@@ -65,6 +66,10 @@ they apply to every following call on that instance. See the [Reference](Referen
 | `animation_mode` | String | `"strip"` | Tile animations: `"strip"` gives each animated tile an atlas of its frames in their order (any sequence); `"atlas"` animates in the tileset's atlas as before 3.1 (only frames that follow the tile at equal steps) |
 | `always_wrap_root` | bool | `false` | Return a Node2D root (named after the map, holding the map's properties) also for a map with a single layer, instead of that layer; recommended, and planned as the default of 4.0 |
 | `unknown_class_fallback` | String | `"staticbody"` | What an object whose class is no Godot node type becomes: `"staticbody"`, another class of the mapping table (e.g. `"area"`) or `"node2d"` (a Node2D with the shape as metadata) |
+| `class_scenes` | Dictionary | `{}` | Tiled class (case-insensitive) → scene path: objects and tile objects of that class become instances of the scene (like class `instance` with `res_path`) |
+| `read_godot_scene_from_custom_types` | bool | `true` | With a project file, a custom class's `godot_scene` (file) member maps its objects and tiles to that scene |
+| `assign_node_properties` | bool | `true` | A custom property named like a property of the created node (a script's `@export var`, ...) is assigned to it, converted to its type; others stay metadata. A node method `_tiled_import(info)` is called once the map is built. Off: all metadata, as before 3.1 |
+| `object_refs` | String | `"nodepath"` | Object properties: `"nodepath"` gives a NodePath to the target object's node (or the node, for a Node-typed property of that name), lists of objects an `Array[NodePath]`; `"geometry"` the target's points, as before 3.1; `"both"` the NodePath and the points as metadata `<name>_shape` |
 
 ```gdscript
 var importer = preload("res://runtime/Importer.gd").new()
@@ -81,6 +86,28 @@ After every import call:
 - `importer.last_warning_count` - number of warnings reported during the last import
 
 The counters are reset at the start of each call.
+
+## Worlds and map bounds
+
+Every imported root has metadata `map_rect` (the map's bounds in pixels, `Rect2`), `map_size_tiles`, `tile_size` and
+`orientation`. `WorldLoader.gd` reads Tiled world files:
+
+| Function | Returns |
+|----------|---------|
+| `WorldLoader.parse(world_file, zip_file = "")` | an Array of `{"path": String, "rect": Rect2i}`: the world's `maps` entries, then the `.tmx`/`.tmj` files its `patterns` match (sizes read from the maps, cached; `WorldLoader.clear_cache()`) |
+| `Importer.import_world(world_file, project_file = "")` | a `Node2D` holding every map's root at its position (for small worlds and tests; a streamer imports per map) |
+
+```gdscript
+const WorldLoader = preload("res://runtime/WorldLoader.gd")
+var importer = preload("res://runtime/Importer.gd").new()
+for entry in WorldLoader.parse("res://maps/overworld.world"):
+	if entry.rect.intersects(visible_area):
+		var map = importer.import(entry.path)
+		map.position = Vector2(entry.rect.position)
+		add_child(map)
+```
+
+See the [Reference](Reference.md#world-files-and-map-bounds).
 
 ## Zip archives
 

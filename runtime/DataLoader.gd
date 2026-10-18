@@ -125,6 +125,25 @@ static func get_tiled_file_content_from_zip(file_name: String, base_path: String
 	return ret
 
 
+# The names of the files directly in dir (no directories), from the zip archive in zip mode or
+# from the file system; empty when dir does not exist.
+static func list_files(dir: String) -> PackedStringArray:
+	var ret := PackedStringArray()
+	if zip_file == "":
+		if DirAccess.dir_exists_absolute(dir if dir != "" else "."):
+			ret = DirAccess.get_files_at(dir if dir != "" else ".")
+		return ret
+	var reader := _acquire_zip_reader()
+	if reader == null: return ret
+	var dir_in_zip := CommonUtils.cleanup_path(dir)
+	for name in reader.get_files():
+		if name.ends_with("/"): continue
+		if name.get_base_dir() == dir_in_zip:
+			ret.append(name.get_file())
+	_release_zip_reader(reader)
+	return ret
+
+
 static func load_image(file_name: String, base_path: String):
 	if zip_file == "":
 		return load_image_from_file(file_name, base_path)

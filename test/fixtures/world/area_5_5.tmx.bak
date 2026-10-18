@@ -1,0 +1,1 @@
+F3: matches the regexp of test.world but is no .tmx/.tmj file, so the pattern does not list it.

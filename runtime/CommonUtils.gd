@@ -42,6 +42,24 @@ static func get_bitmask_integer_from_string(mask_string: String, max_len: int):
 	return ret
 
 
+# The bitmask of a layer-mask property (collision_layer, light_mask, navigation_layers, ...; F5):
+# an int is the mask itself (what a Tiled flags enum stored as int saves); a string is either value
+# names of the enum the property's propertytype names in the project file (ct: the CustomTypes, or
+# null), each value's index its bit ("Player,Enemy"), or layer numbers and ranges ("1,3,5-7", 1-based).
+# max_len: the number of layers (bits) the mask has.
+static func get_mask_value(property: Dictionary, max_len: int, ct = null) -> int:
+	var type := str(property.get("type", "string"))
+	var val := str(property.get("value", ""))
+	if type == "int":
+		return val.to_int() & ((1 << max_len) - 1)
+	var enum_name := str(property.get("propertytype", ""))
+	if enum_name != "" and ct != null:
+		var mask: int = ct.get_enum_mask(enum_name, val, max_len)
+		if mask >= 0:
+			return mask
+	return get_bitmask_integer_from_string(val, max_len)
+
+
 static func get_right_typed_value(type: String, val: String):
 	if type == "bool":
 		return val == "true"
