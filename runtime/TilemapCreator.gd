@@ -213,8 +213,7 @@ func set_save_tileset_to(path: String):
 func set_parallax_mode(value: String):
 	_parallax_mode = value.to_lower()
 	if _parallax_mode != "parallax2d" and _parallax_mode != "legacy":
-		print_rich("[color=" + WARNING_COLOR + "] -- Option parallax_mode '" + value + "' is not supported. -> Using 'parallax2d'[/color]")
-		CommonUtils.warning_count += 1
+		CommonUtils.report_warning(" -- Option parallax_mode '" + value + "' is not supported. -> Using 'parallax2d'", WARNING_COLOR)
 		_parallax_mode = "parallax2d"
 
 
@@ -236,8 +235,7 @@ func set_unknown_class_fallback(value: String):
 		return
 	var t = get_godot_type(_unknown_class_fallback)
 	if t == _godot_type.UNKNOWN or t == _godot_type.INSTANCE or t == _godot_type.PARALLAX:
-		print_rich("[color=" + WARNING_COLOR + "] -- Option unknown_class_fallback '" + value + "' is not supported. -> Using 'staticbody'[/color]")
-		CommonUtils.warning_count += 1
+		CommonUtils.report_warning(" -- Option unknown_class_fallback '" + value + "' is not supported. -> Using 'staticbody'", WARNING_COLOR)
 		_unknown_class_fallback = "staticbody"
 		t = _godot_type.BODY
 	_unknown_class_type = t
@@ -254,8 +252,7 @@ func set_warn_unknown_classes(value: bool):
 func set_object_refs(value: String):
 	_object_refs = value.to_lower()
 	if _object_refs != "nodepath" and _object_refs != "geometry" and _object_refs != "both":
-		print_rich("[color=" + WARNING_COLOR + "] -- Option object_refs '" + value + "' is not supported. -> Using 'nodepath'[/color]")
-		CommonUtils.warning_count += 1
+		CommonUtils.report_warning(" -- Option object_refs '" + value + "' is not supported. -> Using 'nodepath'", WARNING_COLOR)
 		_object_refs = "nodepath"
 
 
@@ -411,8 +408,7 @@ func create(source_file: String):
 				if node is TileMapLayer and node.tile_set.resource_path == "":
 					node.tile_set = ResourceLoader.load(_tileset_save_path)
 		else:
-			printerr("Saving tileset returned error " + str(save_ret))
-			CommonUtils.error_count += 1
+			CommonUtils.report_error("Saving tileset returned error " + str(save_ret))
 
 
 	if _base_dictionary.has("properties"):
@@ -791,8 +787,7 @@ func apply_blend_mode(node: CanvasItem, layer: Dictionary) -> void:
 		mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD if mode == "add" else CanvasItemMaterial.BLEND_MODE_MUL
 		node.material = mat
 	else:
-		print_rich("[color=" + WARNING_COLOR + "] -- Blend mode '" + mode + "' of layer '" + str(layer.get("name", "")) + "' is not supported. -> Ignored[/color]")
-		CommonUtils.warning_count += 1
+		CommonUtils.report_warning(" -- Blend mode '" + mode + "' of layer '" + str(layer.get("name", "")) + "' is not supported. -> Ignored", WARNING_COLOR)
 
 # Tiled's parallax factor of a layer (1.0 for an axis that is not set)
 static func get_parallax_factor(layer_dict: Dictionary) -> Vector2:
@@ -878,8 +873,7 @@ func handle_data(data, map_size):
 					"zstd":
 						bytes = bytes.decompress(map_size * 4, FileAccess.COMPRESSION_ZSTD)
 					_:
-						printerr("Decompression for type '" + _compression + "' not yet implemented.")
-						CommonUtils.error_count += 1
+						CommonUtils.report_error("Decompression for type '" + _compression + "' not yet implemented.")
 						return []
 			return bytes.to_int32_array()
 	return []
@@ -1282,13 +1276,11 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 
 	if godot_type == _godot_type.UNKNOWN and scene_path == "":
 		if godot_node_type_prop_found:
-			print_rich("[color=" + WARNING_COLOR +"] -- Unknown " + GODOT_NODE_TYPE_PROPERTY + " '" + godot_node_type_property_string + "'. -> Using '" + _unknown_class_fallback + "'[/color]")
-			CommonUtils.warning_count += 1
+			CommonUtils.report_warning(" -- Unknown " + GODOT_NODE_TYPE_PROPERTY + " '" + godot_node_type_property_string + "'. -> Using '" + _unknown_class_fallback + "'", WARNING_COLOR)
 		elif _warn_unknown_classes and not _reported_unknown_classes.has(class_string):
 			# Once per class name and import, whatever add_class_as_metadata says
 			_reported_unknown_classes[class_string] = true
-			print_rich("[color=" + WARNING_COLOR +"] -- Class '" + class_string + "' is not a Godot node type -> using '" + _unknown_class_fallback + "'. Set '" + GODOT_NODE_TYPE_PROPERTY + "', map the class to a scene ('class_scenes') or set the option 'unknown_class_fallback' (see Reference).[/color]")
-			CommonUtils.warning_count += 1
+			CommonUtils.report_warning(" -- Class '" + class_string + "' is not a Godot node type -> using '" + _unknown_class_fallback + "'. Set '" + GODOT_NODE_TYPE_PROPERTY + "', map the class to a scene ('class_scenes') or set the option 'unknown_class_fallback' (see Reference).", WARNING_COLOR)
 		godot_type = _unknown_class_type
 	elif godot_type == _godot_type.UNKNOWN:
 		godot_type = _godot_type.EMPTY
@@ -1300,8 +1292,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 		var template_entry: Dictionary = load_template(template_file)
 		var template_file_full_path: String = template_entry["full_path"]
 		if template_entry["missing"]:
-			printerr("ERROR: Template file '" + template_file + "' not found. -> Continuing but result may be unusable")
-			CommonUtils.error_count += 1
+			CommonUtils.report_error("ERROR: Template file '" + template_file + "' not found. -> Continuing but result may be unusable")
 		var template_dict: Dictionary = template_entry["dict"]
 		var template_tileset = template_entry["tileset"]
 
@@ -1376,8 +1367,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 	if godot_type == _godot_type.INSTANCE and not obj.has("template") and not obj.has("text") and not obj.has("gid"):
 		var res_path = get_property(obj, "res_path", "file")
 		if res_path == "":
-			printerr("Object of class 'instance': Mandatory file property 'res_path' not found or invalid. -> Skipped")
-			CommonUtils.error_count += 1
+			CommonUtils.report_error("Object of class 'instance': Mandatory file property 'res_path' not found or invalid. -> Skipped")
 		else:
 			if obj.has("template_dir_path"):
 				res_path = join_file_path(obj.template_dir_path, res_path)
@@ -1405,8 +1395,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 			_current_object_alignment = "bottomleft" if _map_orientation == "orthogonal" else "bottom"
 
 		if not tileset.has_source(source_id):
-			printerr("Could not get AtlasSource with id " + str(source_id) + ". -> Skipped")
-			CommonUtils.error_count += 1
+			CommonUtils.report_error("Could not get AtlasSource with id " + str(source_id) + ". -> Skipped")
 			return
 	
 		var gid_source = tileset.get_source(source_id)
@@ -1492,8 +1481,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				if res_path != "" and obj.has("template_dir_path"):
 					res_path = join_file_path(obj.template_dir_path, res_path)
 			if res_path == "":
-				printerr("Object of class 'instance': Mandatory file property 'res_path' not found or invalid. -> Skipped")
-				CommonUtils.error_count += 1
+				CommonUtils.report_error("Object of class 'instance': Mandatory file property 'res_path' not found or invalid. -> Skipped")
 			else:
 				var res_path_extension = res_path.get_file().get_extension().to_lower()
 				var res_alignment = instance_props.get("res_alignment:string", "")
@@ -1509,8 +1497,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 		# An animated tile is shown animated
 		if gid_source.get_tile_animation_frames_count(tile_coords) > 1:
 			if get_property(obj, "clip_artifacts", "bool") == "true":
-				print_rich("[color=" + WARNING_COLOR + "] -- Tile object '" + str(obj_sprite.name) + "': 'clip_artifacts' needs a Sprite2D region. -> Not animated[/color]")
-				CommonUtils.warning_count += 1
+				CommonUtils.report_warning(" -- Tile object '" + str(obj_sprite.name) + "': 'clip_artifacts' needs a Sprite2D region. -> Not animated", WARNING_COLOR)
 			else:
 				obj_sprite = replace_with_animated_sprite(obj_sprite, gid_source, tile_coords, layer_node)
 
@@ -1805,11 +1792,9 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 					handle_properties(co, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.NAVIGATION:
 				if obj.has("capsule"):
-					print_rich("[color="+WARNING_COLOR+"] -- Capsule is unusable for NavigationRegion2D. -> Skipped[/color]")
-					CommonUtils.warning_count += 1
+					CommonUtils.report_warning(" -- Capsule is unusable for NavigationRegion2D. -> Skipped", WARNING_COLOR)
 				elif obj.has("ellipse"):
-					print_rich("[color="+WARNING_COLOR+"] -- Ellipse is unusable for NavigationRegion2D. -> Skipped[/color]")
-					CommonUtils.warning_count += 1
+					CommonUtils.report_warning(" -- Ellipse is unusable for NavigationRegion2D. -> Skipped", WARNING_COLOR)
 				else:
 					var nav_region = NavigationRegion2D.new()
 					layer_node.add_child(nav_region)
@@ -1837,11 +1822,9 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 						handle_properties(nav_region, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.OCCLUDER:
 				if obj.has("capsule"):
-					print_rich("[color="+WARNING_COLOR+"] -- Capsule is unusable for LightOccluder2D. -> Skipped[/color]")
-					CommonUtils.warning_count += 1
+					CommonUtils.report_warning(" -- Capsule is unusable for LightOccluder2D. -> Skipped", WARNING_COLOR)
 				elif obj.has("ellipse"):
-					print_rich("[color="+WARNING_COLOR+"] -- Ellipse is unusable for LightOccluder2D. -> Skipped[/color]")
-					CommonUtils.warning_count += 1
+					CommonUtils.report_warning(" -- Ellipse is unusable for LightOccluder2D. -> Skipped", WARNING_COLOR)
 				else:
 					var light_occ = LightOccluder2D.new()
 					layer_node.add_child(light_occ)
@@ -1860,11 +1843,9 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 						handle_properties(light_occ, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.POLYGON:
 				if obj.has("capsule"):
-					print_rich("[color="+WARNING_COLOR+"] -- Capsule is unusable for Polygon2D. -> Skipped[/color]")
-					CommonUtils.warning_count += 1
+					CommonUtils.report_warning(" -- Capsule is unusable for Polygon2D. -> Skipped", WARNING_COLOR)
 				elif obj.has("ellipse"):
-					print_rich("[color="+WARNING_COLOR+"] -- Ellipse is unusable for Polygon2D. -> Skipped[/color]")
-					CommonUtils.warning_count += 1
+					CommonUtils.report_warning(" -- Ellipse is unusable for Polygon2D. -> Skipped", WARNING_COLOR)
 				else:
 					var polygon = Polygon2D.new()
 					layer_node.add_child(polygon)
@@ -1920,8 +1901,7 @@ func instantiate_scene(res_path: String, obj: Dictionary, layer_node: Node, pos:
 	var scene = DataLoader.load_resource_from_file(res_path, _base_path)
 	if scene == null: return null
 	if not scene is PackedScene:
-		printerr("ERROR: '" + res_path + "' is not a scene. -> Skipped")
-		CommonUtils.error_count += 1
+		CommonUtils.report_error("ERROR: '" + res_path + "' is not a scene. -> Skipped")
 		return null
 	if replaces != null:
 		replaces.owner = null
@@ -2047,8 +2027,7 @@ func add_collision_shapes(parent: CollisionObject2D, object_group: Dictionary, t
 	for obj in objects:
 		var obj_name = obj.get("name", "")
 		if obj.has("point") and obj["point"]:
-			print_rich("[color="+WARNING_COLOR+"] -- 'Point' has currently no corresponding collision element in Godot 4. -> Skipped[/color]")
-			CommonUtils.warning_count += 1
+			CommonUtils.report_warning(" -- 'Point' has currently no corresponding collision element in Godot 4. -> Skipped", WARNING_COLOR)
 			break
 
 		var fact = tile_height / _map_tile_height
@@ -2557,8 +2536,7 @@ func get_object_ref_path(node: Node, name: String, target_id: int) -> NodePath:
 	var target = _nodes_by_object_id.get(target_id) if target_id != 0 else null
 	if target == null or not is_instance_valid(target):
 		var what := "is not set" if target_id == 0 else "names no imported object (id " + str(target_id) + ")"
-		print_rich("[color=" + WARNING_COLOR + "] -- Object property '" + name + "' of '" + str(node.name) + "' " + what + ". -> Empty NodePath[/color]")
-		CommonUtils.warning_count += 1
+		CommonUtils.report_warning(" -- Object property '" + name + "' of '" + str(node.name) + "' " + what + ". -> Empty NodePath", WARNING_COLOR)
 		return NodePath()
 	return node.get_path_to(target)
 
@@ -3193,8 +3171,7 @@ func set_property_or_meta(node: Node, name: String, type: String, value, file_ba
 			if converted.size() == 1:
 				node.set(name, converted[0])
 				return
-			print_rich("[color=" + WARNING_COLOR + "] -- Property '" + name + "' of '" + str(node.name) + "': a Tiled '" + type + "' value does not fit its type " + get_property_type_name(info) + ". -> Stored as metadata[/color]")
-			CommonUtils.warning_count += 1
+			CommonUtils.report_warning(" -- Property '" + name + "' of '" + str(node.name) + "': a Tiled '" + type + "' value does not fit its type " + get_property_type_name(info) + ". -> Stored as metadata", WARNING_COLOR)
 	node.set_meta(name, value)
 
 

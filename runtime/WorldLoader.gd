@@ -69,13 +69,11 @@ static func _parse(world_file: String) -> Array:
 	var ret: Array = []
 	var content = DataLoader.get_tiled_file_content(world_file, "")
 	if content == null:
-		printerr("ERROR: Tiled world file '" + world_file + "' not found.")
-		CommonUtils.error_count += 1
+		CommonUtils.report_error("ERROR: Tiled world file '" + world_file + "' not found.")
 		return ret
 	var json := JSON.new()
 	if json.parse(content.get_string_from_utf8()) != OK or not json.data is Dictionary:
-		printerr("ERROR: Tiled world file '" + world_file + "' could not be parsed.")
-		CommonUtils.error_count += 1
+		CommonUtils.report_error("ERROR: Tiled world file '" + world_file + "' could not be parsed.")
 		return ret
 	var world: Dictionary = json.data
 	var dir := world_file.get_base_dir()
@@ -99,8 +97,7 @@ static func _parse(world_file: String) -> Array:
 		if not pattern is Dictionary: continue
 		var regex := RegEx.new()
 		if regex.compile(str(pattern.get("regexp", ""))) != OK:
-			printerr("ERROR: Tiled world file '" + world_file + "': pattern '" + str(pattern.get("regexp", "")) + "' is not a valid regular expression. -> Skipped")
-			CommonUtils.error_count += 1
+			CommonUtils.report_error("ERROR: Tiled world file '" + world_file + "': pattern '" + str(pattern.get("regexp", "")) + "' is not a valid regular expression. -> Skipped")
 			continue
 		compiled.append([regex, pattern])
 	var files := Array(DataLoader.list_files(dir))
@@ -121,8 +118,7 @@ static func _parse(world_file: String) -> Array:
 			if size.x < 0 or size.y < 0:
 				var map_size = get_map_pixel_size(path)
 				if map_size == null:
-					printerr("ERROR: Map file '" + path + "' of world '" + world_file + "' could not be read. -> Skipped")
-					CommonUtils.error_count += 1
+					CommonUtils.report_error("ERROR: Map file '" + path + "' of world '" + world_file + "' could not be read. -> Skipped")
 					break
 				if size.x < 0: size.x = map_size.x
 				if size.y < 0: size.y = map_size.y

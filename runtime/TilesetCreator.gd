@@ -125,8 +125,7 @@ func set_custom_data_prefix(value: String):
 func set_animation_mode(value: String):
 	_animation_mode = value.to_lower()
 	if _animation_mode != "strip" and _animation_mode != "atlas":
-		print_rich("[color="+WARNING_COLOR+"] -- Option animation_mode '" + value + "' is not supported. -> Using 'strip'[/color]")
-		CommonUtils.warning_count += 1
+		CommonUtils.report_warning(" -- Option animation_mode '" + value + "' is not supported. -> Using 'strip'", WARNING_COLOR)
 		_animation_mode = "strip"
 
 
@@ -143,8 +142,7 @@ func create_from_dictionary_array(tileSets: Array):
 
 			var tiled_file_content = DataLoader.get_tiled_file_content(source_file, _base_path_map)
 			if tiled_file_content == null:
-				printerr("ERROR: Tileset file '" + source_file + "' not found. -> Continuing but result may be unusable")
-				CommonUtils.error_count += 1
+				CommonUtils.report_error("ERROR: Tileset file '" + source_file + "' not found. -> Continuing but result may be unusable")
 				continue
 
 			_base_path_tileset = _base_path_map.path_join(source_file).get_base_dir()
@@ -155,7 +153,7 @@ func create_from_dictionary_array(tileSets: Array):
 
 		# Possible error condition
 		if tile_set_dict == null:
-			CommonUtils.error_count += 1
+			CommonUtils.count_error("ERROR: Tileset '" + str(tile_set.get("source", "")) + "' could not be read.")
 			continue
 
 		create_or_append(tile_set_dict)
@@ -311,8 +309,7 @@ func create_tile_if_not_existing_and_get_tiledata(tile_id: int):
 		var col = tile_id % _columns
 		var tile_coords = Vector2i(col, row)
 		if col > _current_max_x or row > _current_max_y:
-			print_rich("[color="+WARNING_COLOR+"] -- Tile " + str(tile_id) + " at " + str(col) + "," + str(row) + " outside texture range. -> Skipped[/color]")
-			CommonUtils.warning_count += 1
+			CommonUtils.report_warning(" -- Tile " + str(tile_id) + " at " + str(col) + "," + str(row) + " outside texture range. -> Skipped", WARNING_COLOR)
 			return null
 		var tile_at_coords = _current_atlas_source.get_tile_at_coords(tile_coords)
 		if tile_at_coords == Vector2i(-1, -1):
@@ -321,12 +318,10 @@ func create_tile_if_not_existing_and_get_tiledata(tile_id: int):
 			print_rich("[color="+WARNING_COLOR+"]WARNING: tile_at_coords not equal tile_coords![/color]")
 			print_rich("[color="+WARNING_COLOR+"]         tile_coords:   " + str(col) + "," + str(row) + "[/color]")
 			print_rich("[color="+WARNING_COLOR+"]         tile_at_coords: " + str(tile_at_coords.x) + "," + str(tile_at_coords.x) + "[/color]")
-			print_rich("[color="+WARNING_COLOR+"]-> Tile skipped[/color]")
-			CommonUtils.warning_count += 1
+			CommonUtils.report_warning("-> Tile skipped", WARNING_COLOR)
 			return null
 		return _current_atlas_source.get_tile_data(tile_coords, 0)
-	print_rich("[color="+WARNING_COLOR+"] -- Tile id " + str(tile_id) + " outside tile count range (0-" + str(_tile_count-1) + "). -> Skipped.[/color]")
-	CommonUtils.warning_count += 1
+	CommonUtils.report_warning(" -- Tile id " + str(tile_id) + " outside tile count range (0-" + str(_tile_count-1) + "). -> Skipped.", WARNING_COLOR)
 	return null
 
 
@@ -429,13 +424,11 @@ func handle_animation(frames: Array, tile_id: int) -> void:
 	# "atlas" mode: Godot animates a tile through the atlas cells following it, so the first frame
 	# must be the tile itself and the frames equidistant in a row or column
 	if _collection_tiles.has(tile_id) or _columns <= 0:
-		print_rich("[color="+WARNING_COLOR+"] -- Animated tile " + str(tile_id) + " of an image collection has no atlas to animate in. -> Using a strip[/color]")
-		CommonUtils.warning_count += 1
+		CommonUtils.report_warning(" -- Animated tile " + str(tile_id) + " of an image collection has no atlas to animate in. -> Using a strip", WARNING_COLOR)
 		queue_animation_strip(frames, tile_id)
 		return
 	if int(frames[0]["tileid"]) != tile_id:
-		print_rich("[color="+WARNING_COLOR+"] -- Animated tile " + str(tile_id) + ": the first frame (tile " + str(frames[0]["tileid"]) + ") is not the tile itself. -> Using a strip[/color]")
-		CommonUtils.warning_count += 1
+		CommonUtils.report_warning(" -- Animated tile " + str(tile_id) + ": the first frame (tile " + str(frames[0]["tileid"]) + ") is not the tile itself. -> Using a strip", WARNING_COLOR)
 		queue_animation_strip(frames, tile_id)
 		return
 
@@ -465,12 +458,10 @@ func handle_animation(frames: Array, tile_id: int) -> void:
 			if int(frames[i]["tileid"]) - int(frames[i - 1]["tileid"]) != step:
 				valid = false
 		if not valid:
-			print_rich("[color="+WARNING_COLOR+"] -- Animated tile " + str(tile_id) + ": Succession of tiles not supported in Godot 4 (use animation_mode 'strip'). -> Skipped[/color]")
-			CommonUtils.warning_count += 1
+			CommonUtils.report_warning(" -- Animated tile " + str(tile_id) + ": Succession of tiles not supported in Godot 4 (use animation_mode 'strip'). -> Skipped", WARNING_COLOR)
 			return
 	if not _current_atlas_source.has_room_for_tile(tile_coords, Vector2i.ONE, anim_columns, separation_vect, frames.size(), tile_coords):
-		print_rich("[color="+WARNING_COLOR+"] -- TileId " + str(tile_id) + ": Not enough room for all " + str(frames.size()) + " animation frames (use animation_mode 'strip'). -> Skipped[/color]")
-		CommonUtils.warning_count += 1
+		CommonUtils.report_warning(" -- TileId " + str(tile_id) + ": Not enough room for all " + str(frames.size()) + " animation frames (use animation_mode 'strip'). -> Skipped", WARNING_COLOR)
 		return
 	_current_atlas_source.set_tile_animation_separation(tile_coords, separation_vect)
 	_current_atlas_source.set_tile_animation_columns(tile_coords, anim_columns)
@@ -542,8 +533,7 @@ func create_animation_strips() -> void:
 		var frames: Array = item["frames"]
 		var base = get_strip_frame_tile(item, tile_id)
 		if base == null or not base[0].has_tile(base[1]):
-			print_rich("[color="+WARNING_COLOR+"] -- Animated tile " + str(tile_id) + " not found. -> Animation skipped[/color]")
-			CommonUtils.warning_count += 1
+			CommonUtils.report_warning(" -- Animated tile " + str(tile_id) + " not found. -> Animation skipped", WARNING_COLOR)
 			continue
 		var base_source: TileSetAtlasSource = base[0]
 		var regions := []
@@ -570,8 +560,7 @@ func create_animation_strips() -> void:
 		if failed == "" and frame_size.x <= 0:
 			failed = "the frames are empty"
 		if failed != "":
-			print_rich("[color="+WARNING_COLOR+"] -- Animated tile " + str(tile_id) + ": " + failed + ". -> Animation skipped[/color]")
-			CommonUtils.warning_count += 1
+			CommonUtils.report_warning(" -- Animated tile " + str(tile_id) + ": " + failed + ". -> Animation skipped", WARNING_COLOR)
 			continue
 
 		var strip := Image.create(frame_size.x * frames.size(), frame_size.y, false, Image.FORMAT_RGBA8)
@@ -656,8 +645,7 @@ func handle_objectgroup(object_group: Dictionary, current_tile: TileData, tile_i
 		if obj.has("polygon") or obj.has("polyline"):
 			var polygon_points = (obj["polygon"] if obj.has("polygon") else obj["polyline"]) as Array
 			if polygon_points.size() < 3:
-				print_rich("[color="+WARNING_COLOR+"] -- Skipped invalid polygon on tile " + str(tile_id) + " (less than 3 points)[/color]")
-				CommonUtils.warning_count += 1
+				CommonUtils.report_warning(" -- Skipped invalid polygon on tile " + str(tile_id) + " (less than 3 points)", WARNING_COLOR)
 				break
 			polygon = []
 			for pt in polygon_points:

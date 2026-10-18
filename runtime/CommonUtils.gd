@@ -22,6 +22,37 @@
 
 static var error_count: int
 static var warning_count: int
+# The messages of the current import, in order, one per counted error or warning: {"kind":
+# "error" or "warning", "text": the message without colour tags}. Cleared with the counts at the
+# start of every import (reset()); Importer.gd hands them out as last_messages.
+static var messages: Array[Dictionary] = []
+
+
+# Clears the counts and messages (the start of an import).
+static func reset() -> void:
+	error_count = 0
+	warning_count = 0
+	messages.clear()
+
+
+# Prints an error and counts it.
+static func report_error(text: String) -> void:
+	printerr(text)
+	error_count += 1
+	messages.append({"kind": "error", "text": text})
+
+
+# Prints a warning in colour and counts it.
+static func report_warning(text: String, color: String) -> void:
+	print_rich("[color=" + color + "]" + text + "[/color]")
+	warning_count += 1
+	messages.append({"kind": "warning", "text": text})
+
+
+# Counts an error that was printed already (or that has nothing more to say than text).
+static func count_error(text: String) -> void:
+	error_count += 1
+	messages.append({"kind": "error", "text": text})
 
 static func get_bitmask_integer_from_string(mask_string: String, max_len: int):
 	var ret: int = 0

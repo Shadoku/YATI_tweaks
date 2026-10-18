@@ -85,8 +85,10 @@ After every import call:
 
 - `importer.last_error_count` - number of errors reported during the last import (a `null` result always counts at least one)
 - `importer.last_warning_count` - number of warnings reported during the last import
+- `importer.last_messages` - those errors and warnings in order, each `{"kind": "error" or "warning", "text": ...}`
+  (the text as printed, without colour tags); for tools that report them elsewhere, such as `check_map.gd` below
 
-The counters are reset at the start of each call.
+The counters and messages are reset at the start of each call.
 
 ## Worlds and map bounds
 
@@ -136,6 +138,37 @@ func _post_process(base_node: Node):
 ```
 
 If you don't use post-processing you can delete `PostProcessing.gd` and the two post-processing methods in `Importer.gd`.
+
+## Checking a map from the command line
+
+`check_map.gd`, next to `Importer.gd` (in `runtime/` and in `addons/yati_native/`), imports a map headless and
+prints its errors and warnings one per line, for a tool to read: the Tiled extension's *Check map in Godot*
+action runs it and lists each line as an Issue on the object it names (`docs/tiled-extension-plan.md`).
+
+```sh
+godot --headless --path <project> -s res://addons/yati_native/check_map.gd -- res://maps/desert.tmx \
+    --project=res://maps/desert.tiled-project --warn_unknown_classes=true
+```
+
+The map is a `res://`, `user://` or absolute path (or relative to the project); `--zip=<archive>` reads it,
+and `--project`, from an archive. Every other `--<option>=<value>` sets the importer option of that name
+(the table above), typed from its declared type (`true`/`false`, a number, a string, JSON for `class_scenes`);
+an unknown option or a value of the wrong type is an error line and nothing is imported. `add_id_as_metadata`
+and `add_class_as_metadata` are always on. The output, between the importer's own lines:
+
+```
+YATI_CHECK warning 1 Class 'Door' is not a Godot node type -> using 'staticbody'. Set 'godot_node_type', ...
+YATI_CHECK warning 6 Property 'hp' of 'Broken': a Tiled 'string' value does not fit its type int. -> Stored as metadata
+YATI_CHECK error - Tileset file 'does_not_exist.tsx' not found. -> Continuing but result may be unusable
+YATI_CHECK result 1 2 15 0 4
+```
+
+One `YATI_CHECK error|warning <id> <text>` line per message (`last_messages`), where `<id>` is the Tiled id of
+the object the message names (by its node's name; for a class, the object of that class with the lowest id),
+`-` when it names none; then `YATI_CHECK result <errors> <warnings> <nodes> <cells> <ms>`: the counts, the
+tree's nodes (with the root) and tile layer cells, and the import's time in milliseconds. The exit code is 0
+without errors, 1 with errors, 2 when no tree was made (or the arguments are wrong). Both importers' scripts
+print the same lines for the same map (`test/test_check_map.sh` checks that).
 
 ## Performance tips
 

@@ -101,6 +101,10 @@ var async_tiles_per_frame: int = 256
 # Results of the last import (any of the import methods)
 var last_error_count: int = 0
 var last_warning_count: int = 0
+# The last import's errors and warnings, in order: {"kind": "error" or "warning", "text": the
+# message as printed, without colour tags}, one per counted message (the map's errors and
+# warnings, then TiledBuilder.get_messages(); tools such as check_map.gd read them).
+var last_messages: Array[Dictionary] = []
 
 # The extension's version once it was checked (per process), "" until then or when it is missing.
 static var _native_version: String = ""
@@ -208,15 +212,17 @@ func make_streamer(map_or_world: Variant, options: Resource = null, project_file
 func import_world(world_file: String, project_file: String = "") -> Node2D:
 	var errors := 0
 	var warnings := 0
+	var messages: Array[Dictionary] = []
 	var entries: Array = []
 	if native_version() == "":
-		printerr("ERROR: yati_native: the native library is not loaded (class " + NATIVE_CLASS + " is missing); build it with tools/build_native.sh or download it with tools/install_native.sh.")
+		_no_library(messages)
 		errors += 1
 	else:
 		var world: RefCounted = ClassDB.instantiate("TiledWorld")
 		world.call("load", world_file, "")
 		entries = world.call("get_maps")
 		errors += (world.call("get_errors") as PackedStringArray).size()
+		_add_messages(messages, "error", world.call("get_errors"))
 	var root: Node2D = null
 	if errors == 0 or not entries.is_empty():
 		root = Node2D.new()
@@ -225,6 +231,7 @@ func import_world(world_file: String, project_file: String = "") -> Node2D:
 			var map: Node = import(entry["path"], project_file)
 			errors += last_error_count
 			warnings += last_warning_count
+			messages.append_array(last_messages)
 			if map == null: continue
 			if map is Node2D or map is Control:
 				map.position = Vector2(entry["rect"].position)
@@ -236,6 +243,9 @@ func import_world(world_file: String, project_file: String = "") -> Node2D:
 			map.owner = root
 	last_error_count = errors if root != null else max(errors, 1)
 	last_warning_count = warnings
+	if last_error_count > errors:
+		messages.append({"kind": "error", "text": "ERROR: Tiled world file '" + world_file + "' could not be imported."})
+	last_messages = messages
 	CommonUtils.error_count = last_error_count
 	CommonUtils.warning_count = last_warning_count
 	print("Import of world '" + world_file + "' finished with " + str(last_error_count) + " error(s) and " + str(last_warning_count) + " warning(s).")
@@ -264,9 +274,10 @@ func make_options() -> Resource:
 func _import(source_file: String, project_file: String, zip_file: String, post_proc_file: String) -> Node:
 	var errors := 0
 	var warnings := 0
+	var messages: Array[Dictionary] = []
 	var ret: Node = null
 	if native_version() == "":
-		printerr("ERROR: yati_native: the native library is not loaded (class " + NATIVE_CLASS + " is missing); build it with tools/build_native.sh or download it with tools/install_native.sh.")
+		_no_library(messages)
 		errors += 1
 	else:
 		var map: RefCounted = ClassDB.instantiate("TiledMap")
@@ -277,6 +288,7 @@ func _import(source_file: String, project_file: String, zip_file: String, post_p
 			err = map.call("from_zip", zip_file, source_file, project_file)
 		errors += (map.call("get_errors") as PackedStringArray).size()
 		warnings += (map.call("get_warnings") as PackedStringArray).size()
+		_add_map_messages(messages, map)
 		if err == OK:
 			# The shared TileSet cache, or a fresh one (share_tilesets)
 			var tilesets: RefCounted = _tilesets_for_import()
@@ -284,17 +296,21 @@ func _import(source_file: String, project_file: String, zip_file: String, post_p
 			ret = builder.call("build", map, tilesets, make_options())
 			errors += int(builder.call("get_error_count"))
 			warnings += int(builder.call("get_warning_count"))
+			_add_builder_messages(messages, builder)
 			if ret != null and post_proc_file != "":
 				var post_proc := PostProcessing.new()
 				ret = post_proc.call_post_process(ret, post_proc_file)
 				if post_proc.get_error() != OK:
 					errors += 1
+					messages.append({"kind": "error", "text": "ERROR: Post-processing with '" + post_proc_file + "' failed (error " + str(post_proc.get_error()) + ")."})
 
 	if ret == null and errors == 0:
 		# A fatal error that was reported without being counted
 		errors = 1
+		messages.append({"kind": "error", "text": "ERROR: Import of '" + source_file + "' created no tree."})
 	last_error_count = errors
 	last_warning_count = warnings
+	last_messages = messages
 	CommonUtils.error_count = errors
 	CommonUtils.warning_count = warnings
 	if errors == 0 and warnings == 0:
@@ -307,9 +323,10 @@ func _import(source_file: String, project_file: String, zip_file: String, post_p
 func _import_async(source_file: String, project_file: String, zip_file: String) -> Node:
 	var errors := 0
 	var warnings := 0
+	var messages: Array[Dictionary] = []
 	var ret: Node = null
 	if native_version() == "":
-		printerr("ERROR: yati_native: the native library is not loaded (class " + NATIVE_CLASS + " is missing); build it with tools/build_native.sh or download it with tools/install_native.sh.")
+		_no_library(messages)
 		errors += 1
 	else:
 		var tree := Engine.get_main_loop() as SceneTree
@@ -326,6 +343,7 @@ func _import_async(source_file: String, project_file: String, zip_file: String) 
 			status = map.call("poll")
 		errors += (map.call("get_errors") as PackedStringArray).size()
 		warnings += (map.call("get_warnings") as PackedStringArray).size()
+		_add_map_messages(messages, map)
 		if status == _MAP_READY:
 			var opts := make_options()
 			var tilesets := _tilesets_for_import()
@@ -344,7 +362,8 @@ func _import_async(source_file: String, project_file: String, zip_file: String) 
 			ret = builder.call("build", map, tilesets, opts)
 			errors += int(builder.call("get_error_count"))
 			warnings += int(builder.call("get_warning_count"))
-	return _finish_async(source_file, ret, errors, warnings)
+			_add_builder_messages(messages, builder)
+	return _finish_async(source_file, ret, errors, warnings, messages)
 
 
 # The TileSet cache of one import: the shared one, or a fresh one (share_tilesets off, or a
@@ -356,11 +375,13 @@ func _tilesets_for_import() -> RefCounted:
 
 
 # The counts and the summary line of an asynchronous import (as _import's).
-func _finish_async(source_file: String, ret: Node, errors: int, warnings: int) -> Node:
+func _finish_async(source_file: String, ret: Node, errors: int, warnings: int, messages: Array[Dictionary]) -> Node:
 	if ret == null and errors == 0:
 		errors = 1
+		messages.append({"kind": "error", "text": "ERROR: Import of '" + source_file + "' created no tree."})
 	last_error_count = errors
 	last_warning_count = warnings
+	last_messages = messages
 	CommonUtils.error_count = errors
 	CommonUtils.warning_count = warnings
 	if errors == 0 and warnings == 0:
@@ -368,3 +389,27 @@ func _finish_async(source_file: String, ret: Node, errors: int, warnings: int) -
 	else:
 		print("Import of '" + source_file + "' finished with " + str(errors) + " error(s) and " + str(warnings) + " warning(s).")
 	return ret
+
+
+# The error of a missing library, printed and added to messages.
+func _no_library(messages: Array[Dictionary]) -> void:
+	var text := "ERROR: yati_native: the native library is not loaded (class " + NATIVE_CLASS + " is missing); build it with tools/build_native.sh or download it with tools/install_native.sh."
+	printerr(text)
+	messages.append({"kind": "error", "text": text})
+
+
+static func _add_messages(messages: Array[Dictionary], kind: String, texts: PackedStringArray) -> void:
+	for text in texts:
+		messages.append({"kind": kind, "text": text})
+
+
+# A TiledMap's errors and warnings (it prints the errors first).
+static func _add_map_messages(messages: Array[Dictionary], map: RefCounted) -> void:
+	_add_messages(messages, "error", map.call("get_errors"))
+	_add_messages(messages, "warning", map.call("get_warnings"))
+
+
+# A TiledBuilder's messages (TiledBuilder.get_messages(): "E:" or "W:" and the text).
+static func _add_builder_messages(messages: Array[Dictionary], builder: RefCounted) -> void:
+	for m: String in builder.call("get_messages"):
+		messages.append({"kind": "error" if m.begins_with("E:") else "warning", "text": m.substr(2)})

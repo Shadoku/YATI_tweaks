@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   both numbers, fits a `Vector2` property, and a `Vector2i` one when both are integral; a list of such values fits an
   `Array[Vector2]` / `Array[Vector2i]`. As metadata the value stays the `Dictionary`. The Tiled extension generates
   the class types `Vector2` and `Vector2i` for vector exports (`docs/tiled-extension-plan.md`, section 3).
+- `check_map.gd` next to both importers' `Importer.gd` (`runtime/`, `addons/yati_native/`): imports a map headless
+  (`godot --headless --path <project> -s res://addons/yati_native/check_map.gd -- <map> [--project=...]
+  [--zip=...] [--<option>=<value> ...]`) and prints one `YATI_CHECK error|warning <object id or -> <text>` line per
+  message and a `YATI_CHECK result <errors> <warnings> <nodes> <cells> <ms>` line; exit code 0, 1 with errors, 2
+  when nothing was imported. The Tiled extension's *Check map in Godot* runs it. Tested by `test/test_check_map.sh`
+  (in `test/run_all.sh` and CI): both scripts print the same lines.
+- `Importer.last_messages` (both importers): the last import's errors and warnings in order, each
+  `{"kind": "error" or "warning", "text": ...}`. The GDScript runtime collects them in `CommonUtils.messages`
+  (`CommonUtils.report_error` / `report_warning` print, count and record a message), the native facade from
+  `TiledMap.get_errors()` / `get_warnings()` and `TiledBuilder.get_messages()`.
 
 ## [3.1.0] — 2026-10-18
 

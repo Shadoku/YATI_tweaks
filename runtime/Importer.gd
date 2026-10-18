@@ -80,6 +80,10 @@ var assign_node_properties: bool = true
 # Results of the last import (any of the import methods)
 var last_error_count: int = 0
 var last_warning_count: int = 0
+# The last import's errors and warnings, in order: {"kind": "error" or "warning", "text": the
+# message as printed, without colour tags}, one per counted message (tools such as check_map.gd
+# read them; the importer prints them as it goes either way).
+var last_messages: Array[Dictionary] = []
 
 
 # Imports a Tiled map (.tmx/.tmj) from the file system (res://, user:// or absolute path).
@@ -99,11 +103,11 @@ func import_from_zip(zip_file: String, source_file_in_zip: String, project_file_
 # tests; a streamer uses WorldLoader.parse() and imports the maps it needs with import().
 # Returns null if the world file cannot be read; last_error_count / last_warning_count sum up all maps.
 func import_world(world_file: String, project_file: String = ""):
-	CommonUtils.error_count = 0
-	CommonUtils.warning_count = 0
+	CommonUtils.reset()
 	var entries: Array = WorldLoader.parse(world_file)
 	var errors: int = CommonUtils.error_count
 	var warnings: int = CommonUtils.warning_count
+	var messages: Array[Dictionary] = CommonUtils.messages.duplicate()
 	var root: Node2D = null
 	if errors == 0 or not entries.is_empty():
 		root = Node2D.new()
@@ -112,6 +116,7 @@ func import_world(world_file: String, project_file: String = ""):
 			var map = import(entry["path"], project_file)
 			errors += last_error_count
 			warnings += last_warning_count
+			messages.append_array(last_messages)
 			if map == null: continue
 			if map is Node2D or map is Control:
 				map.position = Vector2(entry["rect"].position)
@@ -123,6 +128,9 @@ func import_world(world_file: String, project_file: String = ""):
 			map.owner = root
 	last_error_count = errors if root != null else max(errors, 1)
 	last_warning_count = warnings
+	if last_error_count > errors:
+		messages.append({"kind": "error", "text": "ERROR: Tiled world file '" + world_file + "' could not be imported."})
+	last_messages = messages
 	print("Import of world '" + world_file + "' finished with " + str(last_error_count) + " error(s) and " + str(last_warning_count) + " warning(s).")
 	return root
 
@@ -138,8 +146,7 @@ func import_from_zip_with_post_processing(zip_file: String, source_file_in_zip: 
 
 
 func _import(source_file: String, project_file: String, zip_file: String, post_proc_file: String):
-	CommonUtils.error_count = 0
-	CommonUtils.warning_count = 0
+	CommonUtils.reset()
 	var ret = null
 	if DataLoader.begin_import(zip_file) == OK:
 		ret = _create(source_file, project_file, zip_file)
@@ -147,14 +154,15 @@ func _import(source_file: String, project_file: String, zip_file: String, post_p
 			var post_proc = PostProcessing.new()
 			ret = post_proc.call_post_process(ret, post_proc_file)
 			if post_proc.get_error() != OK:
-				CommonUtils.error_count += 1
+				CommonUtils.count_error("ERROR: Post-processing with '" + post_proc_file + "' failed (error " + str(post_proc.get_error()) + ").")
 	DataLoader.end_import()
 
 	if ret == null and CommonUtils.error_count == 0:
 		# Fatal errors reported by the creator itself are not counted there
-		CommonUtils.error_count = 1
+		CommonUtils.count_error("ERROR: Import of '" + source_file + "' created no tree.")
 	last_error_count = CommonUtils.error_count
 	last_warning_count = CommonUtils.warning_count
+	last_messages = CommonUtils.messages.duplicate()
 	if last_error_count == 0 and last_warning_count == 0:
 		print("Import of '" + source_file + "' succeeded.")
 	else:
@@ -165,12 +173,10 @@ func _import(source_file: String, project_file: String, zip_file: String, post_p
 func _create(source_file: String, project_file: String, zip_file: String):
 	if zip_file == "":
 		if not FileAccess.file_exists(source_file):
-			printerr("ERROR: Tiled map file '" + source_file + "' not found.")
-			CommonUtils.error_count += 1
+			CommonUtils.report_error("ERROR: Tiled map file '" + source_file + "' not found.")
 			return null
 		if project_file != "" and not FileAccess.file_exists(project_file):
-			printerr("ERROR: Tiled project file '" + project_file + "' not found.")
-			CommonUtils.error_count += 1
+			CommonUtils.report_error("ERROR: Tiled project file '" + project_file + "' not found.")
 			return null
 
 	var tilemap_creator = TilemapCreator.new()

@@ -45,8 +45,7 @@ static func begin_import(zip_path: String = "") -> Error:
 	var reader := ZIPReader.new()
 	var err := reader.open(zip_path)
 	if err != OK:
-		printerr("ERROR: Unable to open zip file '" + zip_path + "'.")
-		CommonUtils.error_count += 1
+		CommonUtils.report_error("ERROR: Unable to open zip file '" + zip_path + "'.")
 		return err
 	_zip_reader = reader
 	return OK
@@ -72,8 +71,7 @@ static func _acquire_zip_reader() -> ZIPReader:
 		return null
 	var reader := ZIPReader.new()
 	if reader.open(zip_file) != OK:
-		printerr("ERROR: Unable to open zip file '" + zip_file + "'.")
-		CommonUtils.error_count += 1
+		CommonUtils.report_error("ERROR: Unable to open zip file '" + zip_file + "'.")
 		return null
 	return reader
 
@@ -154,8 +152,7 @@ static func load_image(file_name: String, base_path: String):
 static func load_image_from_file(file_name: String, base_path: String):
 	var checked_file := _resolve_path_in_file_system(file_name, base_path)
 	if checked_file == "":
-		printerr("ERROR: Image file '" + file_name + "' not found.")
-		CommonUtils.error_count += 1
+		CommonUtils.report_error("ERROR: Image file '" + file_name + "' not found.")
 		return null
 
 	if _in_import and _texture_cache.has(checked_file):
@@ -167,8 +164,7 @@ static func load_image_from_file(file_name: String, base_path: String):
 	else:
 		var image := Image.load_from_file(checked_file)
 		if image == null:
-			printerr("ERROR: Image file '" + checked_file + "' could not be loaded.")
-			CommonUtils.error_count += 1
+			CommonUtils.report_error("ERROR: Image file '" + checked_file + "' could not be loaded.")
 			return null
 		texture = ImageTexture.create_from_image(image)
 
@@ -183,8 +179,7 @@ static func load_image_from_zip(file_name: String, base_path: String):
 	var file_in_zip := _resolve_path_in_zip(reader, file_name, base_path)
 	if file_in_zip == "":
 		_release_zip_reader(reader)
-		printerr("ERROR: Image file '" + file_name + "' not found in zip file '" + zip_file + "'.")
-		CommonUtils.error_count += 1
+		CommonUtils.report_error("ERROR: Image file '" + file_name + "' not found in zip file '" + zip_file + "'.")
 		return null
 
 	var cache_key := zip_file + "::" + file_in_zip
@@ -208,8 +203,7 @@ static func load_image_from_zip(file_name: String, base_path: String):
 		"tga":
 			err = image.load_tga_from_buffer(image_bytes)
 	if err != OK:
-		printerr("ERROR: Image file '" + file_in_zip + "' in zip file '" + zip_file + "' could not be loaded.")
-		CommonUtils.error_count += 1
+		CommonUtils.report_error("ERROR: Image file '" + file_in_zip + "' in zip file '" + zip_file + "' could not be loaded.")
 		return null
 	var texture := ImageTexture.create_from_image(image)
 	if _in_import:
@@ -222,6 +216,5 @@ static func load_resource_from_file(resource_file: String, base_path: String):
 	if checked_file != "":
 		return ResourceLoader.load(checked_file)
 
-	printerr("ERROR: Resource file '" + resource_file + "' not found.")
-	CommonUtils.error_count += 1
+	CommonUtils.report_error("ERROR: Resource file '" + resource_file + "' not found.")
 	return null

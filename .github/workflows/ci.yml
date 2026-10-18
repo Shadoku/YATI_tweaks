@@ -67,7 +67,9 @@ jobs:
       # the shared TileSet cache and cancellation without leaks (stage 3); and test/test_stream.gd:
       # TiledStreamer's load_all() against the builder, windows, objects, budgets, worlds, leaks
       # (stage 4; test/bench_stream.gd, its benchmark, needs a renderer and is run by hand).
-      - name: Test the GDScript runtime (smoke test, test suite, benchmark) and the native async and streaming tests
+      # And test/test_check_map.sh: check_map.gd of both importers (the command-line map check the
+      # Tiled extension runs, docs/tiled-extension-plan.md) on fixtures, the same lines from both.
+      - name: Test the GDScript runtime (smoke test, test suite, check_map.gd, benchmark) and the native async and streaming tests
         run: sh test/run_all.sh --runtime=res://runtime
 
       # The same suite against the native importer's facade (stage 2's gate).

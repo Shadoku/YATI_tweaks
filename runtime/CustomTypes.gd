@@ -38,14 +38,12 @@ func load_custom_types(project_file: String):
 	_project_dir = project_file.get_base_dir()
 	var proj_file_content = DataLoader.get_tiled_file_content(project_file, "")
 	if proj_file_content == null:
-		printerr("ERROR: Tiled project file '" + project_file + "' not found.")
-		CommonUtils.error_count += 1
+		CommonUtils.report_error("ERROR: Tiled project file '" + project_file + "' not found.")
 		return
 
 	var project_file_as_dictionary = DictionaryBuilder.new().get_dictionary(proj_file_content, project_file)
 	if not project_file_as_dictionary is Dictionary:
-		printerr("ERROR: Tiled project file '" + project_file + "' could not be parsed.")
-		CommonUtils.error_count += 1
+		CommonUtils.report_error("ERROR: Tiled project file '" + project_file + "' could not be parsed.")
 		return
 	if project_file_as_dictionary.has("propertyTypes"):
 		_custom_types = project_file_as_dictionary["propertyTypes"]
@@ -97,8 +95,7 @@ func get_enum_mask(enum_name: String, names: String, max_len: int) -> int:
 	for name in names.split(",", false):
 		var index: int = values.find(name.strip_edges())
 		if index < 0 or index >= max_len:
-			print_rich("[color=yellow] -- '" + name.strip_edges() + "' is no layer of enum '" + enum_name + "'. -> Ignored[/color]")
-			CommonUtils.warning_count += 1
+			CommonUtils.report_warning(" -- '" + name.strip_edges() + "' is no layer of enum '" + enum_name + "'. -> Ignored", "yellow")
 			continue
 		mask |= 1 << index
 	return mask

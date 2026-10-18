@@ -107,7 +107,9 @@ print(importer.last_error_count, " errors, ", importer.last_warning_count, " war
 
 Each import prints a summary line (`Import of '...' succeeded.` or `... finished with N error(s)
 and M warning(s).`) after its messages; `last_error_count` and `last_warning_count` hold the counts
-(a `null` result counts at least one error). Every root has metadata `map_rect` (the map's bounds
+(a `null` result counts at least one error), `last_messages` the messages themselves in order
+(`{"kind": "error" or "warning", "text": ...}`: the map's errors and warnings, then
+`TiledBuilder.get_messages()`). Every root has metadata `map_rect` (the map's bounds
 in pixels), `map_size_tiles`, `tile_size` and `orientation`. `WorldLoader.gd`:
 `WorldLoader.parse(world_file, zip_file = "")` returns a world's maps as
 `{"path": String, "rect": Rect2i}`.
@@ -137,6 +139,21 @@ in pixels), `map_size_tiles`, `tile_size` and `orientation`. `WorldLoader.gd`:
 
 The [Reference](https://github.com/Shadoku/YATI_tweaks/blob/main/Reference.md) explains each, and
 what every Tiled element and custom property becomes.
+
+### Checking a map from the command line: `check_map.gd`
+
+```sh
+godot --headless --path <project> -s res://addons/yati_native/check_map.gd -- <map> \
+    [--project=<.tiled-project>] [--zip=<archive>] [--<option>=<value> ...]
+```
+
+imports the map with this `Importer.gd` (each `--<option>=<value>` sets that option, typed from its
+declaration; `add_id_as_metadata` and `add_class_as_metadata` forced on), frees the tree and prints
+one line per error or warning, `YATI_CHECK error|warning <object id or -> <text>`, the id being the
+Tiled object the message names (by its node's name, or a class's object of lowest id), then
+`YATI_CHECK result <errors> <warnings> <nodes> <cells> <ms>`. Exit code 0 without errors, 1 with
+errors, 2 when nothing could be imported or the arguments are wrong. The Tiled extension's *Check map
+in Godot* action runs it; the GDScript runtime has the same script, with the same output.
 
 ### Importing during play: `import_async`
 

@@ -28,9 +28,20 @@ it names the native importer's GDExtension in `.godot/extension_list.cfg` when t
 is in place (Godot loads an extension only when that file names it, and a fresh `.godot/`'s first import
 that discovers one mid-scan aborts at shutdown with exit code 134 on Godot 4.7.2), imports the project
 (the fixtures' images are imported textures, so a fresh clone needs it), runs the native smoke test,
-then the tests, the benchmark and, with the library, `test/test_async.gd` and `test/test_stream.gd`
-(below). Without the library the smoke test and those two are skipped, unless the runtime under test
+then the tests, `test/test_check_map.sh` (below), the benchmark and, with the library,
+`test/test_async.gd` and `test/test_stream.gd` (below). Without the library the smoke test and those two are skipped, unless the runtime under test
 is the native one.
+
+```sh
+# check_map.gd, the command-line map check of both importers (Runtime.md, "Checking a map from the
+# command line"): runs res://runtime/check_map.gd and, with this platform's native library,
+# res://addons/yati_native/check_map.gd on fixtures (unknown_class.tmx with
+# --warn_unknown_classes=true and false, scenes.tmx with and without its project, object_refs.tmx,
+# missing_tileset.tmx, the zip's map, a missing map, wrong options) and compares their YATI_CHECK
+# lines (the result line without its time) and exit codes with the expected ones, so both scripts
+# print the same lines. Needs an imported project (run_all.sh imports first).
+GODOT=/path/to/godot test/test_check_map.sh
+```
 
 ```sh
 # 4. What the engine itself charges for a map's tile layers (no importer involved): assigning

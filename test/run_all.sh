@@ -1,6 +1,6 @@
 #!/bin/sh
-# Runs the native importer's smoke test, the YATI runtime test suite, the benchmark and (with the
-# native library) the native importer's async and streaming tests headless.
+# Runs the native importer's smoke test, the YATI runtime test suite, the check_map.gd script test,
+# the benchmark and (with the native library) the native importer's async and streaming tests headless.
 # Usage: GODOT=/path/to/godot test/run_all.sh [--runtime=res://runtime]
 #        (--runtime=res://addons/yati_native tests the native importer's facade)
 set -e
@@ -41,6 +41,9 @@ else
 fi
 
 "$GODOT" --headless -s test/run_tests.gd -- "$RUNTIME" || status=$?
+# check_map.gd, the command-line map check (docs/tiled-extension-plan.md, section 3): the
+# runtime's and, with the library, the native importer's, on fixtures; the same lines from both
+GODOT="$GODOT" sh test/test_check_map.sh || status=$?
 "$GODOT" --headless -s test/benchmark.gd -- "$RUNTIME"
 
 # The native importer's asynchronous import and shared TileSet cache (stage 3 of
