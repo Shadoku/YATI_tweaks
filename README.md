@@ -62,20 +62,34 @@ By setting classes and custom properties in Tiled the resulting node tree can be
 
 The `test` folder contains a headless test suite and a benchmark (see the comments in `test/run_tests.gd`),
 and `test/bench_materialize.gd`, which measures what the engine itself charges for a map's tile layers.
-`test/run_all.sh` runs the native importer's smoke test, the suite and the benchmark ([test/README.md](test/README.md)).
+`test/run_all.sh` runs the native importer's smoke test, the suite, the benchmark and (with the native library)
+its asynchronous and streaming tests ([test/README.md](test/README.md)).
 
-## Native importer (in progress)
+## Native importer
 
-[docs/native-importer-plan.md](docs/native-importer-plan.md) explores a Rust (GDExtension) version of
-this runtime that imports maps during play without a hitch and streams chunks of infinite maps, with the
-measurements behind it and the stages to get there. The GDScript runtime stays as the reference.
+`addons/yati_native/` is this runtime as a Rust GDExtension: the same `Importer.gd` API, options and
+node tree (the test suite passes against both), 4 to 5 times faster, plus what GDScript cannot do:
+`import_async()` imports a map during play without a hitch (the parse on a worker thread),
+TileSets are shared across imports, and `TiledStreamer` streams large or infinite maps and whole
+Tiled worlds chunk by chunk within a per-frame budget. It needs Godot 4.7 and a library for the
+platform (Linux x86_64, Windows x86_64 and macOS are built by CI; Linux arm64 with cargo; web and
+mobile not yet). The GDScript runtime stays the reference and the fallback.
 
-Stage 0 is done: the crate (`native/`), the addon (`addons/yati_native/`: the `.gdextension`, its
-`bin/` and an `Importer.gd` facade with this runtime's API) and the build loop. It loads but imports
-nothing yet. To try it, copy `addons/yati_native/` into a project and put the library into its `bin/`:
-`bash tools/install_native.sh` downloads a CI build (Linux x86_64, Windows x86_64, macOS), or
-`bash tools/build_native.sh` builds this machine's with cargo. Details:
-[addons/yati_native/README.md](addons/yati_native/README.md).
+Install: copy `addons/yati_native/` into your project and put the libraries into its `bin/`
+(`yati-native.zip` from a release, or `bash tools/install_native.sh` / `bash tools/build_native.sh`
+from this checkout), then preload `res://addons/yati_native/Importer.gd` instead of the runtime's.
+Details: [Runtime.md](Runtime.md#native-importer), the addon's
+[README](addons/yati_native/README.md), and the plan with its measurements,
+[docs/native-importer-plan.md](docs/native-importer-plan.md).
+
+**Versions.** The repository's releases (`CHANGELOG.md`, tags `v3.x.y`) version the GDScript
+runtime and everything in this repository. The native library has its own version, the crate's
+(`native/Cargo.toml`, `TiledNative.version()`, `Importer.native_version()`; 0.2.0 with release
+3.1.0): pushing the tag `v<crate version>` (`v0.2.0`) makes `.github/workflows/native.yml` publish
+`yati-native.zip` as a release of that tag, while a `v3.x.y` tag builds the libraries but publishes
+none. `tools/install_native.sh` downloads the release named in `.yati-native-version` (or a
+branch's rolling build, `native-<branch>`). The pure-Rust core (`native/tiled/`, crate
+`tiled_core`) is versioned with the library.
 
 ## Credits
 

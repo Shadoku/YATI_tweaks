@@ -12,6 +12,7 @@
 - [Specialities](#specialities)
 - [Newly supported Tiled features](#newly-supported-tiled-features)
 - [Tiled features not supported](#tiled-features-not-supported)
+- [Differences between the GDScript and the native importer](#differences-between-the-gdscript-and-the-native-importer)
 
 <!-- markdown-toc end -->
 
@@ -736,3 +737,46 @@ These Tiled features have no Godot equivalent and are ignored:
 - Text object `underline`, `strikeout` and `kerning` (Label has no such switches)
 - The hexagonal 120° rotation flag (gid bit 28, masked off: Godot 4's hexagonal tiles can't be rotated by 120° either)
 - Embedded images (`<image>` with a `<data>` child instead of a `source`)
+
+## Differences between the GDScript and the native importer
+
+The native importer (`addons/yati_native/`, [Runtime.md](Runtime.md#native-importer)) makes the
+tree this runtime makes: the same nodes, names, metadata, groups, materials, options and messages,
+checked by the same test suite (`test/run_tests.gd`) against both. These are the differences that
+are accepted, each for its reason. None of them shows in a map Tiled writes and imports with the
+default options, except the caches and the references resolved relative to their file.
+
+**Accepted by design**
+
+| What | GDScript runtime | Native importer | Why |
+|---|---|---|---|
+| TileSets | a new one per import | cached per tileset combination and shared across imports (`share_tilesets`, exclusive: never between two live trees); a reused TileSet keeps the tiles every earlier map added | no TileSet creation for a map on known tilesets; `share_tilesets = false` gives the runtime's behaviour |
+| Textures | loaded per import | cached per process; a file changed on disk needs `Importer.shared_tilesets().clear_textures()` | a texture is loaded once for every map and chunk |
+| Internal custom data layer `__internal__` (marks tiles with collision shapes) | created, then removed at the end of an import; left in a TileSet saved with `save_tileset_to` and in templates' TileSets | never created (kept on the Rust side) | the layer is an implementation detail; the runtime only forgets to remove it |
+| Custom types on tilesets that only templates use, and on layers marked `no_import` | not merged | merged | the model merges custom types when it loads a file, wherever they apply; nothing reads them in a skipped layer |
+| References (external tilesets, templates, images) | the bare name relative to the working directory is tried first, then relative to the referencing file | relative to the referencing file only | what Tiled does; the first try is a runtime accident that can pick an unrelated file |
+| An embedded tileset listed after an external one | its image resolved relative to the previous external tileset's directory | relative to the map | the runtime keeps the last tileset's directory by mistake |
+| JSON templates (`.tj`) | create nothing (`create_object` reads only the TMX `objects` key), and a reference to such an instance warns as dangling | instantiate, and references to them resolve | the JSON template format is Tiled's too |
+| A numeric object or layer name (`name="007"`) | the XML dictionary types it as the int 7: the node is named `7` | keeps its spelling: `007` | the name is a string in Tiled |
+| The format of a file | told by its extension | told by its content first, then its extension | the same result for every file Tiled writes |
+| Property lists of engine classes (what `assign_node_properties` matches against) | read per import | read once per process (scripted nodes: per import, as the runtime) | the same unless an engine class's property list depends on a node's state |
+| `TilemapCreator.gd` | the builder | a stand-in with `create`, `get_map_rect`, `get_tileset`; options go on `Importer.gd`; `create` prints the import's summary line | the builder is native |
+| Floating-point values (positions, polygon points) | GDScript's arithmetic | Rust's | may differ in the last bits |
+
+**Malformed input** (no Tiled version writes these)
+
+| What | GDScript runtime | Native importer |
+|---|---|---|
+| Text inside a list `<item>` or an unknown element | stored under a `data` key | dropped |
+| An embedded image (`<image>` with `<data>`) | a garbled dictionary entry | skipped (unsupported either way, above) |
+| Several `<transformations>` in one tileset | all kept (the dictionary's `transformationss` array) | the last kept (unsupported either way, above) |
+| A JSON `null` in a typed field | a `null` in the dictionary | dropped (the field's default) |
+| A fractional number in an integer JSON field | read as a float (Godot's JSON numbers are floats) | a parse error |
+
+**Native only** (the GDScript runtime has no counterpart): `import_async` and
+`import_from_zip_async` (parse and tile layers on a worker thread, the tree built in one frame);
+`TiledStreamer` (`make_streamer`), whose own rules are documented in the addon's README: a
+streamed map's TileSet gets every tile of its tilesets before the first cell is set, so it can have
+more tiles than the one-shot import's; y-sorted tile layers (isometric, staggered) are refused
+unless `allow_y_sorted_layers`; objects exist only while their chunk is loaded, and a reference to
+an object of an unloaded chunk is an empty NodePath (no warning).

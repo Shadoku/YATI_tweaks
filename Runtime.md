@@ -141,3 +141,150 @@ If you don't use post-processing you can delete `PostProcessing.gd` and the two 
 - Textures are loaded once per import even if referenced many times (image collections, templates).
 - Leave `no_alternative_tiles` on (default): generating alternative tiles for flipped tiles is slower.
 - Template files are read and parsed once per import, no matter how many instances the map contains.
+
+## Native importer
+
+`addons/yati_native/` is a native version of this importer: a GDExtension written in Rust
+([godot-rust](https://github.com/godot-rust/gdext)) behind an `Importer.gd` with this runtime's
+API. It makes the same node tree, with the same options, metadata and messages (this runtime's
+test suite passes against both), and adds what the GDScript runtime cannot do: importing a map
+during play without a hitch, sharing TileSets across imports, and streaming a large or infinite
+map, or a whole Tiled world, chunk by chunk.
+
+**When to use which.** The GDScript runtime needs nothing but Godot 4.3, runs on every platform
+and is the reference: use it for small maps loaded at a loading screen, and on platforms the
+native library is not built for. Use the native importer when a map is loaded while the game
+runs (it is 4 to 5 times faster, and `import_async` keeps the parse off the main thread), when
+maps are large, or when they should stream. It needs Godot 4.7 and a library for the platform
+(Linux x86_64, Windows x86_64 and macOS are built; Linux arm64 builds with cargo; web and mobile
+are not built yet, see the addon's README).
+
+| Benchmark map (320 × 320 cells in 6 layers, 2 720 objects) | GDScript runtime | native |
+|---|---|---|
+| `import()` | 670 to 770 ms | 160 to 200 ms (most of it the engine's own `tile_map_data` and node calls) |
+| main-thread time per frame of `import_async()` before its build frame | (no async import) | under 2 to 3 ms |
+| a small map (60 × 33 cells, 2 layers, 30 objects), warm | 3 to 5 ms | about 1 ms |
+
+### Installation
+
+1. Copy `addons/yati_native/` into your project (it holds its own `Importer.gd`,
+   `PostProcessing.gd`, `WorldLoader.gd`; it does not need `runtime/`).
+2. Put the libraries into its `bin/`: download `yati-native.zip` from this repository's releases
+   (a versioned release `v<version>` or a branch's rolling build `native-<branch>`) and unpack it
+   into the project, or, from a checkout of this repository, run `bash tools/install_native.sh`
+   (downloads it) or `bash tools/build_native.sh` (builds this machine's library with cargo).
+3. Godot loads a GDExtension when `.godot/extension_list.cfg` names it; the editor writes the file
+   when it opens the project. Headless, on a fresh `.godot/`, write the line
+   `res://addons/yati_native/yati_native.gdextension` into that file before the first
+   `godot --headless --import`: Godot 4.7.2 otherwise discovers the extension mid-import and aborts
+   at shutdown (exit code 134).
+
+Then change the preload path:
+
+```gdscript
+var importer = preload("res://addons/yati_native/Importer.gd").new()
+var map = importer.import("res://maps/desert.tmx")   # the same methods, options and results
+```
+
+`Importer.native_version()` returns the library's version, or `""` when it is missing for the
+platform (an import then prints why and returns `null`).
+
+### The same API
+
+`import`, `import_from_zip`, `import_with_post_processing`, `import_from_zip_with_post_processing`
+and `import_world` take the same arguments and return the same trees; `last_error_count` and
+`last_warning_count` and the summary line are the same; `WorldLoader.parse()` is there too. Every
+option of the table above exists with the same default, plus two:
+
+| Variable | Type | Default | Meaning |
+|----------|------|---------|---------|
+| `share_tilesets` | bool | `true` | Every importer uses one TileSet cache (`Importer.shared_tilesets()`): a map whose tilesets an earlier import built gets that TileSet instead of a new one (below). Off: every import builds its own, as the GDScript runtime does |
+| `async_tiles_per_frame` | int | `256` | `import_async`: TileSet tiles created per frame before the build frame |
+
+### Importing during play: `import_async`
+
+```gdscript
+var importer = preload("res://addons/yati_native/Importer.gd").new()
+
+func enter_room(path: String) -> void:
+	var room: Node = await importer.import_async(path)   # the game keeps running
+	if room != null:
+		add_child(room)
+```
+
+`import_async(map_file, project_file = "")` and `import_from_zip_async(zip_file, map_in_zip,
+project_in_zip = "")` are coroutines with the result of `import()` / `import_from_zip()`. The map,
+its tilesets, templates and project file are parsed on a worker thread, which also decodes the tile
+layers; the main thread only reads the files the parse asks for (two or three rounds) and hands
+them over; the map's imported textures load in the engine's threads meanwhile; the TileSets are
+created `async_tiles_per_frame` tiles per frame; then the tree is built in one frame. That last
+frame is what is left of the hitch: the engine's own work for the cells and nodes (about 1 ms for a
+small map, 150 to 200 ms for the benchmark's 522 358 cells and 2 720 objects). A map that large is
+what the streamer is for.
+
+### Worlds: `import_world`
+
+`import_world(world_file, project_file = "")` imports every map of a Tiled `.world` file, as the
+GDScript runtime does. To load a world's maps as the player approaches them, stream it (below).
+
+### Streaming: `make_streamer`
+
+`make_streamer(map_or_world, options = null, project_file = "")` returns a `TiledStreamer`, a
+`Node2D` that shows the part of a map (finite or infinite) or of a world around a window and keeps
+nothing else in the tree. Follow mode:
+
+```gdscript
+func _ready() -> void:
+	var importer = preload("res://addons/yati_native/Importer.gd").new()
+	var streamer = importer.make_streamer("res://maps/overworld.tmx")   # or a .world file
+	streamer.follow = $Player              # the window follows this node...
+	streamer.margin = Vector2i(48, 32)     # ...this many cells around its chunk (cover the screen)
+	streamer.budget_us = 2000              # the streamer's work per frame, in µs
+	add_child(streamer)
+	await streamer.settled                 # the first window is there
+```
+
+Each frame it loads the 16 × 16 chunks the window covers into one `TileMapLayer` per Tiled tile
+layer (`set_cell`), nearest first, and erases those that left the window by more than
+`keep_margin`, within `budget_us` (it measures its own costs and stops before the piece of work
+that would exceed it). Objects are created with the chunk their position lies in and freed with
+it (`keep_objects_resident` keeps them), by the same code as `import()`; object references to
+objects of other chunks are set whenever both exist. In world mode each map is loaded when the
+window approaches it and freed when it leaves. `load_all()` loads everything at once. Signals:
+`chunk_loaded`, `chunk_unloaded`, `object_spawned`, `object_despawned`, `map_loaded`,
+`map_unloaded`, `settled`. Its properties and limits (y-sorted layers are refused unless
+`allow_y_sorted_layers`; a `TileMapLayer` keeps memory for every area it has ever shown) are in
+the addon's README.
+
+### The shared TileSet cache
+
+With `share_tilesets` on, a TileSet is cached per tileset combination (the map's tilesets and
+their first gids, its tile size and orientation, the zip archive, the project's custom types, and
+the options that shape a TileSet) and handed to the next map with that combination:
+
+- **By reference.** A later map gets the very TileSet object; tiles the earlier maps needed stay in
+  it, and a change a game makes to it shows in every map that gets it later.
+- **Exclusive.** A TileSet goes only to a map no live tree shares it with, so two trees alive at
+  once never share one (as with the GDScript runtime); a map loaded after the previous tree was
+  freed reuses its TileSet. `Importer.shared_tilesets().exclusive = false` shares it between live
+  trees too.
+- **Files that change** on disk are not noticed: call `Importer.shared_tilesets().clear()` (the
+  TileSets) and `.clear_textures()` (the textures, cached per process) after replacing a tileset
+  or image.
+- `save_tileset_to` always builds a TileSet of the import's own.
+
+### What differs
+
+| | GDScript runtime | native importer |
+|---|---|---|
+| Requirements | Godot 4.3, any platform | Godot 4.7, a library for the platform |
+| TileSets | one per import | shared across imports (`share_tilesets`) |
+| Textures | loaded per import | cached per process (`clear_textures()`) |
+| Asynchronous import, streaming | no | `import_async`, `make_streamer` |
+| Internal custom data layer `__internal__` | left in saved and template TileSets | never created |
+| Custom types on tilesets only templates use | not merged | merged |
+| References (tilesets, templates, images) | the bare name relative to the working directory is tried first | relative to the referencing file only |
+| JSON templates (`.tj`) | create nothing | instantiate |
+| A numeric object or layer name (`name="007"`) | `"7"` | `"007"` |
+
+The full list, each with its reason, is in the [Reference](Reference.md#differences-between-the-gdscript-and-the-native-importer).
