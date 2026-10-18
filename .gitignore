@@ -5,3 +5,6 @@
 test/out/
 # Local copy of the baseline runtime used for benchmark comparison
 baseline_runtime/
+# Rust build output of the native crates
+native/tiled/target/
+native/tiled/Cargo.lock
