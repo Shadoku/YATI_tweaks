@@ -173,6 +173,10 @@ test("configure: Browse and Test; a binary that does not start warns, and Save a
 		assert.equal(d.field("Godot binary").text, "/usr/bin/godot4");
 		d.button("Test").click();
 		assert.equal(d.labels()[2].text, "Godot 4.7.1.stable.official");
+		// A relative path is run against the project file's folder, as Save and the check run it.
+		d.field("Godot binary").text = "tools/godot4";
+		d.button("Test").click();
+		assert.equal(s.fake.out.processes[s.fake.out.processes.length - 1].binary, path.join(s.root, "tools", "godot4"));
 		// A command PATH does not have: Test says so; Save warns and waits for a second press.
 		d.field("Godot binary").text = "godot-nowhere";
 		d.button("Test").click();
@@ -191,7 +195,7 @@ test("configure: Browse and Test; a binary that does not start warns, and Save a
 	assert.equal(s.fake.out.dialogs[0].result, 1);
 	assert.equal(s.property("godot_binary"), "godot-nowhere");
 	// The Test button's run was reused by Save: two --version runs in all, one per binary.
-	assert.deepEqual(s.fake.out.processes.map((p) => p.binary + " " + p.args.join(" ")), ["/usr/bin/godot4 --version", "godot-nowhere --version"]);
+	assert.deepEqual(s.fake.out.processes.map((p) => p.binary + " " + p.args.join(" ")), ["/usr/bin/godot4 --version", path.join(s.root, "tools", "godot4") + " --version", "godot-nowhere --version"]);
 	// A Godot 3 and a non-Godot answer: warnings too (a binary with a slash must exist).
 	const t = make({ fakeOptions: { process: (binary) => (binary === "godot3" ? { code: 0, stdout: "3.5.3.stable.official\n" } : { code: 0, stdout: "usage: thing\n" }) } });
 	t.fake.answers.dialogs.push((d) => {

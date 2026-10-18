@@ -311,6 +311,17 @@ function resolveAgainst(baseDir, p) {
 	return isAbsolutePath(s) ? cleanPath(s) : joinPath(baseDir, s);
 }
 
+// The binary as it is run: a bare command as it is (PATH), a path with a slash resolved against
+// the Tiled project file's folder; empty is the default command.
+export function resolvedBinary(text, projectDir) {
+	const s = String(text === undefined || text === null ? "" : text).trim();
+	if (s === "")
+		return DEFAULT_GODOT_BINARY;
+	if (s.indexOf("/") >= 0 || s.indexOf("\\") >= 0)
+		return resolveAgainst(projectDir, s);
+	return s;
+}
+
 // What the Godot project field says, for its status line: {ok, text, dir}.
 export function godotProjectStatus(value, settings, exists) {
 	const dir = resolveAgainst(settings.projectDir, value);
@@ -340,10 +351,9 @@ export function validateConfiguration(values, settings, io) {
 
 	// The binary: a path is checked for existence; a command is left to PATH (and the --version run).
 	const binaryText = String(values.godotBinary === undefined || values.godotBinary === null ? "" : values.godotBinary).trim();
-	let binary = binaryText === "" ? DEFAULT_GODOT_BINARY : binaryText;
+	const binary = resolvedBinary(binaryText, projectDir);
 	let binaryMissing = false;
 	if (binary.indexOf("/") >= 0 || binary.indexOf("\\") >= 0) {
-		binary = resolveAgainst(projectDir, binary);
 		binaryMissing = !io.exists(binary);
 		if (binaryMissing)
 			errors.push("Godot binary: '" + binary + "' does not exist.");

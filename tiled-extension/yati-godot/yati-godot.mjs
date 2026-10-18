@@ -20,7 +20,7 @@ import {
 import {
 	TITLE as CONFIGURE_TITLE, OPTIONS_TITLE, TEXTS, FIELDS, OPTION_FIELDS, initialValues, managedSummary,
 	godotProjectStatus, godotVersionStatus, validateConfiguration, configuredLines, optionTooltip, optionChoices,
-	optionsToValues, valuesToOptions,
+	optionsToValues, valuesToOptions, resolvedBinary,
 } from "./lib/configure.mjs";
 import { readGodotProject } from "./lib/godot_project.mjs";
 import { indexClassNames, scanScenes, walkFiles } from "./lib/scene_exports.mjs";
@@ -216,9 +216,10 @@ export function configureDialog(api, settings) {
 			});
 			const test = dialog.addButton(TEXTS.test, TEXTS.testTip);
 			test.clicked.connect(function () {
-				const binary = widgets.godotBinary.text.trim();
+				const text = widgets.godotBinary.text.trim();
+				const binary = resolvedBinary(text, settings.projectDir);
 				const status = godotVersionStatus(binary, io.godotVersion(binary));
-				state.tested = { binary: binary, result: status };
+				state.tested = { binary: text, result: status };
 				widgets.binaryStatus.text = status.text;
 			});
 		}

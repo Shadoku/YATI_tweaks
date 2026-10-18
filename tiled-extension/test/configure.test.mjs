@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import {
 	FIELDS, TEXTS, OPTION_FIELDS, fieldByKey, initialValues, managedSummary, godotProjectStatus, godotVersionStatus,
 	validateConfiguration, configuredLines, optionFieldByName, optionTooltip, optionChoices, optionsToValues, valuesToOptions,
+	resolvedBinary,
 } from "../yati-godot/lib/configure.mjs";
 import { readSettings, SETTING_NAMES, IMPORT_OPTIONS, IMPORT_OPTION_VALUES } from "../yati-godot/lib/settings.mjs";
 
@@ -110,6 +111,14 @@ test("the Godot project's status: empty, missing, without project.godot, right; 
 	assert.deepEqual(godotProjectStatus("/g/game/", s, io.exists), { ok: true, text: "project.godot found.", dir: "/g/game" });
 	assert.deepEqual(godotProjectStatus("../game", s, io.exists), { ok: true, text: "project.godot found.", dir: "/g/game" });
 	assert.equal(godotProjectStatus("C:\\game", s, (p) => p === "C:/game" || p === "C:/game/project.godot").ok, true);
+});
+
+test("the binary as run: a command as it is, a relative path against the project file, empty the default", () => {
+	assert.equal(resolvedBinary("", "/g/tiled"), "godot");
+	assert.equal(resolvedBinary(" godot4 ", "/g/tiled"), "godot4");
+	assert.equal(resolvedBinary("tools/godot4", "/g/tiled"), "/g/tiled/tools/godot4");
+	assert.equal(resolvedBinary("/opt/godot", "/g/tiled"), "/opt/godot");
+	assert.equal(resolvedBinary("C:\\Godot\\godot.exe", "/g/tiled"), "C:/Godot/godot.exe");
 });
 
 test("--version: Godot 4, Godot 3, not Godot, not started, not run", () => {
