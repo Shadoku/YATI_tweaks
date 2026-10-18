@@ -14,6 +14,8 @@
 //!   `build_step`.
 //! - [`TiledBuilder`](builder::TiledBuilder): the node tree of a map in one call (the runtime's
 //!   `TilemapCreator`), tile layers filled through `tile_map_data`.
+//! - [`TiledWorld`](world::TiledWorld): a Tiled world file (`.world`), its maps placed, read
+//!   through the core's world loader on the main thread.
 //!
 //! Everything here runs on the main thread except the decoding of tile layer payloads, which
 //! runs on one thread per layer, and the asynchronous load's parse, which runs on a worker
@@ -31,6 +33,7 @@ mod map;
 mod options;
 mod props;
 mod tileset;
+mod world;
 
 struct YatiNative;
 

@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Native importer, stage 2b of `docs/native-importer-plan.md`: the native builder has the GDScript
+  runtime's part B features, so the whole test suite (103 of 103) passes against
+  `addons/yati_native/`. F2: object references become NodePaths in a second pass (`object_refs`,
+  exports of the same name, lists as `Array[NodePath]`, the empty-path warning, `"both"`'s
+  `<name>_shape`, the `id` metadata on text objects' Labels too). F1: `class_scenes`,
+  `read_godot_scene_from_custom_types` (a class's `godot_scene` member, an object's own override),
+  `assign_node_properties` (custom properties into node properties with the runtime's coercions,
+  `godot_script` attached first) and the `_tiled_import(info)` hook. F3: `map_rect`,
+  `map_size_tiles`, `tile_size` and `orientation` metadata on every root; `Importer.import_world()`,
+  and `addons/yati_native/WorldLoader.gd` (`parse(world_file, zip_file = "")`, `clear_cache()`) over
+  a new native class `TiledWorld` (the core's world loader, files and directory listings read on the
+  main thread). F5: int and flag-enum mask values on nodes and the tileset's `_n` properties.
+  `addons/yati_native/TilemapCreator.gd`: a stand-in for the runtime's (`create()`,
+  `get_map_rect()`, `get_tileset()`). The native parity tests cover the part B fixtures
+  (`object_refs.tmx`, `scenes.tmx`, `masks.tmx`, `world/*`, with their project files);
+  `tools/native_gate.gd` checks them for leaks too, and a world import. CI requires the native suite
+  again.
 - Native importer, stage 3 of `docs/native-importer-plan.md`: asynchronous loading and shared
   caches. `Importer.import_async(path, project = "")` and `import_from_zip_async(...)` (coroutines:
   `await` them) import a map without a hitch: the parse runs on a worker thread

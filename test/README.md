@@ -110,15 +110,15 @@ bash tools/install_native.sh          # the branch's rolling build, or a tag: v0
 # (needs .godot/extension_list.cfg naming res://addons/yati_native/yati_native.gdextension)
 godot --headless --path . -s tools/smoke_native.gd
 
-# The suite against the native facade (stage 2 of docs/native-importer-plan.md: every test passes)
+# The suite against the native facade (stages 2 and 2b of docs/native-importer-plan.md: every test passes)
 godot --headless -s test/run_tests.gd -- --runtime=res://addons/yati_native
 
 # Benchmark: with no DataLoader.gd in the runtime folder the phases are timed with the native
 # classes (parse = TiledMap.load, tilesets = TiledTileSets.tileset_for)
 godot --headless -s test/benchmark.gd -- --runtime=res://addons/yati_native
 
-# Leaks (every fixture imported and freed 20 times), the small map's time (synchronous and with
-# import_async), the engine's floor
+# Leaks (every fixture and a world imported and freed 20 times), the small map's time (synchronous
+# and with import_async), the engine's floor
 godot --headless -s tools/native_gate.gd          # -- --runtime=res://runtime for the GDScript one
 
 # The asynchronous import and the shared TileSet cache (stage 3): the benchmark map imported with
@@ -137,7 +137,10 @@ platform's library is in place.
 
 The facade has no `DataLoader.gd` (the zip archive is per call), so the suite's zip mode reset
 skips it; its `CommonUtils.gd` holds the error and warning counters of the last import, which
-the facade sets, so `_error_count()` works for it as for the GDScript runtime.
+the facade sets, so `_error_count()` works for it as for the GDScript runtime. The tests that
+load a runtime's `WorldLoader.gd` or `TilemapCreator.gd` find the facade's: the runtime's
+`WorldLoader` API over the native `TiledWorld`, and a stand-in `TilemapCreator` with `create()` and
+`get_map_rect()`.
 
 ## Comparing against the pre-change runtime
 
@@ -190,4 +193,4 @@ godot --headless -s test/run_tests.gd -- --runtime=res://baseline_runtime
 | `classes.tmx` + `classes.tiled-project` + `crate.tx` | for the native parity tests: class `Room` map, `Floor` layers, nested groups with template instances (one overriding properties and opacity), list properties (nested lists and class items), class values with nested classes and lists, multi-line strings, enum and object properties, an embedded tileset with class, transformations, transparent colour, tile collision object, wang colour properties, `editorsettings`, a capsule, a text object, a zstd layer; the project has every `useAs` scope the runtime merges, a class defined twice and an enum |
 | `infinite.tmj` + `json_tiles.tsj` + `json_enemy.tj` | for the native parity tests: an infinite JSON map (csv-array and base64+zlib chunks, the same cells as `infinite.tmx`), external JSON tileset (tile offset, grid, transformations, animation, collision objects, wang set) and JSON template, nested groups, every property type incl. list and nested class |
 | `json_twin.tmx` | `json_map.tmj` written as TMX: both formats must give the same model |
-| `expected/*.json` | the GDScript runtime's dictionary of every fixture map, tileset and template (`test/gen_expected.sh`; `+<project>` with the project's custom types merged, `bundle.zip#...` members of the zip) |
+| `expected/*.json` | the GDScript runtime's dictionary of every fixture map, tileset and template (`test/gen_expected.sh`; `+<project>` with the project's custom types merged, `bundle.zip#...` members of the zip, `world_<name>` the maps of `world/`) |

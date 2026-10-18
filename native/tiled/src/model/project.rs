@@ -20,6 +20,10 @@ pub struct Project {
     /// `"name|scope"` -> the members merged into a struct of that class and scope.
     #[serde(skip)]
     index: HashMap<String, Vec<Property>>,
+    /// The project file's path, as the loader was given it (`""` when unknown): what its
+    /// file-typed member values are relative to.
+    #[serde(skip)]
+    pub path: String,
 }
 
 /// A custom type: a class (with members) or an enum (with values).
@@ -77,6 +81,11 @@ impl Project {
                     .extend(members.iter().cloned());
             }
         }
+    }
+
+    /// The directory of the project file (`CustomTypes.get_project_dir`).
+    pub fn dir(&self) -> String {
+        crate::path::base_dir(&self.path)
     }
 
     /// The members a struct of class `class` gets in `scope`, if the project defines any.

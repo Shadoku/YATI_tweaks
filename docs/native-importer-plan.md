@@ -281,7 +281,12 @@ numbers measured. Stages 1 and 2 are the bulk; 3 and 4 are what the two goals ne
   GDScript runtime passes (a short list of accepted differences, each explained, is allowed
   in this document); `test/benchmark.gd -- --runtime=res://addons/yati_native` total under
   120 ms for the benchmark map (parse + 6 × 14 ms of `tile_map_data` + the objects at engine
-  speed; the GDScript runtime: 716), the small map under 2 ms warm.
+  speed; the GDScript runtime: 716), the small map under 2 ms warm. *Outcome (section 6):
+  the suite passes; the total is 160 to 200 ms because six `tile_map_data` assignments cost
+  100 ms on this machine, not the 84 the 14 ms figure assumed, and the objects' engine calls
+  about 45: the engine's share, which the gate underestimated. Measured again: 4 to 5× the
+  GDScript runtime's time. The number to hold from here is "the engine's own cost plus under
+  20 ms", read off `tools/native_gate.gd`.*
 
 ### Stage 3: asynchronous loading and the caches
 
@@ -541,6 +546,74 @@ numbers measured. Stages 1 and 2 are the bulk; 3 and 4 are what the two goals ne
     classes through `ClassDB`, so they must work on an instance); `TiledMap.load` prints the load's
     messages itself, `build` its own, the facade adds the counts; the messages keep the runtime's
     wording and colour tags (`Yellow` for the map's, `yellow` for the tilesets').
+- 2026-10-18, **stage 2b done** (the builder catches up with the runtime improvement plan's part
+  B: F1, F2, F3, F5; section 7):
+  - **Options** (`TiledImportOptions` and the facade, the runtime's comments and defaults):
+    `object_refs` (`"nodepath"`), `class_scenes` (`{}`; keys compared in lower case, a later key
+    wins), `read_godot_scene_from_custom_types` (true), `assign_node_properties` (true). An
+    unsupported `object_refs` warns and uses `"nodepath"`, as `set_object_refs` does.
+  - **F2** (`builder/refs.rs`): every creation site registers its node by object id (the first
+    wins: a tile object's body, not its sprite; the id metadata as before, now on text objects'
+    Labels too); object properties and lists with object items wait in a pending list, resolved
+    after the map's properties (and again for the single-layer root's), with the runtime's
+    assignment rules (a `NodePath` export the path, a `Node` export of the right class the node, an
+    untyped variable the path, a typed array the list, else metadata; an all-NodePath list an
+    `Array[NodePath]`), the empty-path warning, and `"both"`'s `<name>_shape` geometry.
+  - **F1** (`builder/objects.rs`, `builder/assign.rs`): the class-to-scene resolution after a
+    `godot_node_type` and before the class mapping, for shape objects and (the object's class,
+    then the tile's) tile objects; `class_scenes` relative to the map, a `godot_scene` member
+    relative to the project file, an object's own `godot_scene` (a property not merged from the
+    project) relative to its file; one `instantiate_scene` for scenes, class `instance` and tile
+    instances (position, rotation and scale only on a Node2D or Control, visibility on a
+    CanvasItem, "is not a scene" as an error, a tile object's sprite freed once the scene loads).
+    `godot_script` is attached in a first pass; the metadata fallback assigns to a node property
+    of the same name with `convert_for_property`'s coercions (int to float and enum, an enum's name,
+    StringName, NodePath, a file's resource for an Object property, a list to the property's typed
+    array, anything to an untyped variable) or warns and keeps metadata; `godot_scene` is skipped
+    as a property. `_tiled_import(info)` runs at the end with the runtime's `info` keys (`id`,
+    `name`, `class`, `properties` typed, references as NodePaths, `rect`, `shape`, `shape_type`).
+  - **F3**: `map_rect`, `map_size_tiles`, `tile_size`, `orientation` on every root (also the
+    single-layer one and `import_from_zip`'s) from `Map::tile_rect` / `pixel_rect`;
+    `native/src/world.rs`'s `TiledWorld` pumps the core's `WorldLoader` (`FileAccess` for files,
+    `DirAccess.get_files_at` for a pattern's directory, the core's `from_zip` for an archive);
+    `addons/yati_native/WorldLoader.gd` (`parse(world_file, zip_file = "")`, `clear_cache()`) and
+    `Importer.import_world(world_file, project_file = "")` over it.
+  - **F5** (`props::mask_value`): int masks and flag-enum value names (the project's enums by
+    their `propertytype`) on every mask property of nodes (`collision_layer`, `collision_mask`,
+    `light_mask`, `visibility_layer`, `platform_floor_layers`, `platform_wall_layers`,
+    `navigation_layers`, `parsed_collision_mask`, `occluder_light_mask`; a `__` property forwards
+    its `propertytype`) and of the tileset (`collision_layer[_n]`, `collision_mask[_n]`,
+    `layers[_n]`, `light_mask[_n]`), the unknown name's warning in `CustomTypes`' colour.
+  - **Parity and tools**: `tests/parity.rs` and `test/gen_expected.sh` cover `object_refs.tmx`,
+    `scenes.tmx` and `masks.tmx` (also with their project files) and the four maps of `world/`
+    (`expected/world_*.json`); all equal, the existing dumps unchanged on regeneration.
+    `tools/native_gate.gd` imports those three maps (with their projects), `scenes.tmx` with
+    `class_scenes` and the test world every round. `ci.yml` requires the native suite again.
+  - **Gate, measured** (this machine, a shared container): `test/run_tests.gd --
+    --runtime=res://addons/yati_native`: `SUMMARY: 103 passed, 0 failed (new_: 0, bug_: 0, other:
+    0) of 103`; the GDScript runtime still `103 passed ... of 103` and `test/run_all.sh` exits 0
+    for both; `native_gate.gd`: no leaks (objects 1502 -> 1502, nodes and orphans unchanged, 20
+    rounds of 57 imports; the GDScript runtime alike), the small map 1.96 to 2.01 ms mean; `cargo
+    test`, `clippy -D warnings`, `fmt --check` clean. Benchmark, the stage 2 library and this one
+    alternated five times in one session: before `total_ms` min 164.3 to 200.6 (mean of the
+    averages 193.5), after min 166.4 to 174.7 (mean of the averages 178.9); the objects-only map,
+    40 imports each, min 52.5 to 53.8 ms before, 54.2 to 55.8 after (the registry, the hook check
+    and the property-list lookups: about 2 ms of 2 720 objects).
+  - **Decisions**: the core's `Project` keeps its file's path (`Project::path`, `dir()`; the loader
+    sets it), for `godot_scene` members; a node becomes a hook candidate only when it is a scene's
+    root or a `godot_script` property ran on its properties (the runtime checks every object node,
+    the result is the same); engine classes' property lists are cached for the process (scripted
+    nodes per import, as the runtime does); a typed array for a property is made from the property's
+    own value (`duplicate`, `clear`, `assign`), godot-rust having no runtime-typed array
+    constructor; `WorldLoader.clear_cache()` has nothing to clear (the core reads a pattern's map
+    sizes on every parse); `addons/yati_native/TilemapCreator.gd` is a stand-in with `create`,
+    `get_map_rect` and `get_tileset`, for `test_new_map_rect_finite`. The TileSet cache key does not
+    name the project file (its custom types and now its enums shape a TileSet): stage 3's sharing
+    across imports should add it. The stage 2 difference "a tile object of class `instance` keeps
+    its sprite's scale" is gone: the runtime's `instantiate_scene` reads the scale before freeing the
+    sprite now. New accepted differences: a JSON template's instance exists, so a reference to it
+    resolves (the runtime warns about a dangling one in `infinite.tmj`); property lists cached per
+    process (above); `TilemapCreator.create` prints the import's summary line.
 
 - 2026-10-18, **stage 3 done** (asynchronous loading and the caches):
   - **The worker** (`native/tiled/src/worker.rs`, in the pure-Rust core): `Worker::spawn(loader,

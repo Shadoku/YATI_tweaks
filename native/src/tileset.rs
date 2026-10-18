@@ -11,10 +11,10 @@
 
 use crate::diag::Diag;
 use crate::files::{clear_texture_cache, load_resource, texture_cache_len, Textures};
-use crate::gd::{bitmask, get_basename, get_extension, get_file, to_int, typed_value, PV};
+use crate::gd::{get_basename, get_extension, get_file, to_int, typed_value, PV};
 use crate::map::TiledMap;
 use crate::options::{options_of, Options, TiledImportOptions};
-use crate::props::{gprops, GProp};
+use crate::props::{gprops, mask_value, Enums, GProp};
 use godot::classes::image::Format as ImageFormat;
 use godot::classes::tile_set::{CellNeighbor, TerrainMode, TileLayout, TileOffsetAxis, TileShape};
 use godot::classes::{
@@ -85,6 +85,8 @@ pub struct BuildParams {
     /// templates' do not).
     pub report_animation_mode: bool,
     pub zip: String,
+    /// The project file's enums, for layer masks given as value names (F5).
+    pub enums: Rc<Enums>,
 }
 
 struct PendingStrip {
@@ -1104,6 +1106,11 @@ impl Creator {
         }
     }
 
+    /// `CommonUtils.get_mask_value` of a tileset property, with the project's enums (F5).
+    fn mask(&mut self, p: &GProp, max_len: i64) -> i64 {
+        mask_value(p, max_len, &self.params.enums, &mut self.diag)
+    }
+
     fn handle_tileset_properties(&mut self, props: &[GProp]) {
         for p in props {
             let (list_val, class_val, val) = Self::split_value(p);
@@ -1112,43 +1119,45 @@ impl Creator {
             }
             let lname = p.name.to_lowercase();
             let ty = p.kind.as_str();
+            // A layer mask: layer numbers, an int, or a flags enum's value names (F5)
+            let mask = ty == "string" || ty == "int";
             let mut ts = self.ts().clone();
-            if lname == "collision_layer" && ty == "string" {
+            if lname == "collision_layer" && mask {
                 self.ensure_layer(LayerType::Physics, 0);
-                ts.set_physics_layer_collision_layer(0, bitmask(&val, 32) as u32);
-            } else if lname.starts_with("collision_layer_") && ty == "string" {
+                ts.set_physics_layer_collision_layer(0, self.mask(p, 32) as u32);
+            } else if lname.starts_with("collision_layer_") && mask {
                 let Some(i) = layer_suffix(&p.name, 16) else {
                     continue;
                 };
                 self.ensure_layer(LayerType::Physics, i);
-                ts.set_physics_layer_collision_layer(i, bitmask(&val, 32) as u32);
-            } else if lname == "collision_mask" && ty == "string" {
+                ts.set_physics_layer_collision_layer(i, self.mask(p, 32) as u32);
+            } else if lname == "collision_mask" && mask {
                 self.ensure_layer(LayerType::Physics, 0);
-                ts.set_physics_layer_collision_mask(0, bitmask(&val, 32) as u32);
-            } else if lname.starts_with("collision_mask_") && ty == "string" {
+                ts.set_physics_layer_collision_mask(0, self.mask(p, 32) as u32);
+            } else if lname.starts_with("collision_mask_") && mask {
                 let Some(i) = layer_suffix(&p.name, 15) else {
                     continue;
                 };
                 self.ensure_layer(LayerType::Physics, i);
-                ts.set_physics_layer_collision_mask(i, bitmask(&val, 32) as u32);
-            } else if lname == "layers" && ty == "string" {
+                ts.set_physics_layer_collision_mask(i, self.mask(p, 32) as u32);
+            } else if lname == "layers" && mask {
                 self.ensure_layer(LayerType::Navigation, 0);
-                ts.set_navigation_layer_layers(0, bitmask(&val, 32) as u32);
-            } else if lname.starts_with("layers_") && ty == "string" {
+                ts.set_navigation_layer_layers(0, self.mask(p, 32) as u32);
+            } else if lname.starts_with("layers_") && mask {
                 let Some(i) = layer_suffix(&p.name, 7) else {
                     continue;
                 };
                 self.ensure_layer(LayerType::Navigation, i);
-                ts.set_navigation_layer_layers(i, bitmask(&val, 32) as u32);
-            } else if lname == "light_mask" && ty == "string" {
+                ts.set_navigation_layer_layers(i, self.mask(p, 32) as u32);
+            } else if lname == "light_mask" && mask {
                 self.ensure_layer(LayerType::Occlusion, 0);
-                ts.set_occlusion_layer_light_mask(0, bitmask(&val, 20) as i32);
-            } else if lname.starts_with("light_mask_") && ty == "string" {
+                ts.set_occlusion_layer_light_mask(0, self.mask(p, 20) as i32);
+            } else if lname.starts_with("light_mask_") && mask {
                 let Some(i) = layer_suffix(&p.name, 11) else {
                     continue;
                 };
                 self.ensure_layer(LayerType::Occlusion, i);
-                ts.set_occlusion_layer_light_mask(i, bitmask(&val, 20) as i32);
+                ts.set_occlusion_layer_light_mask(i, self.mask(p, 20) as i32);
             } else if lname == "sdf_collision_" && ty == "bool" {
                 self.ensure_layer(LayerType::Occlusion, 0);
                 ts.set_occlusion_layer_sdf_collision(0, val.to_lowercase() == "true");
@@ -1704,6 +1713,7 @@ impl TiledTileSets {
             animation_mode: if valid { mode } else { "strip".into() },
             report_animation_mode: !template && !valid,
             zip: zip.to_string(),
+            enums: Rc::new(Enums::of(map.project())),
         }
     }
 
