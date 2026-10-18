@@ -62,12 +62,20 @@ By setting classes and custom properties in Tiled the resulting node tree can be
 
 The `test` folder contains a headless test suite and a benchmark (see the comments in `test/run_tests.gd`),
 and `test/bench_materialize.gd`, which measures what the engine itself charges for a map's tile layers.
+`test/run_all.sh` runs the native importer's smoke test, the suite and the benchmark ([test/README.md](test/README.md)).
 
-## Native importer (planned)
+## Native importer (in progress)
 
 [docs/native-importer-plan.md](docs/native-importer-plan.md) explores a Rust (GDExtension) version of
 this runtime that imports maps during play without a hitch and streams chunks of infinite maps, with the
 measurements behind it and the stages to get there. The GDScript runtime stays as the reference.
+
+Stage 0 is done: the crate (`native/`), the addon (`addons/yati_native/`: the `.gdextension`, its
+`bin/` and an `Importer.gd` facade with this runtime's API) and the build loop. It loads but imports
+nothing yet. To try it, copy `addons/yati_native/` into a project and put the library into its `bin/`:
+`bash tools/install_native.sh` downloads a CI build (Linux x86_64, Windows x86_64, macOS), or
+`bash tools/build_native.sh` builds this machine's with cargo. Details:
+[addons/yati_native/README.md](addons/yati_native/README.md).
 
 ## Credits
 

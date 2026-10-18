@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- B6: parallax layers stay in the hierarchy (Parallax2D wrappers); parallax origin (40, 20). -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="4" height="4" tilewidth="16" tileheight="16" infinite="0" parallaxoriginx="40" parallaxoriginy="20" backgroundcolor="#336699" nextlayerid="9" nextobjectid="2">
+ <tileset firstgid="1" source="terrain.tsx"/>
+ <layer id="1" name="Ground" width="4" height="4">
+  <data encoding="csv">
+1,1,1,1,
+1,1,1,1,
+1,1,1,1,
+1,1,1,1
+</data>
+ </layer>
+ <group id="2" name="Back" offsetx="100" opacity="0.5">
+  <layer id="3" name="Fg" width="4" height="4" parallaxx="1.2">
+   <data encoding="csv">
+1,1,1,1,
+1,1,1,1,
+1,1,1,1,
+1,1,1,1
+</data>
+  </layer>
+  <imagelayer id="4" name="Sky" parallaxx="0.5" repeatx="1">
+   <image source="bg.png" width="64" height="32"/>
+  </imagelayer>
+ </group>
+ <group id="5" name="Far" parallaxx="0.5">
+  <layer id="6" name="FarTiles" width="4" height="4" parallaxx="0.5">
+   <data encoding="csv">
+1,1,1,1,
+1,1,1,1,
+1,1,1,1,
+1,1,1,1
+</data>
+  </layer>
+ </group>
+ <objectgroup id="7" name="Clouds" parallaxy="0.5">
+  <object id="1" name="Cloud" x="8" y="8">
+   <point/>
+  </object>
+ </objectgroup>
+</map>

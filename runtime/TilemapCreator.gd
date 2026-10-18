@@ -70,8 +70,8 @@ var _map_height: int = 0
 var _map_tile_width: int = 0
 var _map_tile_height: int = 0
 var _infinite = false
-var _parallax_origin_x: int = 0
-var _parallax_origin_y: int = 0
+var _parallax_origin_x: float = 0.0
+var _parallax_origin_y: float = 0.0
 var _background_color = ""
 
 var _tilemap_layer = null
@@ -97,6 +97,11 @@ var _dont_use_alternative_tiles = false
 var _custom_data_prefix: String = ""
 var _tileset_save_path: String = ""
 var _object_groups
+var _parallax_mode: String = "parallax2d"
+var _parallax_scale := Vector2.ONE			# parallax2d mode: product of the enclosing groups' parallax factors
+var _unknown_class_fallback: String = "staticbody"
+var _unknown_class_type = _godot_type.BODY
+var _reported_unknown_classes: Dictionary = {}	# class names already warned about in this import
 var _ct: CustomTypes = null
 var _base_dictionary: Dictionary
 
@@ -128,6 +133,7 @@ enum _godot_type {
 	POLYGON,
 	INSTANCE,
 	PARALLAX,
+	NODE2D,
 	UNKNOWN
 }
 
@@ -187,6 +193,31 @@ func set_save_tileset_to(path: String):
 	_tileset_save_path = path
 
 
+# How layers with a parallax factor are created: "parallax2d" (a Parallax2D at the layer's place)
+# or "legacy" (ParallaxLayers in one ParallaxBackground, as in 3.0)
+func set_parallax_mode(value: String):
+	_parallax_mode = value.to_lower()
+	if _parallax_mode != "parallax2d" and _parallax_mode != "legacy":
+		print_rich("[color=" + WARNING_COLOR + "] -- Option parallax_mode '" + value + "' is not supported. -> Using 'parallax2d'[/color]")
+		CommonUtils.warning_count += 1
+		_parallax_mode = "parallax2d"
+
+
+# What objects of an unknown class become: a GODOT_TYPE_MAP key (except instance/parallax) or "node2d"
+func set_unknown_class_fallback(value: String):
+	_unknown_class_fallback = value.to_lower()
+	if _unknown_class_fallback == "node2d":
+		_unknown_class_type = _godot_type.NODE2D
+		return
+	var t = get_godot_type(_unknown_class_fallback)
+	if t == _godot_type.UNKNOWN or t == _godot_type.INSTANCE or t == _godot_type.PARALLAX:
+		print_rich("[color=" + WARNING_COLOR + "] -- Option unknown_class_fallback '" + value + "' is not supported. -> Using 'staticbody'[/color]")
+		CommonUtils.warning_count += 1
+		_unknown_class_fallback = "staticbody"
+		t = _godot_type.BODY
+	_unknown_class_type = t
+
+
 func get_tileset():
 	return _tileset
 
@@ -206,12 +237,14 @@ func reset_import_state() -> void:
 	_tileset = null
 	_background = null
 	_parallax_layer_existing = false
+	_parallax_scale = Vector2.ONE
 	_atlas_index_cache.clear()
 	_first_gid_index_cache.clear()
 	_cell_cache.clear()
 	_known_tiles.clear()
 	_template_cache.clear()
 	_objects_by_id = null
+	_reported_unknown_classes.clear()
 
 
 func create(source_file: String):
@@ -229,8 +262,8 @@ func create(source_file: String):
 	_map_tile_width = _base_dictionary.get("tilewidth", 0)
 	_map_tile_height = _base_dictionary.get("tileheight", 0)
 	_infinite = _base_dictionary.get("infinite", false)
-	_parallax_origin_x = _base_dictionary.get("parallaxoriginx", 0)
-	_parallax_origin_y = _base_dictionary.get("parallaxoriginy", 0)
+	_parallax_origin_x = float(_base_dictionary.get("parallaxoriginx", 0.0))
+	_parallax_origin_y = float(_base_dictionary.get("parallaxoriginy", 0.0))
 	_background_color = _base_dictionary.get("backgroundcolor", "")
 
 	if _ct != null:
@@ -280,13 +313,15 @@ func create(source_file: String):
 	_base_node = Node2D.new()
 	_base_name = source_file.get_file().get_basename()
 	_base_node.name = _base_name
-	_parallax_background = ParallaxBackground.new()
-	_base_node.add_child(_parallax_background)
-	_parallax_background.name = _base_name + " (PBG)"
-	_parallax_background.owner = _base_node
+	_parallax_background = null
+	if _parallax_mode == "legacy":
+		_parallax_background = ParallaxBackground.new()
+		_base_node.add_child(_parallax_background)
+		_parallax_background.name = _base_name + " (PBG)"
+		_parallax_background.owner = _base_node
 	if _background_color != "":
 		_background = ColorRect.new()
-		_background.color = Color(_background_color)
+		_background.color = CommonUtils.tiled_color(_background_color)
 		_background.size = Vector2(_map_width * _map_tile_width, _map_height * _map_tile_height)
 		_base_node.add_child(_background)
 		_background.name = BACKGROUND_COLOR_RECT_NAME
@@ -311,7 +346,7 @@ func create(source_file: String):
 	if _base_dictionary.has("properties"):
 		handle_properties(_base_node, _base_dictionary["properties"])
 
-	if _parallax_background.get_child_count() == 0:
+	if _parallax_background != null and _parallax_background.get_child_count() == 0:
 		_base_node.remove_child(_parallax_background)
 		# Nothing is inside a scene tree yet, so free immediately
 		_parallax_background.free()
@@ -372,9 +407,8 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 		_tilemap_layer.visible = layer_visible
 		_tilemap_layer.position = Vector2(layer_offset_x, layer_offset_y)
 		if layer_opacity < 1.0 or tint_color != "#ffffff":
-			_tilemap_layer.modulate = Color(tint_color, layer_opacity)
+			_tilemap_layer.modulate = layer_color(tint_color, layer_opacity)
 		_tilemap_layer.tile_set = _tileset
-		# Leave the old handling for the time being
 		handle_parallaxes(parent, _tilemap_layer, layer)
 		if _map_orientation == "isometric" or _map_orientation == "staggered":
 			_tilemap_layer.y_sort_enabled = true
@@ -400,11 +434,7 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 			if data != null:
 				create_map_from_data(data, 0, 0, _map_width)
 
-		var class_string = layer.get("class", "")
-		if class_string == "":
-			class_string = layer.get("type", "")
-		if _add_class_as_metadata and class_string != "":
-			_tilemap_layer.set_meta("class", class_string)
+		set_layer_class_meta(_tilemap_layer, layer)
 		var obj_id = layer.get("id", 0)
 		if _add_id_as_metadata and obj_id != 0:
 			_tilemap_layer.set_meta("id", obj_id)
@@ -413,30 +443,34 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 			handle_properties(_tilemap_layer, layer["properties"])
 
 	elif layer_type == "objectgroup":
-		var node_type = get_godot_node_type(layer)
+		var node_type = get_godot_node_type(layer, true)
 
 		var layer_node
 		if node_type == _godot_type.PARALLAX:
 			layer_node = Parallax2D.new()
 			parent.add_child(layer_node)
 			layer_node.owner = _base_node
-			if layer.has("parallaxx") or layer.has("parallaxy"):
+			if _parallax_mode != "legacy":
+				configure_parallax2d(layer_node, layer)
+			elif layer.has("parallaxx") or layer.has("parallaxy"):
 				var par_x = layer.get("parallaxx", 1.0)
 				var par_y = layer.get("parallaxy", 1.0)
 				layer_node.scroll_scale = Vector2(par_x, par_y)
 		else:
 			layer_node = Node2D.new()
-			# Leave the old handling for the time being
 			handle_parallaxes(parent, layer_node, layer)
 		
 		if "name" in layer:
 			layer_node.name = layer["name"]
 		if layer_opacity < 1.0 or tint_color != "#ffffff":
-			layer_node.modulate = Color(tint_color, layer_opacity)
+			layer_node.modulate = layer_color(tint_color, layer_opacity)
 		layer_node.visible = layer.get("visible", true)
 		var layer_pos_x = layer.get("x", 0.0)
 		var layer_pos_y = layer.get("y", 0.0)
 		layer_node.position = Vector2(layer_pos_x + layer_offset_x, layer_pos_y + layer_offset_y)
+		if layer_node is Parallax2D and _parallax_mode != "legacy":
+			# A Parallax2D sets its own position, so the layer offset goes into its scroll_offset
+			layer_node.scroll_offset += layer_node.position
 		if not _use_default_filter:
 			layer_node.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		# Tiled's default draw order "topdown" sorts objects by y, "index" keeps the object order
@@ -449,56 +483,68 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 			for obj in layer["objects"]:
 				handle_object(obj, layer_node, _tileset, Vector2.ZERO)
 
+		set_layer_class_meta(layer_node, layer)
 		if layer.has("properties"):
 			handle_properties(layer_node, layer["properties"])
 
 	elif layer_type == "group":
-		var node_type = get_godot_node_type(layer)
+		var node_type = get_godot_node_type(layer, true)
 
 		var group_node
 		if node_type == _godot_type.PARALLAX:
 			group_node = Parallax2D.new()
 			parent.add_child(group_node)
 			group_node.owner = _base_node
-			if layer.has("parallaxx") or layer.has("parallaxy"):
+			if _parallax_mode != "legacy":
+				configure_parallax2d(group_node, layer)
+			elif layer.has("parallaxx") or layer.has("parallaxy"):
 				var par_x = layer.get("parallaxx", 1.0)
 				var par_y = layer.get("parallaxy", 1.0)
 				group_node.scroll_scale = Vector2(par_x, par_y)
 		else:
 			group_node = Node2D.new()
-			# Leave the old handling for the time being
 			handle_parallaxes(parent, group_node, layer)
 
 		group_node.name = layer.get("name", "group")
 		if layer_opacity < 1.0 or tint_color != "#ffffff":
-			group_node.modulate = Color(tint_color, layer_opacity)
+			group_node.modulate = layer_color(tint_color, layer_opacity)
 		group_node.visible = layer.get("visible", true)
 		var layer_pos_x = layer.get("x", 0.0)
 		var layer_pos_y = layer.get("y", 0.0)
 		group_node.position = Vector2(layer_pos_x + layer_offset_x, layer_pos_y + layer_offset_y)
+		if group_node is Parallax2D and _parallax_mode != "legacy":
+			group_node.scroll_offset += group_node.position
 		apply_blend_mode(group_node, layer)
 
+		# Tiled multiplies the parallax factors of nested layers (see configure_parallax2d)
+		var enclosing_parallax_scale := _parallax_scale
+		if _parallax_mode != "legacy":
+			_parallax_scale *= get_parallax_factor(layer)
 		if layer.has("layers"):
 			for child_layer in layer["layers"]:
 				handle_layer(child_layer, group_node)
+		_parallax_scale = enclosing_parallax_scale
 
 		# A material on a plain Node2D does not affect its children: make the group's
 		# blend mode reach every descendant that has no material of its own.
 		if group_node.material != null:
 			use_parent_material_recursively(group_node)
 
+		set_layer_class_meta(group_node, layer)
 		if layer.has("properties"):
 			handle_properties(group_node, layer["properties"])
 
 	elif layer_type == "imagelayer":
-		var node_type = get_godot_node_type(layer)
+		var node_type = get_godot_node_type(layer, true)
 
 		if node_type == _godot_type.PARALLAX:
 			var px_2d = Parallax2D.new()
 			parent.add_child(px_2d)
 			px_2d.owner = _base_node
 			px_2d.name = layer.get("name", "parallax")
-			if layer.has("parallaxx") or layer.has("parallaxy"):
+			if _parallax_mode != "legacy":
+				configure_parallax2d(px_2d, layer)
+			elif layer.has("parallaxx") or layer.has("parallaxy"):
 				var par_x = layer.get("parallaxx", 1.0)
 				var par_y = layer.get("parallaxy", 1.0)
 				px_2d.scroll_scale = Vector2(par_x, par_y)
@@ -519,7 +565,7 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 			var imageheight = layer.get("imageheight", 0)
 			texture_rect.size = Vector2(imagewidth, imageheight)
 			if layer_opacity < 1.0 or tint_color != "#ffffff":
-				texture_rect.modulate = Color(tint_color, layer_opacity)
+				texture_rect.modulate = layer_color(tint_color, layer_opacity)
 			texture_rect.visible = layer_visible
 			texture_rect.texture = DataLoader.load_image(layer["image"], _base_path)
 			apply_blend_mode(texture_rect, layer)
@@ -527,6 +573,7 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 			px_2d.add_child(texture_rect)
 			texture_rect.owner = _base_node
 
+			set_layer_class_meta(px_2d, layer)
 			if layer.has("properties"):
 				handle_properties(px_2d, layer["properties"])
 		else:
@@ -540,12 +587,12 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 			var imageheight = layer.get("imageheight", 0)
 			texture_rect.size = Vector2(imagewidth, imageheight)
 			if layer_opacity < 1.0 or tint_color != "#ffffff":
-				texture_rect.modulate = Color(tint_color, layer_opacity)
+				texture_rect.modulate = layer_color(tint_color, layer_opacity)
 			texture_rect.visible = layer_visible
 			texture_rect.texture = DataLoader.load_image(layer["image"], _base_path)
 			apply_blend_mode(texture_rect, layer)
 
-			# Repeated image (only if not handled by a ParallaxLayer's motion_mirroring)
+			# Repeated image (only if not handled by a ParallaxLayer's motion_mirroring or a Parallax2D's repeat_size)
 			if not layer.has("parallaxx") and not layer.has("parallaxy"):
 				var repeat_x: bool = int(layer.get("repeatx", 0)) == 1 and imagewidth > 0
 				var repeat_y: bool = int(layer.get("repeaty", 0)) == 1 and imageheight > 0
@@ -565,8 +612,16 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 					texture_rect.position = rect_pos
 					texture_rect.size = rect_size
 
+			set_layer_class_meta(texture_rect, layer)
 			if layer.has("properties"):
 				handle_properties(texture_rect, layer["properties"])
+
+
+# A layer's modulate: its Tiled tint colour (#RRGGBB or #AARRGGBB) with the layer opacity on its alpha
+static func layer_color(tint_color: String, opacity: float) -> Color:
+	var c := CommonUtils.tiled_color(tint_color)
+	c.a *= opacity
+	return c
 
 
 # Returns the start coordinate (<= 0) of a repeated image so that the repeat phase matches the original offset
@@ -593,8 +648,41 @@ func apply_blend_mode(node: CanvasItem, layer: Dictionary) -> void:
 		print_rich("[color=" + WARNING_COLOR + "] -- Blend mode '" + mode + "' of layer '" + str(layer.get("name", "")) + "' is not supported. -> Ignored[/color]")
 		CommonUtils.warning_count += 1
 
+# Tiled's parallax factor of a layer (1.0 for an axis that is not set)
+static func get_parallax_factor(layer_dict: Dictionary) -> Vector2:
+	return Vector2(float(layer_dict.get("parallaxx", 1.0)), float(layer_dict.get("parallaxy", 1.0)))
+
+
+# Sets up a Parallax2D (parallax2d mode) for a layer: scroll scale, the map's parallax origin, repeat.
+# - Tiled multiplies a layer's factor with those of its parallax groups, while a Parallax2D inside a
+#   Parallax2D adds its own scrolling to its parent's: for the effective factor F * f (F of the
+#   enclosing groups) the nested node scrolls with 1 - F * (1 - f).
+# - Tiled moves a layer by (1 - factor) * (view centre + parallax origin); Parallax2D moves itself by
+#   scroll_offset + (1 - scroll_scale) * screen_offset (the screen's top-left corner). So
+#   scroll_offset = origin * (1 - scroll_scale): the same offset with the top-left corner for the centre.
+func configure_parallax2d(px: Parallax2D, layer_dict: Dictionary) -> void:
+	var scale := Vector2.ONE - _parallax_scale * (Vector2.ONE - get_parallax_factor(layer_dict))
+	px.scroll_scale = scale
+	px.scroll_offset = Vector2(_parallax_origin_x, _parallax_origin_y) * (Vector2.ONE - scale)
+	if int(layer_dict.get("repeatx", 0)) == 1 and int(layer_dict.get("imagewidth", 0)) > 0:
+		px.repeat_size.x = float(layer_dict["imagewidth"])
+		px.repeat_times = 2
+	if int(layer_dict.get("repeaty", 0)) == 1 and int(layer_dict.get("imageheight", 0)) > 0:
+		px.repeat_size.y = float(layer_dict["imageheight"])
+		px.repeat_times = 2
+
+
 func handle_parallaxes(parent: Node, layer_node: Node, layer_dict: Dictionary):
-	if layer_dict.has("parallaxx") or layer_dict.has("parallaxy"):
+	if (layer_dict.has("parallaxx") or layer_dict.has("parallaxy")) and _parallax_mode != "legacy":
+		# The layer stays at its place in the hierarchy, wrapped in a Parallax2D
+		var px := Parallax2D.new()
+		var px_name := str(layer_dict.get("name", ""))
+		px.name = px_name + " (PX)" if px_name != "" else "Parallax2D"
+		configure_parallax2d(px, layer_dict)
+		parent.add_child(px)
+		px.owner = _base_node
+		px.add_child(layer_node)
+	elif layer_dict.has("parallaxx") or layer_dict.has("parallaxy"):
 		if not _parallax_layer_existing:
 			if _background != null:
 				_background.owner = null
@@ -880,10 +968,24 @@ static func get_godot_node_type_property(obj: Dictionary):
 	return [ret, property_found]
 
 
-static func get_godot_node_type(obj: Dictionary):
-	var class_string = obj.get("class", "")
-	if class_string == "":
-		class_string = obj.get("type", "")
+# The Tiled class of an object, tile or layer. Objects and tiles of files older than Tiled 1.9 saved
+# it as 'type'; on a layer 'type' is the layer kind (tilelayer, objectgroup...), never a class.
+static func get_class_string(d: Dictionary, is_layer: bool) -> String:
+	var class_string := str(d.get("class", ""))
+	if class_string == "" and not is_layer:
+		class_string = str(d.get("type", ""))
+	return class_string
+
+
+# Sets metadata "class" on a layer's node (if the layer has a class and the option is on)
+func set_layer_class_meta(node: Node, layer: Dictionary) -> void:
+	var class_string := get_class_string(layer, true)
+	if _add_class_as_metadata and class_string != "":
+		node.set_meta("class", class_string)
+
+
+static func get_godot_node_type(obj: Dictionary, is_layer: bool = false):
+	var class_string = get_class_string(obj, is_layer)
 	var search_result = get_godot_node_type_property(obj)
 	var godot_node_type_property_string = search_result[0]
 	var godot_node_type_prop_found = search_result[1]
@@ -997,9 +1099,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 	if _ct != null:
 		_ct.merge_custom_properties(obj, "object")
 
-	var class_string = obj.get("class", "")
-	if class_string == "":
-		class_string = obj.get("type", "")
+	var class_string = get_class_string(obj, false)
 	var search_result = get_godot_node_type_property(obj)
 	var godot_node_type_property_string = search_result[0]
 	var godot_node_type_prop_found = search_result[1]
@@ -1008,13 +1108,15 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 	var godot_type = get_godot_type(godot_node_type_property_string)
 
 	if godot_type == _godot_type.UNKNOWN:
-		if not _add_class_as_metadata and class_string != "" and not godot_node_type_prop_found:
-			print_rich("[color=" + WARNING_COLOR +"] -- Unknown class '" + class_string + "'. -> Assuming Default[/color]")
+		if godot_node_type_prop_found:
+			print_rich("[color=" + WARNING_COLOR +"] -- Unknown " + GODOT_NODE_TYPE_PROPERTY + " '" + godot_node_type_property_string + "'. -> Using '" + _unknown_class_fallback + "'[/color]")
 			CommonUtils.warning_count += 1
-		elif godot_node_type_prop_found and godot_node_type_property_string != "":	
-			print_rich("[color=" + WARNING_COLOR +"] -- Unknown " + GODOT_NODE_TYPE_PROPERTY + " '" + godot_node_type_property_string + "'. -> Assuming Default[/color]")
+		elif not _reported_unknown_classes.has(class_string):
+			# Once per class name and import, whatever add_class_as_metadata says
+			_reported_unknown_classes[class_string] = true
+			print_rich("[color=" + WARNING_COLOR +"] -- Class '" + class_string + "' is not a Godot node type -> using '" + _unknown_class_fallback + "'. Set '" + GODOT_NODE_TYPE_PROPERTY + "' or the option 'unknown_class_fallback' (see Reference).[/color]")
 			CommonUtils.warning_count += 1
-		godot_type = _godot_type.BODY
+		godot_type = _unknown_class_type
 
 
 	if obj.has("template"):
@@ -1066,8 +1168,25 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 					template_obj["name"] = obj["name"]
 				if obj.has("opacity"):
 					template_obj["opacity"] = obj["opacity"]
+				# Attributes saved on the instance override the template's (TMX spec, "Template files")
+				for key in ["width", "height", "rotation", "visible"]:
+					if obj.has(key):
+						template_obj[key] = obj[key]
+				# An instance's own text (TMX spec: attributes saved on the instance override the template's)
+				if obj.has("text") and obj["text"] is Dictionary:
+					if template_obj.has("text") and template_obj["text"] is Dictionary:
+						template_obj["text"].merge(obj["text"], true)
+					else:
+						template_obj["text"] = obj["text"]
+				# An instance's own gid (a flipped instance saves one) is a gid of the map's tilesets
+				var obj_tileset = template_tileset
+				if obj.has("gid"):
+					template_obj["gid"] = obj["gid"]
+					obj_tileset = tileset
 
-				handle_object(template_obj, layer_node, template_tileset, Vector2(obj_x, obj_y))
+				handle_object(template_obj, layer_node, obj_tileset, Vector2(obj_x, obj_y))
+		# Everything the instance defines went into the template's object(s) above
+		return
 
 	# v1.2: New class 'instance'
 	if godot_type == _godot_type.INSTANCE and not obj.has("template") and not obj.has("text") and not obj.has("gid"):
@@ -1096,8 +1215,11 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				handle_properties(instance, obj["properties"])
 		return
 
-	if obj.has("gid"):
+	if obj.has("gid") and not obj.has("template"):
 		# gid refers to a tile in a tile set and object is created as sprite
+		if godot_type == _godot_type.NODE2D:
+			# Unknown class with fallback "node2d": a plain Sprite2D (the tile's class may still decide)
+			godot_type = _godot_type.EMPTY
 		var int_id: int = obj["gid"]
 		var flippedH = (int_id & FLIPPED_HORIZONTALLY_FLAG) > 0
 		var flippedV = (int_id & FLIPPED_VERTICALLY_FLAG) > 0
@@ -1269,7 +1391,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 		if obj.has("properties"):
 			handle_properties(obj_sprite, obj["properties"])
 
-	elif obj.has("text"):
+	elif obj.has("text") and not obj.has("template"):
 		var obj_text = Label.new()
 		layer_node.add_child(obj_text)
 		obj_text.owner = _base_node
@@ -1304,7 +1426,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 			font.font_italic = true
 		obj_text.add_theme_font_override("font", font)
 		obj_text.add_theme_font_size_override("font_size", txt.get("pixelsize", 16))
-		obj_text.add_theme_color_override("font_color", Color(txt.get("color", "#000000")))
+		obj_text.add_theme_color_override("font_color", CommonUtils.tiled_color(str(txt.get("color", "#000000")), Color.BLACK))
 		if obj.has("properties"):
 			handle_properties(obj_text, obj["properties"])
 
@@ -1315,7 +1437,9 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 
 		var object_base_coords = transpose_coords(obj_x, obj_y)
 
-		if obj.has("point"):
+		if godot_type == _godot_type.NODE2D and not obj.has("point"):
+			create_plain_node(obj, layer_node, object_base_coords, class_string)
+		elif obj.has("point"):
 			var marker = Marker2D.new()
 			layer_node.add_child(marker)
 			marker.owner = _base_node
@@ -1600,6 +1724,36 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 						polygon.set_meta("id", obj_id)		
 					if obj.has("properties"):
 						handle_properties(polygon, obj["properties"])	
+
+
+# A shape object of an unknown class with unknown_class_fallback "node2d": a Node2D at the object's
+# position and rotation, the shape as metadata "shape" in object coordinates (Rect2 for a rectangle,
+# and the bounds of an ellipse or capsule; PackedVector2Array for a polygon or polyline) and "size".
+func create_plain_node(obj: Dictionary, layer_node: Node, position: Vector2, class_string: String) -> void:
+	var obj_id = obj.get("id", 0)
+	var obj_name = str(obj.get("name", ""))
+	var obj_width: float = obj.get("width", 0.0)
+	var obj_height: float = obj.get("height", 0.0)
+	var node := Node2D.new()
+	layer_node.add_child(node)
+	node.owner = _base_node
+	node.name = obj_name if obj_name != "" else class_string if class_string != "" else "Node2D"
+	node.position = position
+	node.rotation_degrees = obj.get("rotation", 0.0)
+	node.visible = obj.get("visible", true)
+	if obj.has("polygon"):
+		node.set_meta("shape", PackedVector2Array(polygon_from_array(obj["polygon"])))
+	elif obj.has("polyline"):
+		node.set_meta("shape", PackedVector2Array(polygon_from_array(obj["polyline"])))
+	else:
+		node.set_meta("shape", Rect2(0.0, 0.0, obj_width, obj_height))
+	node.set_meta("size", Vector2(obj_width, obj_height))
+	if _add_class_as_metadata and class_string != "":
+		node.set_meta("class", class_string)
+	if _add_id_as_metadata and obj_id != 0:
+		node.set_meta("id", obj_id)
+	if obj.has("properties"):
+		handle_properties(node, obj["properties"])
 
 
 # Creates the CollisionObject2D for a (non tile) shape object and adds it to layer_node.
@@ -2047,6 +2201,14 @@ func handle_list_property(current_array: Array, current_value: Array):
 			current_array.append(CommonUtils.get_right_typed_value(item_type, str(item_val)))
 
 
+# The value of a colour property: a Tiled colour (type 'color', #AARRGGBB) or a string as Godot
+# reads it (#RRGGBB, #RRGGBBAA or a colour name), as before colour-typed values were accepted.
+static func property_color(type: String, val: String) -> Color:
+	if type == "color":
+		return CommonUtils.tiled_color(val)
+	return Color(val)
+
+
 func handle_properties(target_node: Node, properties: Array):
 	var has_children = false
 	if target_node is StaticBody2D or target_node is Area2D or target_node is CharacterBody2D or target_node is RigidBody2D or target_node is AnimatableBody2D:
@@ -2091,10 +2253,10 @@ func handle_properties(target_node: Node, properties: Array):
 			target_node.set_script(load(path))
 
 		# CanvasItem properties
-		elif lname == "modulate" and type == "string":
-			target_node.modulate = Color(val)
-		elif lname == "self_modulate" and type == "string":
-			target_node.self_modulate = Color(val)
+		elif lname == "modulate" and (type == "string" or type == "color"):
+			target_node.modulate = property_color(type, val)
+		elif lname == "self_modulate" and (type == "string" or type == "color"):
+			target_node.self_modulate = property_color(type, val)
 		elif lname == "show_behind_parent" and type == "bool":
 			target_node.show_behind_parent = val.to_lower() == "true"
 		elif lname == "top_level" and type == "bool":
@@ -2217,10 +2379,10 @@ func handle_properties(target_node: Node, properties: Array):
 				child.one_way_collision_margin = float(val)
 
 		# CollisionShape2D properties
-		elif lname == "debug_color" and type == "string" and has_children:
+		elif lname == "debug_color" and (type == "string" or type == "color") and has_children:
 			for child in target_node.get_children():
 				if child is CollisionShape2D:
-					child.debug_color = Color(val)
+					child.debug_color = property_color(type, val)
 
 		# Area2D properties
 		elif lname == "monitoring" and type == "bool" and target_node is Area2D:
@@ -2234,18 +2396,18 @@ func handle_properties(target_node: Node, properties: Array):
 				target_node.gravity_space_override = int(val)
 		elif lname == "gravity_point" and type == "bool" and target_node is Area2D:
 			target_node.gravity_point = val.to_lower() == "true"
-		elif lname == "gravitiy_point_center_x" and (type == "float" or type == "int") and target_node is Area2D:
+		elif lname == "gravity_point_center_x" and (type == "float" or type == "int") and target_node is Area2D:
 			target_node.gravity_point_center = Vector2(float(val), target_node.gravity_point_center.y)
-		elif lname == "gravitiy_point_center_y" and (type == "float" or type == "int") and target_node is Area2D:
+		elif lname == "gravity_point_center_y" and (type == "float" or type == "int") and target_node is Area2D:
 			target_node.gravity_point_center = Vector2(target_node.gravity_point_center.x, float(val))
 		elif lname == "gravity_point_unit_distance" and (type == "float" or type == "int") and target_node is Area2D:
-			target_node.gravitiy_point_unit_distance = float(val)
-		elif lname == "gravitiy_direction_x" and (type == "float" or type == "int") and target_node is Area2D:
+			target_node.gravity_point_unit_distance = float(val)
+		elif lname == "gravity_direction_x" and (type == "float" or type == "int") and target_node is Area2D:
 			target_node.gravity_direction = Vector2(float(val), target_node.gravity_direction.y)
-		elif lname == "gravitiy_direction_y" and (type == "float" or type == "int") and target_node is Area2D:
+		elif lname == "gravity_direction_y" and (type == "float" or type == "int") and target_node is Area2D:
 			target_node.gravity_direction = Vector2(target_node.gravity_direction.x, float(val))
 		elif lname == "gravity" and (type == "float" or type == "int") and target_node is Area2D:
-			target_node.gravitiy = float(val)
+			target_node.gravity = float(val)
 		elif lname == "linear_damp_space_override" and type == "int" and target_node is Area2D:
 			if int(val) < 5:
 				target_node.linear_damp_space_override = int(val)
@@ -2454,14 +2616,14 @@ func handle_properties(target_node: Node, properties: Array):
 			target_node.occluder_light_mask = CommonUtils.get_bitmask_integer_from_string(val, 20)
 
 		# Polygon2D properties
-		elif lname == "color" and type == "string" and target_node is Polygon2D:
-			target_node.color = Color(val)
+		elif lname == "color" and (type == "string" or type == "color") and target_node is Polygon2D:
+			target_node.color = property_color(type, val)
 
 		# Line2D properties
 		elif lname == "width" and (type == "float" or type == "int") and target_node is Line2D:
 			target_node.width = float(val)
-		elif lname == "default_color" and type == "string" and target_node is Line2D:
-			target_node.default_color = Color(val)
+		elif lname == "default_color" and (type == "string" or type == "color") and target_node is Line2D:
+			target_node.default_color = property_color(type, val)
 
 		# Marker2D properties
 		elif lname == "gizmo_extents" and (type == "float" or type == "int") and target_node is Marker2D:

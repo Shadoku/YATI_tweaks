@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- B3/B4: Tiled writes colours as #AARRGGBB; #80ff0000 is red at 50 % alpha. -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="4" height="4" tilewidth="16" tileheight="16" infinite="0" backgroundcolor="#80ff0000" nextlayerid="6" nextobjectid="7">
+ <tileset firstgid="1" name="colortiles" tilewidth="16" tileheight="16" tilecount="32" columns="8">
+  <image source="tiles.png" width="128" height="64"/>
+  <tile id="1">
+   <properties>
+    <property name="modulate" type="color" value="#ff0000ff"/>
+    <property name="data_glow" type="color" value="#8000ff00"/>
+    <property name="hue" type="color" value="#ff336699"/>
+   </properties>
+  </tile>
+ </tileset>
+ <layer id="1" name="TintTiles" width="4" height="4" tintcolor="#80ff0000">
+  <data encoding="csv">
+2,0,0,0,
+0,0,0,0,
+0,0,0,0,
+0,0,0,0
+</data>
+ </layer>
+ <objectgroup id="2" name="TintObjects" tintcolor="#80ff0000">
+  <object id="1" name="Caption" x="0" y="0" width="64" height="16">
+   <text color="#80ff0000">Hi</text>
+  </object>
+  <object id="2" name="Painted" class="area" x="0" y="16" width="16" height="16">
+   <properties>
+    <property name="modulate" type="color" value="#ff00ff00"/>
+    <property name="self_modulate" type="color" value="#800000ff"/>
+    <property name="debug_color" type="color" value="#40ffffff"/>
+    <property name="tint" type="color" value="#80ff0000"/>
+    <property name="plain_modulate_string" value="#ff000080"/>
+   </properties>
+  </object>
+  <object id="3" name="Poly" class="polygon" x="16" y="16">
+   <properties>
+    <property name="color" type="color" value="#800000ff"/>
+   </properties>
+   <polygon points="0,0 8,0 8,8"/>
+  </object>
+  <object id="4" name="Wire" class="line" x="32" y="16">
+   <properties>
+    <property name="default_color" type="color" value="#ff00ff00"/>
+   </properties>
+   <polyline points="0,0 8,8"/>
+  </object>
+  <object id="5" name="StringTint" class="area" x="48" y="16" width="16" height="16">
+   <properties>
+    <property name="modulate" value="#ff000080"/>
+   </properties>
+  </object>
+ </objectgroup>
+ <group id="3" name="TintGroup" tintcolor="#80ff0000" opacity="0.5">
+  <objectgroup id="4" name="Inner"/>
+ </group>
+ <imagelayer id="5" name="TintImage" tintcolor="#80ff0000">
+  <image source="bg.png" width="64" height="32"/>
+ </imagelayer>
+</map>

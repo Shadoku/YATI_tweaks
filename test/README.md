@@ -23,7 +23,13 @@ cd /path/to/YATI && godot --headless -s test/run_tests.gd
 cd /path/to/YATI && godot --headless -s test/benchmark.gd -- --runtime=res://runtime
 ```
 
-`test/run_all.sh` runs the tests and the benchmark in one go (`GODOT=/path/to/godot test/run_all.sh`).
+`test/run_all.sh` runs everything in one go (`GODOT=/path/to/godot test/run_all.sh [--runtime=res://dir]`):
+it names the native importer's GDExtension in `.godot/extension_list.cfg` when this platform's library
+is in place (Godot loads an extension only when that file names it, and a fresh `.godot/`'s first import
+that discovers one mid-scan aborts at shutdown with exit code 134 on Godot 4.7.2), imports the project
+(the fixtures' images are imported textures, so a fresh clone needs it), runs the native smoke test,
+then the tests and the benchmark. Without the library the smoke test is skipped, unless the runtime
+under test is the native one.
 
 ```sh
 # 4. What the engine itself charges for a map's tile layers (no importer involved): assigning
@@ -57,7 +63,7 @@ engine's banner line comes first on stdout.
 
 | Option | Meaning |
 |---|---|
-| `--runtime=res://dir` | runtime folder to test (default `res://runtime`) |
+| `--runtime=res://dir` | runtime folder to test (default `res://runtime`; `res://addons/yati_native` is the native importer's facade) |
 | `--filter=text` | only run tests whose name contains `text` |
 
 Output is one line per test (`PASS name` / `FAIL name: reason`) and a `SUMMARY` line.
@@ -88,6 +94,25 @@ creation (TilesetCreator), tile layer filling (tiles-only companion map minus it
 tilesets) and objects (the rest), plus a final `RESULT` line. Timings on a shared machine are
 noisy; compare `min` and run a few more iterations when the numbers matter.
 
+## The native importer (`addons/yati_native/`)
+
+```sh
+# Build the library (Rust, native/) into addons/yati_native/bin/, or download a CI build
+bash tools/build_native.sh            # --check: only tell whether it is there
+bash tools/install_native.sh          # the branch's rolling build, or a tag: v0.1.0
+
+# Smoke test: the extension loads, TiledNative.version() and a round trip through sum()
+# (needs .godot/extension_list.cfg naming res://addons/yati_native/yati_native.gdextension)
+godot --headless --path . -s tools/smoke_native.gd
+
+# The suite against the native facade. Until stage 2 of docs/native-importer-plan.md every test
+# fails (the facade returns null with "not implemented yet"); the run must still reach SUMMARY.
+godot --headless -s test/run_tests.gd -- --runtime=res://addons/yati_native
+```
+
+The facade has only `Importer.gd`, so the suite's helpers that reach a runtime's `DataLoader.gd`
+(zip mode reset) and `CommonUtils.gd` (error count) skip them for it.
+
 ## Comparing against the pre-change runtime
 
 A pristine copy of the runtime before the 3.0 rework is kept outside the repository. Copy it
@@ -110,7 +135,7 @@ godot --headless -s test/run_tests.gd -- --runtime=res://baseline_runtime
 |---|---|
 | `terrain.tsx` + `tiles.png` | external tileset: custom data (`data_` prefix) and metadata, probability, 3-frame animation, collision objectgroup (rectangle, ellipse, polygon, one-way polygon, `physics_layer=1`), wangset with 2 colours, tileset property |
 | `tilesets.tmx` | external + embedded tileset (margin, spacing, tileoffset) + image collection (one 32x48 tile on a 16x16 map), every flip combination of one tile |
-| `layers.tmx` | opacity, tintcolor, offsets, visible=0, parallax, class, `mode="add"`/`"multiply"`, `no_import`, group layer (tile + object layer), draworder topdown/index, image layers (plain, parallax, repeatx, Parallax2D with repeaty), map property |
+| `layers.tmx` | opacity, tintcolor, offsets, visible=0, parallax (its tests run in `parallax_mode = "legacy"`), class, `mode="add"`/`"multiply"`, `no_import`, group layer (tile + object layer), draworder topdown/index, image layers (plain, parallax, repeatx, Parallax2D with repeaty), map property |
 | `objects.tmx` + `enemy.tx` | every object shape and class mapping, text (bold/italic/wrap/halign), tile objects (flipped, with collision, with tile properties), opacity, visibility, every property type incl. class and object references (top level and inside a group), `godot_group`, `godot_node_type`, template used 3 times with one override, custom type from `custom.tiled-project` |
 | `encodings.tmx` | csv, base64, base64+zlib, base64+gzip, base64+zstd (generated) |
 | `infinite.tmx` | infinite map with csv and base64+zlib chunks (generated) |
@@ -122,6 +147,12 @@ godot --headless -s test/run_tests.gd -- --runtime=res://baseline_runtime
 | `bundle.zip` | `maps/zipmap.tmx` + tileset + image for `import_from_zip` (generated) |
 | `missing_tileset.tmx` | error path: tileset file not found |
 | `postproc.gd` | post-processor for `import_with_post_processing` |
+| `area_gravity.tmx` | B5: Area2D gravity, gravity point, damp properties (a point-gravity area and a directional one) |
+| `colors.tmx` | B3/B4: `#AARRGGBB` colours: background, tints on tile/object/group/image layers, text colour; colour-typed `modulate`, `self_modulate`, `debug_color`, Polygon2D `color`, Line2D `default_color`, metadata; a string-typed `modulate`; an embedded tileset with a colour-typed tile `modulate`, custom data and metadata |
+| `layer_class.tmx` | B7: tile, object, group and image layers with and without a class |
+| `templates.tmx` + `probe_tpl.tx`, `probe_text.tx`, `probe_rect.tx` | B1/B2: template instances that override size, rotation, visibility (tile object and `area` rectangle), their own gid (flipped) and text |
+| `unknown_class.tmx` | B8: objects of unknown classes (two `Door` rectangles with a property, a `Door` polygon, a `Lever` ellipse) and one without a class |
+| `parallax.tmx` | B6: parallax origin, a group (offset, opacity) with a parallax tile layer (factor 1.2) and a repeated parallax image layer, a parallax group holding a parallax layer, a parallax object layer, background colour |
 | `classes.tmx` + `classes.tiled-project` + `crate.tx` | for the native parity tests: class `Room` map, `Floor` layers, nested groups with template instances (one overriding properties and opacity), list properties (nested lists and class items), class values with nested classes and lists, multi-line strings, enum and object properties, an embedded tileset with class, transformations, transparent colour, tile collision object, wang colour properties, `editorsettings`, a capsule, a text object, a zstd layer; the project has every `useAs` scope the runtime merges, a class defined twice and an enum |
 | `infinite.tmj` + `json_tiles.tsj` + `json_enemy.tj` | for the native parity tests: an infinite JSON map (csv-array and base64+zlib chunks, the same cells as `infinite.tmx`), external JSON tileset (tile offset, grid, transformations, animation, collision objects, wang set) and JSON template, nested groups, every property type incl. list and nested class |
 | `json_twin.tmx` | `json_map.tmj` written as TMX: both formats must give the same model |

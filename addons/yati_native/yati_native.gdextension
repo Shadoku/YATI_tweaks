@@ -1,0 +1,29 @@
+; The native YATI importer (TiledNative), built from native/ by tools/build_native.sh.
+; .github/workflows/native.yml builds linux x86_64, windows x86_64 and a macos universal
+; framework on every push that touches the crate and commits them into bin/;
+; tools/install_native.sh downloads the same files from a rolling pre-release or a release;
+; tools/build_native.sh builds this machine's (linux x86_64 or arm64, macos, windows x86_64).
+; Only the running platform's library has to exist. Names follow
+; lib<name>.<os>.<rust target triple>.<ext>. The web entries are for a build not made yet
+; (stage 5 of docs/native-importer-plan.md).
+
+[configuration]
+
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = 4.7
+
+
+[libraries]
+
+linux.debug.x86_64 = "bin/libyati_native.linux.x86_64-unknown-linux-gnu.so"
+linux.release.x86_64 = "bin/libyati_native.linux.x86_64-unknown-linux-gnu.so"
+linux.debug.arm64 = "bin/libyati_native.linux.aarch64-unknown-linux-gnu.so"
+linux.release.arm64 = "bin/libyati_native.linux.aarch64-unknown-linux-gnu.so"
+windows.debug.x86_64 = "bin/libyati_native.windows.x86_64-pc-windows-msvc.dll"
+windows.release.x86_64 = "bin/libyati_native.windows.x86_64-pc-windows-msvc.dll"
+macos.debug = "bin/libyati_native.macos.framework"
+macos.release = "bin/libyati_native.macos.framework"
+web.debug.threads.wasm32 = "bin/yati_native.wasm"
+web.release.threads.wasm32 = "bin/yati_native.wasm"
+web.debug.wasm32 = "bin/wasm-nothreads/yati_native.wasm"
+web.release.wasm32 = "bin/wasm-nothreads/yati_native.wasm"

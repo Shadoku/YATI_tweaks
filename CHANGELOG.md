@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Native importer, stage 0 of `docs/native-importer-plan.md` (the scaffold, it imports nothing yet):
+  the Rust crate `native/` (`yati_native`, godot-rust 0.5 for Godot 4.7) registering `TiledNative`
+  (`version()`, `sum()`); `addons/yati_native/` with `yati_native.gdextension` and an `Importer.gd`
+  facade that has the GDScript runtime's options and methods and reports "not implemented yet"; the
+  tools `tools/build_native.sh`, `tools/install_native.sh` (CI builds, `.yati-native-version`),
+  `tools/install_godot.sh` (`.godot-version`), `tools/smoke_native.gd` (loads the library),
+  `tools/check_native_image.py` and `tools/verify_native_bin.sh`; the workflows `ci.yml` (builds the
+  library, runs the suite for both runtimes, the native one for information until stage 2) and
+  `native.yml` (Linux x86_64, Windows x86_64 and macOS libraries, committed back to the branch and
+  published as the rolling pre-release `native-<branch>` or a release on a `v<crate version>` tag).
+- `test/run_all.sh` runs the native smoke test first, and imports the project (seeding
+  `.godot/extension_list.cfg` so a fresh `.godot/` does not crash on its first import), so it works
+  from a fresh clone.
 - `docs/native-importer-plan.md`: the exploration and plan for a native (Rust GDExtension) importer
   that needs no preloading and streams infinite maps, with the measurements behind it.
 - `native/tiled/` (`tiled_core`, stage 1 of the native importer plan): a pure-Rust crate, no Godot
@@ -26,6 +39,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `test/bench_materialize.gd`: measures the engine's own cost of a map's tile layers (`tile_map_data`
   assignment, packed-scene instantiation, the frame after a layer enters the tree, `set_cell` /
   `erase_cell` of 16x16 chunks into a live layer, a layer per chunk).
+- B8: importer option `unknown_class_fallback` (default `"staticbody"`, as before): what an object of a
+  class that is no Godot node type becomes; `"node2d"` gives a plain Node2D with the shape as metadata
+  `shape` (`Rect2` or `PackedVector2Array`) and `size`, any class name of the mapping table that node.
+- B6: importer option `parallax_mode`: `"parallax2d"` (the default) wraps a layer with a parallax factor
+  in a `Parallax2D` at its place in the hierarchy, its `scroll_offset` derived from the map's parallax
+  origin (`parallaxoriginx` / `parallaxoriginy`, unused until now) and factors of nested parallax groups
+  multiplied as in Tiled; `"legacy"` keeps the ParallaxBackground of 3.0.
+
+### Changed
+- `test/run_tests.gd` checks that a runtime has `DataLoader.gd` / `CommonUtils.gd` before loading them,
+  so the native facade (only an `Importer.gd`) runs the suite without a load error per test.
+- **Breaking** (B4): colour-typed properties that become metadata (on nodes, tiles, the TileSet, in
+  lists) and tile custom data are a `Color` instead of a `#RRGGBBAA` String. Code that passes the
+  value to `Color()` keeps working; code that treats it as a String does not. Class members and list
+  items inside class-typed properties keep Tiled's `#AARRGGBB` String (the parsed dictionary is unchanged).
+- **Breaking** (B7): a tile layer without a class no longer has metadata `class` (it was always
+  `"tilelayer"`); object, group and image layers with a class now get it as tile layers do
+  (with `add_class_as_metadata`, the default).
+- B8: an object of an unknown class is reported with a warning once per class name and import,
+  whatever `add_class_as_metadata` says (it was silent with the option on, the default, so a `Door`
+  became a solid StaticBody2D unnoticed); the warning names the fallback used.
+- B6: with the new default `parallax_mode = "parallax2d"` a map with parallax layers gives a different
+  tree: no `<map> (PBG)` ParallaxBackground and `(PL)` ParallaxLayers, but a `<layer> (PX)` Parallax2D
+  around each parallax layer where the layer is, and the background colour stays a child of the root.
+  Set `parallax_mode = "legacy"` for the 3.0 tree. Layers of class `parallax` take the parallax origin
+  and their offset into `scroll_offset`.
+
+### Fixed
+- B5 (`docs/runtime-improvement-plan.md`): the Area2D gravity properties were misspelt in
+  `TilemapCreator.handle_properties` (`gravitiy...`): `gravity` and `gravity_point_unit_distance`
+  stopped the import of an object's remaining properties with a script error,
+  `gravity_point_center_x/y` and `gravity_direction_x/y` became metadata. The Reference listed
+  `gravity` as the custom property of Linear Damp and Angular Damp; it is `linear_damp` / `angular_damp`.
+- B3: Tiled colours (`#AARRGGBB`, alpha first) were read as Godot's `#RRGGBBAA`, so a layer tint
+  `#80ff0000` (red at 50 %) became yellow-green and a background colour `#80ff0000` transparent.
+  Layer tints (tile, object, group and image layers), the map background colour, text object colours
+  and wangcolors now go through the new `CommonUtils.tiled_color()`; a layer's opacity multiplies the
+  tint's alpha.
+- B4: colour-typed properties (`type="color"`) drove no colour property: `modulate`, `self_modulate`,
+  `debug_color`, `color` (Polygon2D), `default_color` (Line2D) and a tile's `modulate` matched only
+  `type="string"`. Both types are accepted now, a `color` read as Tiled's `#AARRGGBB` and a `string` as
+  before (Godot's `#RRGGBB` / `#RRGGBBAA` or a colour name). A colour-typed tile custom data property
+  on its `TYPE_COLOR` layer got a String.
+- B7: every tile layer without a class got metadata `class = "tilelayer"`: the class fell back to
+  the `type` key, which pre-1.9 files use for an object's or tile's class but which on a layer is its
+  kind. The fallback (`TilemapCreator.get_class_string()`) now applies to objects and tiles only.
+- B2: a template instance that saves its own `gid` (one flipped in Tiled) or its own `text` got a
+  second node besides the template's (a `_tile` Sprite2D at scale 0.00001, or a second Label), and the
+  template's node ignored the override. The instance's gid (a gid of the map's tilesets) and text
+  (merged over the template's) now go into the template's object, and nothing else is created.
+- B1: a template instance's own `width`, `height`, `rotation` and `visible` were ignored (only `id`,
+  `class`, `type`, `name` and `opacity` were taken over): a 32x32 instance of a 16x16 template, rotated
+  45°, imported as 16x16 at 0°. Every attribute saved on the instance now overrides the template's, as
+  the TMX spec says.
+- B6: a layer with a parallax factor was pulled out of its group into one ParallaxBackground (a
+  CanvasLayer at -100): its groups' offset, opacity and visibility were lost, a foreground factor > 1
+  drew behind everything, and the map background colour was moved along (fixed by the new default
+  `parallax_mode`).
 
 ## [3.0.0] — runtime-only fork (2026-10-17)
 
@@ -255,6 +326,7 @@ E.g. loading from Zip file basically only needs one additional line somewhere ah
 ```py
 DataLoader.zip_file = "<path-to-zip>/xyz.zip"
 ```
+
 ## [2.1.4] - 2024-12-16
 
 ### Fixed
@@ -303,6 +375,7 @@ Properties with a name not starting with that prefix are now assigned only to th
 Save / Save all should now being sufficient.
 - Fixed problem with missing meta data on alternative tiles (merged PR #60, thank you zhtsu)
   
+
 ## [2.0.3 / 1.6.10] - 2024-09-30
 
 ### Fixed

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- B7: a layer's 'type' is its kind (tilelayer, objectgroup...), never a pre-1.9 class. -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="2" height="2" tilewidth="16" tileheight="16" infinite="0" nextlayerid="7" nextobjectid="1">
+ <layer id="1" name="Plain" width="2" height="2">
+  <data encoding="csv">
+0,0,
+0,0
+</data>
+ </layer>
+ <layer id="2" name="Ground" class="Ground" width="2" height="2">
+  <data encoding="csv">
+0,0,
+0,0
+</data>
+ </layer>
+ <objectgroup id="3" name="PlainObjects"/>
+ <objectgroup id="4" name="Spawns" class="Spawns"/>
+ <group id="5" name="Zone" class="Zone">
+  <imagelayer id="6" name="Picture">
+   <image source="bg.png" width="64" height="32"/>
+  </imagelayer>
+ </group>
+</map>

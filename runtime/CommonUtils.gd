@@ -50,14 +50,24 @@ static func get_right_typed_value(type: String, val: String):
 	elif type == "int":
 		return int(val)
 	elif type == "color":
-		# If alpha is present it's oddly the first byte, so we have to shift it to the end
-		if val.length() == 9: val = val[0] + val.substr(3) + val.substr(1,2)
-		return val
+		return tiled_color(val)
 	else:
 		# JSON parsing since Godot 4.4 adds ".0" to integers so remove that
 		if val.ends_with(".0"):
 			val = val.replace(".0", "")
 		return val
+
+
+# Converts a Tiled colour string (#RRGGBB, or #AARRGGBB with the alpha first) to a Color.
+# An empty or unreadable string gives the fallback.
+static func tiled_color(s: String, fallback: Color = Color.WHITE) -> Color:
+	var hex := s.strip_edges().trim_prefix("#")
+	if hex == "": return fallback
+	if hex.length() == 8:
+		# Tiled's #AARRGGBB -> Godot's RRGGBBAA
+		hex = hex.substr(2) + hex.substr(0, 2)
+	if not hex.is_valid_hex_number(): return fallback
+	return Color.from_string(hex, fallback)
 
 
 static func cleanup_path(path: String) -> String:

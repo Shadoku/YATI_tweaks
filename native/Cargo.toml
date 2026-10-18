@@ -1,0 +1,26 @@
+[package]
+name = "yati_native"
+version = "0.1.0"
+edition = "2021"
+description = "The YATI runtime importer as a Godot GDExtension (godot-rust): Tiled maps imported and streamed natively."
+license = "MIT"
+publish = false
+
+# The pure-Rust core crate, native/tiled/ (`tiled_core`: the Tiled data model, its parsers, the
+# payload decoding and the tile_map_data blobs; no Godot types), is a workspace member and a
+# dependency; this crate is the Godot side (the classes, the builders). The worker thread of the
+# async loader runs tiled_core only (docs/native-importer-plan.md, section 2).
+
+[workspace]
+members = [".", "tiled"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+godot = { version = "0.5", features = ["api-4-7"] }
+tiled_core = { path = "tiled" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"

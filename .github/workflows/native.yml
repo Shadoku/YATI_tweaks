@@ -1,0 +1,339 @@
+name: Native importer
+
+# Builds the native importer (native/, a Rust GDExtension) for every desktop platform on every
+# push that touches it, and publishes the libraries as yati-native.zip (holding
+# addons/yati_native/bin/, the names addons/yati_native/yati_native.gdextension loads) plus its
+# SHA-256:
+#
+# - a push to a branch updates that branch's rolling pre-release, tagged
+#   native-<branch> (every character outside [A-Za-z0-9._-] becomes '-', so
+#   claude/feature becomes native-claude-feature), whose tag is moved to the commit;
+# - a push of a tag v<crate version> (native/Cargo.toml) publishes a proper release of that
+#   tag; a v* tag that does not match the crate's version (a release of the GDScript runtime)
+#   builds but publishes nothing;
+# - a manual run (workflow_dispatch) builds the zip as a workflow artifact, or publishes to
+#   the tag it is given.
+#
+# A branch build also commits the libraries back to the branch (addons/yati_native/bin/, one
+# bot commit, skipped when nothing changed), so a clone carries every platform's library and
+# needs no cargo unless it changes the Rust. The directory is gitignored so that a local build
+# (tools/build_native.sh) is not committed by accident; the bot adds the files with -f.
+# tools/install_native.sh is the way to get the zip into a checkout that does not have them:
+# by default the current branch's rolling build (falling back to native-main), or the tag
+# written in .yati-native-version. Every build also uploads the per-platform libraries and the
+# zip as workflow artifacts (90 days, for the run's commit).
+#
+# Only pushes that touch the crate's sources, the .gdextension, the build script, the check and
+# load-test scripts, the Godot installer or this workflow build (paths below): a commit that
+# leaves them alone leaves the branch's pre-release as it was, which is still the right library
+# for it. Tag pushes always build.
+#
+# Every job uploads only the library it built (staged alone under out/), and the jobs that
+# gather them start from an empty addons/yati_native/bin/ and verify each library's SHA-256
+# against the one its build job wrote (tools/verify_native_bin.sh): artifacts that overlap on
+# the same files, extracted into one directory at once, interleave their writers and leave a
+# mixture of a fresh library and a stale one, which does not load. Each library is also checked
+# as an image (tools/check_native_image.py) and loaded by the real Godot of .godot-version on
+# its runner (tools/smoke_native.gd), so one that would not load fails the build instead.
+#
+# Web (wasm32-unknown-emscripten with godot-rust's experimental-wasm feature) is not built yet:
+# stage 5 of docs/native-importer-plan.md.
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+    paths:
+      - "native/**"
+      - "addons/yati_native/yati_native.gdextension"
+      - "tools/build_native.sh"
+      - "tools/install_godot.sh"
+      - "tools/check_native_image.py"
+      - "tools/verify_native_bin.sh"
+      - "tools/smoke_native.gd"
+      - ".godot-version"
+      - ".github/workflows/native.yml"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create or update (empty: build the zip as a workflow artifact only)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+# One build per ref at a time; a newer push cancels the one in flight.
+concurrency:
+  group: native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          # lib: the library file this job builds; out: what it publishes (the file, or
+          # the whole framework on macOS), relative to addons/yati_native/bin/.
+          - name: linux-x86_64
+            os: ubuntu-latest
+            lib: libyati_native.linux.x86_64-unknown-linux-gnu.so
+            out: libyati_native.linux.x86_64-unknown-linux-gnu.so
+          - name: windows-x86_64
+            os: windows-latest
+            lib: libyati_native.windows.x86_64-pc-windows-msvc.dll
+            out: libyati_native.windows.x86_64-pc-windows-msvc.dll
+          - name: macos-universal
+            os: macos-latest
+            lib: libyati_native.macos.framework/libyati_native.macos.dylib
+            out: libyati_native.macos.framework
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.name == 'macos-universal' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Cache cargo registry and target/
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native -> target
+          key: native-${{ matrix.name }}
+
+      # The crates' own outputs from the restored cache go (this crate's and the pure-Rust
+      # core's, tiled_core, once it is a member): the dependencies stay cached, the library
+      # itself is compiled and linked from nothing.
+      - name: Forget the crates' cached outputs
+        id: start
+        run: |
+          set -euo pipefail
+          echo "epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
+          if [ -d native/target ]; then
+            find native/target -depth \( -name 'yati_native*' -o -name 'libyati_native*' -o -name 'tiled_core*' -o -name 'libtiled_core*' \) -print -exec rm -rf {} +
+          fi
+
+      # build_native.sh builds this runner's library and copies it into addons/yati_native/bin/
+      # under the .gdextension's name (on Windows, Git Bash's uname is MINGW64_NT-*-x86_64
+      # and cargo's default target is x86_64-pc-windows-msvc).
+      - name: Build the native importer
+        run: bash tools/build_native.sh
+
+      # macOS: build_native.sh made the framework (dylib + Info.plist) for the runner's arch
+      # (arm64); add the x86_64 slice so one framework serves both.
+      - name: Make the macOS framework universal
+        if: matrix.name == 'macos-universal'
+        run: |
+          set -euo pipefail
+          cd native
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+          cd "$GITHUB_WORKSPACE"
+          DYLIB=addons/yati_native/bin/libyati_native.macos.framework/libyati_native.macos.dylib
+          lipo -create \
+            native/target/aarch64-apple-darwin/release/libyati_native.dylib \
+            native/target/x86_64-apple-darwin/release/libyati_native.dylib \
+            -output "$DYLIB"
+          install_name_tool -id "@rpath/libyati_native.macos.dylib" "$DYLIB"
+          codesign --force --sign - --timestamp=none "$DYLIB"
+          lipo -info "$DYLIB"
+
+      - name: List the library
+        run: ls -laR addons/yati_native/bin
+
+      # Only the library this job built: the checkout may hold the other platforms'.
+      - name: Check the image
+        run: python3 -I tools/check_native_image.py --built-after "${{ steps.start.outputs.epoch }}" "addons/yati_native/bin/${{ matrix.lib }}"
+
+      # The real Godot loads it: the GDExtension registers TiledNative, a value goes through
+      # and back. The extension list is seeded first: Godot loads an extension at startup
+      # only when .godot/extension_list.cfg names it.
+      - name: Load the native importer in Godot
+        run: |
+          set -euo pipefail
+          GODOT="$(bash tools/install_godot.sh | tail -n 1)"
+          mkdir -p .godot
+          echo "res://addons/yati_native/yati_native.gdextension" > .godot/extension_list.cfg
+          "$GODOT" --headless --path . -s tools/smoke_native.gd
+
+      # Only this job's library goes up, with its checksum, staged alone so the artifact
+      # holds nothing of the checkout's other platforms.
+      - name: Stage the library
+        run: |
+          set -euo pipefail
+          rm -rf out && mkdir -p out/addons/yati_native/bin
+          cp -R "addons/yati_native/bin/${{ matrix.out }}" out/addons/yati_native/bin/
+          cd out/addons/yati_native/bin
+          sha256sum "${{ matrix.lib }}" > "${{ matrix.name }}.sha256"
+          cat "${{ matrix.name }}.sha256"
+          ls -laR .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yati-native-${{ matrix.name }}
+          path: out/addons/yati_native/bin/
+          if-no-files-found: error
+
+  package:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # Where this build goes: a release of the pushed tag, the tag given by hand, or the
+      # branch's rolling pre-release (empty: artifact only).
+      - name: Pick the tag
+        id: tag
+        run: |
+          set -euo pipefail
+          ROLLING=false
+          CRATE="v$(sed -n 's/^version = "\(.*\)"/\1/p' native/Cargo.toml | head -n 1)"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+            if [ -n "$TAG" ] && [ "$TAG" != "$CRATE" ]; then
+              echo "::error::tag $TAG does not match the crate's version $CRATE (native/Cargo.toml)"
+              exit 1
+            fi
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG="${{ github.ref_name }}"
+            if [ "$TAG" != "$CRATE" ]; then
+              # This repository's GDScript runtime is released under v* tags too.
+              echo "::notice::tag $TAG is not the crate's version $CRATE (native/Cargo.toml); nothing is published"
+              TAG=""
+            fi
+          else
+            TAG="native-$(printf '%s' "${{ github.ref_name }}" | tr -c 'A-Za-z0-9._-' '-')"
+            ROLLING=true
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "rolling=$ROLLING" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG rolling=$ROLLING"
+
+      # The checkout's libraries go first: the artifacts must land in an empty directory.
+      - name: Empty addons/yati_native/bin/
+        run: rm -rf addons/yati_native/bin && mkdir -p addons/yati_native/bin
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: yati-native-*
+          path: addons/yati_native/bin
+          merge-multiple: true
+
+      - name: Verify the libraries
+        run: bash tools/verify_native_bin.sh
+
+      - name: Zip addons/yati_native/bin/
+        run: |
+          set -euo pipefail
+          echo "$GITHUB_SHA" > addons/yati_native/bin/native-commit.txt
+          ls -laR addons/yati_native/bin
+          zip -r -X yati-native.zip addons/yati_native/bin
+          sha256sum yati-native.zip > yati-native.zip.sha256
+          cat yati-native.zip.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yati-native
+          path: |
+            yati-native.zip
+            yati-native.zip.sha256
+
+      # A branch's rolling pre-release: move its tag to this commit, then replace the assets.
+      - name: Update the branch's rolling pre-release
+        if: steps.tag.outputs.rolling == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push -f origin "refs/tags/$TAG"
+          NOTES="Rolling build of the native importer for branch \`$BRANCH\`, from commit $GITHUB_SHA. Replaced on every push that touches the native importer. Download with \`bash tools/install_native.sh\` on that branch."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --prerelease --title "yati_native: $BRANCH" --notes "$NOTES"
+            gh release upload "$TAG" yati-native.zip yati-native.zip.sha256 --clobber
+          else
+            gh release create "$TAG" yati-native.zip yati-native.zip.sha256 \
+              --target "$GITHUB_SHA" --prerelease --title "yati_native: $BRANCH" --notes "$NOTES"
+          fi
+
+      # A versioned release (a v* tag matching the crate's version, or a tag given by hand).
+      - name: Attach to the release
+        if: steps.tag.outputs.tag != '' && steps.tag.outputs.rolling != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" yati-native.zip yati-native.zip.sha256 --clobber
+          else
+            gh release create "$TAG" yati-native.zip yati-native.zip.sha256 \
+              --target "$GITHUB_SHA" --title "yati_native $TAG" --generate-notes
+          fi
+
+  # A branch push: commit the libraries back to the branch so the repository carries them.
+  # The commit touches only addons/yati_native/bin/, which this workflow's path filter ignores,
+  # and carries the skip-ci marker so ci.yml does not run a second time for the same sources.
+  # (That marker skips every workflow of a push whose head commit mentions it: never write it
+  # in a commit message by hand.)
+  commit:
+    name: commit the libraries to the branch
+    needs: package
+    if: github.event_name == 'push' && github.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      # The checkout's libraries go first: the artifacts must land in an empty directory.
+      - name: Empty addons/yati_native/bin/
+        run: |
+          rm -rf addons/yati_native/bin && mkdir -p addons/yati_native/bin
+          touch addons/yati_native/bin/.gitkeep
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: yati-native-*
+          path: addons/yati_native/bin
+          merge-multiple: true
+
+      - name: Verify the libraries
+        run: bash tools/verify_native_bin.sh
+
+      # -f: the directory is gitignored so that local builds are not committed by accident.
+      - name: Commit addons/yati_native/bin/ when it changed
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          echo "$GITHUB_SHA" > addons/yati_native/bin/native-commit.txt
+          git add -A -f addons/yati_native/bin
+          if git diff --cached --quiet; then
+            echo "the libraries are unchanged; nothing to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "native: libraries built from ${GITHUB_SHA:0:12} [skip ci]"
+          for attempt in 1 2 3 4 5; do
+            if git push origin "HEAD:$BRANCH"; then
+              exit 0
+            fi
+            echo "push rejected (the branch moved); rebasing and retrying ($attempt)"
+            git pull --rebase origin "$BRANCH"
+          done
+          echo "::error::could not push the libraries to $BRANCH"
+          exit 1

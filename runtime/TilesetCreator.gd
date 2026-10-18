@@ -682,6 +682,8 @@ func handle_tile_properties(properties: Array, current_tile: TileData):
 			current_tile.texture_origin = Vector2i(int(val), current_tile.texture_origin.y)
 		elif name.to_lower() == "texture_origin_y" and  type == "int":
 			current_tile.texture_origin = Vector2i(current_tile.texture_origin.x, int(val))
+		elif name.to_lower() == "modulate" and type == "color":
+			current_tile.modulate = CommonUtils.tiled_color(val)
 		elif name.to_lower() == "modulate" and  type == "string":
 			current_tile.modulate = Color(val)
 		elif name.to_lower() == "material" and  type == "file":
@@ -859,7 +861,7 @@ func handle_wangsets_old_mapping(wangsets):
 		_tileset.set_terrain_set_mode(current_terrain_set, terrain_mode)
 
 		if wangset.has("colors"):
-			_tileset.set_terrain_color(current_terrain_set, _terrain_counter, Color(wangset["colors"][0]["color"]))
+			_tileset.set_terrain_color(current_terrain_set, _terrain_counter, CommonUtils.tiled_color(str(wangset["colors"][0]["color"])))
 
 		if wangset.has("wangtiles"):
 			for wangtile in wangset["wangtiles"]:
@@ -912,7 +914,7 @@ func handle_wangsets(wangsets):
 			for wangcolor in wangset["colors"]:
 				_terrain_counter += 1
 				_tileset.add_terrain(current_terrain_set)
-				_tileset.set_terrain_color(current_terrain_set, _terrain_counter, Color(wangcolor["color"]))
+				_tileset.set_terrain_color(current_terrain_set, _terrain_counter, CommonUtils.tiled_color(str(wangcolor["color"])))
 				var col_name = terrain_set_name
 				if wangcolor.has("name"):
 					if wangcolor["name"] != "":

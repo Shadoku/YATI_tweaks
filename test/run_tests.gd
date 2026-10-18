@@ -140,14 +140,21 @@ func _free_tree(n: Node) -> void:
 ## The pre-change DataLoader keeps zip mode after import_from_zip (PLAN F2); undo it so that one
 ## zip test does not break every following test.
 func _reset_zip_mode() -> void:
-	var dl: Variant = load(runtime_dir.path_join("DataLoader.gd"))
+	var dl: Variant = _runtime_script("DataLoader.gd")
 	if dl != null:
 		dl.set("zip_file", "")
 
 
 func _error_count() -> int:
-	var cu: Variant = load(runtime_dir.path_join("CommonUtils.gd"))
+	var cu: Variant = _runtime_script("CommonUtils.gd")
 	return int(cu.get("error_count")) if cu != null else 0
+
+
+## One of the runtime's scripts, or null when the runtime has none of that name (the native
+## facade, addons/yati_native/, has only Importer.gd): checked first, so no load error is printed.
+func _runtime_script(file: String) -> Variant:
+	var path := runtime_dir.path_join(file)
+	return load(path) if ResourceLoader.exists(path) else null
 
 
 func fail(msg: String) -> void:
@@ -759,7 +766,8 @@ func test_new_option_save_tileset_to() -> bool:
 # Layers (layers.tmx, background.tmx, legacy_xml.tmx)
 
 func test_layers_root_children() -> bool:
-	var n := _import("layers.tmx")
+	# parallax_mode "legacy": parallax layers in a ParallaxBackground (B6 made "parallax2d" the default)
+	var n := _import("layers.tmx", {"parallax_mode": "legacy"})
 	if n == null: return done()
 	for c in ["Base", "Styled", "Hidden", "AddLayer", "MulLayer", "Group1", "TopDown", "Indexed",
 			"ImgPlain", "ImgRepeat", "ImgPx2D", "layers (PBG)"]:
@@ -789,7 +797,7 @@ func test_layer_attributes() -> bool:
 
 
 func test_layer_parallax() -> bool:
-	var n := _import("layers.tmx")
+	var n := _import("layers.tmx", {"parallax_mode": "legacy"})
 	var l := layer(n, "Parallaxed")
 	if l == null: return done()
 	var pl := l.get_parent()
@@ -843,7 +851,7 @@ func test_new_object_layer_draworder() -> bool:
 
 
 func test_image_layers() -> bool:
-	var n := _import("layers.tmx")
+	var n := _import("layers.tmx", {"parallax_mode": "legacy"})
 	var plain := need(n, "ImgPlain", "TextureRect") as TextureRect
 	if plain:
 		eq(plain.position, Vector2(4, 6), "ImgPlain position")
@@ -867,7 +875,7 @@ func test_image_layers() -> bool:
 func test_bug_parallax_layer_default_factor() -> bool:
 	# Tiled's default parallax factor is 1.0 for an axis that is not set; the ParallaxLayer path
 	# (layer with only parallaxx) uses 0.0, freezing the other axis.
-	var par := need(_import("layers.tmx"), "ImgParallax", "TextureRect")
+	var par := need(_import("layers.tmx", {"parallax_mode": "legacy"}), "ImgParallax", "TextureRect")
 	if par and is_type(par.get_parent(), "ParallaxLayer", "ImgParallax parent"):
 		eq((par.get_parent() as ParallaxLayer).motion_scale.y, 1.0, "ImgParallax motion_scale.y (parallaxy unset)")
 	return done()
@@ -1138,7 +1146,7 @@ func test_object_property_types() -> bool:
 	meta(p, "p_int", 42)
 	meta(p, "p_float", 2.5)
 	meta(p, "p_bool", true)
-	meta(p, "p_color", "#ff000080") # Tiled #AARRGGBB -> Godot #RRGGBBAA string
+	meta(p, "p_color", Color("#ff000080")) # Tiled #AARRGGBB -> Color (a #RRGGBBAA String before B4)
 	meta(p, "p_file", "data/info.txt")
 	if p.has_meta("p_int"): eq(typeof(p.get_meta("p_int")), TYPE_INT, "p_int type")
 	if p.has_meta("p_bool"): eq(typeof(p.get_meta("p_bool")), TYPE_BOOL, "p_bool type")
@@ -1243,6 +1251,303 @@ func test_new_json_class_property_dictionary() -> bool:
 	if not check(typeof(v) == TYPE_DICTIONARY, "stats is %s (%s), expected Dictionary" % [type_string(typeof(v)), str(v)]): return done()
 	eq((v as Dictionary).get("hp"), 5, "member hp")
 	eq((v as Dictionary).get("label"), "orc", "member label")
+	return done()
+
+
+# ---------------------------------------------------------------------------
+# Runtime improvement plan, part A (docs/runtime-improvement-plan.md, B1-B10)
+
+func test_bug_area_gravity() -> bool:
+	# B5: the gravity properties of an Area2D were misspelt (gravitiy...): 'gravity' and
+	# 'gravity_point_unit_distance' aborted the property loop with a script error, the
+	# centre/direction components became metadata.
+	var a := need(_import("area_gravity.tmx"), "Field (Area)", "Area2D") as Area2D
+	if a == null: return done()
+	eq(a.gravity, 300.0, "gravity")
+	check(a.gravity_point, "gravity_point not set")
+	eq(a.gravity_point_center, Vector2(0.25, -0.5), "gravity_point_center")
+	eq(a.gravity_point_unit_distance, 12.5, "gravity_point_unit_distance")
+	eq(a.linear_damp, 0.75, "linear_damp")
+	eq(a.angular_damp, 2.5, "angular_damp")
+	eq(a.priority, 3, "priority (listed after gravity)")
+	for k in ["gravity_point_center_x", "gravity_point_center_y"]:
+		check(not a.has_meta(k), k + " stored as metadata")
+	# Godot keeps gravity_point_center and gravity_direction in one vector, so a second
+	# area (no gravity_point) checks the direction.
+	var w := need(a.get_parent(), "Wind (Area)", "Area2D") as Area2D
+	if w == null: return done()
+	eq(w.gravity_direction, Vector2(1, 0), "gravity_direction")
+	eq(w.gravity, 50.0, "gravity (int typed)")
+	check(not w.monitorable, "monitorable (listed after gravity) not applied")
+	for k in ["gravity_direction_x", "gravity_direction_y"]:
+		check(not w.has_meta(k), k + " stored as metadata")
+	return done()
+
+
+func test_bug_argb_colors() -> bool:
+	# B3: Tiled writes colours as #AARRGGBB, Godot's Color(String) reads #RRGGBBAA: a tint of
+	# #80ff0000 (red, 50 % alpha) became yellow-green, the background colour transparent.
+	var red_half := Color(1, 0, 0, 128.0 / 255.0)
+	var n := _import("colors.tmx")
+	if n == null: return done()
+	var bg := need(n, "Background Color", "ColorRect") as ColorRect
+	if bg: eq(bg.color, red_half, "background colour")
+	var tiles := layer(n, "TintTiles")
+	if tiles: eq(tiles.modulate, red_half, "tile layer tint")
+	var objs := need(n, "TintObjects", "Node2D") as Node2D
+	if objs: eq(objs.modulate, red_half, "object layer tint")
+	var grp := need(n, "TintGroup", "Node2D") as Node2D
+	if grp: eq(grp.modulate, Color(1, 0, 0, red_half.a * 0.5), "group tint x opacity")
+	var img := need(n, "TintImage", "TextureRect") as TextureRect
+	if img: eq(img.modulate, red_half, "image layer tint")
+	var lbl := need(n, "Caption", "Label") as Label
+	if lbl: eq(lbl.get_theme_color("font_color"), red_half, "text colour")
+	return done()
+
+
+func test_bug_color_property_type() -> bool:
+	# B4: colour-typed properties became #RRGGBBAA Strings (metadata) and did not drive the
+	# colour properties, which matched only type 'string'. Now they are Colors.
+	var n := _import("colors.tmx")
+	if n == null: return done()
+	var a := need(n, "Painted (Area)", "Area2D") as Area2D
+	if a:
+		eq(a.modulate, Color(0, 1, 0, 1), "modulate (color typed)")
+		eq(a.self_modulate, Color(0, 0, 1, 128.0 / 255.0), "self_modulate (color typed)")
+		var cs := a.get_child(0) as CollisionShape2D
+		if is_type(cs, "CollisionShape2D", "Painted shape"):
+			eq(cs.debug_color, Color(1, 1, 1, 64.0 / 255.0), "debug_color (color typed)")
+		if check(a.has_meta("tint"), "meta 'tint' missing"):
+			eq(typeof(a.get_meta("tint")), TYPE_COLOR, "meta 'tint' type")
+			eq(a.get_meta("tint"), Color(1, 0, 0, 128.0 / 255.0), "meta 'tint'")
+		# a string property is not reinterpreted
+		meta(a, "plain_modulate_string", "#ff000080")
+	var s := need(n, "StringTint (Area)", "Area2D") as Area2D
+	if s: eq(s.modulate, Color("#ff000080"), "string-typed modulate keeps Godot's #RRGGBBAA")
+	var poly := need(n, "Poly", "Polygon2D") as Polygon2D
+	if poly: eq(poly.color, Color(0, 0, 1, 128.0 / 255.0), "Polygon2D color (color typed)")
+	var line := need(n, "Wire", "Line2D") as Line2D
+	if line: eq(line.default_color, Color(0, 1, 0, 1), "Line2D default_color (color typed)")
+	# Tiles: modulate, a colour custom data layer (TYPE_COLOR) and colour metadata
+	var ts := tileset_of(n, "TintTiles")
+	var td := tile_data(ts, 0, Vector2i(1, 0))
+	if td:
+		eq(td.modulate, Color(0, 0, 1, 1), "tile modulate (color typed)")
+		var layer_id := ts.get_custom_data_layer_by_name("glow")
+		if check(layer_id >= 0, "custom data layer 'glow' missing"):
+			eq(ts.get_custom_data_layer_type(layer_id), TYPE_COLOR, "custom data layer type")
+			eq(td.get_custom_data("glow"), Color(0, 1, 0, 128.0 / 255.0), "custom data 'glow'")
+		if check(td.has_meta("hue"), "tile meta 'hue' missing"):
+			eq(td.get_meta("hue"), Color("#336699"), "tile meta 'hue'")
+	return done()
+
+
+func test_bug_layer_class_meta() -> bool:
+	# B7: the class fell back to the 'type' key, which on a layer is its kind, so every tile
+	# layer got class = "tilelayer". Layers of the other kinds now get their class as well.
+	var n := _import("layer_class.tmx")
+	if n == null: return done()
+	var plain := layer(n, "Plain")
+	if plain: check(not plain.has_meta("class"), "tile layer without class has meta class = %s" % str(plain.get_meta("class", "")))
+	meta(layer(n, "Ground"), "class", "Ground")
+	var po := need(n, "PlainObjects", "Node2D")
+	if po: check(not po.has_meta("class"), "object layer without class has meta class")
+	meta(need(n, "Spawns", "Node2D"), "class", "Spawns")
+	meta(need(n, "Zone", "Node2D"), "class", "Zone")
+	var pic := need(n, "Picture", "TextureRect")
+	if pic: check(not pic.has_meta("class"), "image layer without class has meta class")
+	var off := _import("layer_class.tmx", {"add_class_as_metadata": false})
+	if off: check(not layer(off, "Ground").has_meta("class"), "class meta with add_class_as_metadata off")
+	return done()
+
+
+func test_bug_template_flipped_gid() -> bool:
+	# B2: a template instance that saves its own gid (flipped in Tiled) or text fell through
+	# to the gid / text branches after the template's object was created: a second node
+	# (a "_tile" Sprite2D at scale 0.00001, or a second Label).
+	var n := _import("templates.tmx")
+	if n == null: return done()
+	var objs := n # a single layer: the object layer is the root
+	var sprites := children_of_type(objs, "Sprite2D")
+	eq(sprites.size(), 3, "Sprite2D count (Flipped, Big, Plain)")
+	check(find(n, "terrain_tile") == null and find(n, "tiles_tile") == null, "extra '_tile' sprite created")
+	var f := need(objs, "Flipped", "Sprite2D") as Sprite2D
+	if f:
+		check(f.flip_h, "Flipped: flip_h not set from the instance's gid")
+		check(not f.flip_v, "Flipped: flip_v set")
+		eq(f.region_rect, Rect2(32, 0, 16, 16), "Flipped region (gid 3)")
+		eq(f.position, Vector2(16, 32), "Flipped position")
+		meta(f, "kind", "probe")
+	var p := need(objs, "Plain", "Sprite2D") as Sprite2D
+	if p: check(not p.flip_h, "Plain flipped")
+	var labels := children_of_type(objs, "Label")
+	eq(labels.size(), 1, "Label count")
+	var l := need(objs, "SignB", "Label") as Label
+	if l:
+		eq(l.text, "Instance text", "instance text overrides the template's")
+		eq(l.get_theme_color("font_color"), Color(1, 0, 0, 1), "instance text colour")
+		eq(l.get_theme_font_size("font_size"), 12, "template pixel size kept")
+		eq(l.horizontal_alignment, HORIZONTAL_ALIGNMENT_CENTER, "template halign kept")
+	return done()
+
+
+func test_bug_template_overrides() -> bool:
+	# B1: an instance's width, height, rotation and visible override the template's (TMX spec,
+	# "Template files"); only id, class, type, name and opacity were applied.
+	var n := _import("templates.tmx")
+	if n == null: return done()
+	var big := need(n, "Big", "Sprite2D") as Sprite2D
+	if big:
+		eq(big.scale, Vector2(2, 2), "Big scale (32x32 instance of a 16x16 tile)")
+		eq(big.rotation_degrees, 45.0, "Big rotation")
+		check(big.visible, "Big hidden")
+	var wide := need(n, "Wide (Area)", "Area2D") as Area2D
+	if wide:
+		check(not wide.visible, "Wide visible (instance has visible=0)")
+		var cs := wide.get_child(0) as CollisionShape2D
+		if is_type(cs, "CollisionShape2D", "Wide shape") and is_type(cs.shape, "RectangleShape2D", "Wide shape resource"):
+			eq((cs.shape as RectangleShape2D).size, Vector2(40, 24), "Wide size")
+			eq(cs.rotation_degrees, 30.0, "Wide rotation")
+	var same := need(n, "Same (Area)", "Area2D") as Area2D
+	if same:
+		check(same.visible, "Same hidden")
+		var cs2 := same.get_child(0) as CollisionShape2D
+		if is_type(cs2, "CollisionShape2D", "Same shape") and cs2.shape is RectangleShape2D:
+			eq((cs2.shape as RectangleShape2D).size, Vector2(16, 16), "Same size (template's)")
+	var plain := need(n, "Plain", "Sprite2D") as Sprite2D
+	if plain:
+		eq(plain.scale, Vector2(1, 1), "Plain scale")
+		eq(plain.rotation_degrees, 0.0, "Plain rotation")
+	return done()
+
+
+func test_new_unknown_class_fallback() -> bool:
+	# B8: an object whose class is no Godot node type became a StaticBody2D (a solid wall for a
+	# 'Door'), silently unless add_class_as_metadata was off. The option unknown_class_fallback
+	# chooses the node ("node2d": a plain Node2D with the shape as metadata), and every unknown
+	# class is reported once per import.
+	var imp := _new_importer()
+	if not _require_option(imp, "unknown_class_fallback"): return done()
+	imp.set("unknown_class_fallback", "node2d")
+	var n := _import_with(imp, "unknown_class.tmx")
+	if n == null: return done()
+	eq(imp.get("last_warning_count"), 2, "warnings (Door and Lever, once each)")
+	var front := need(n, "FrontDoor")
+	if front:
+		eq(front.get_class(), "Node2D", "FrontDoor class")
+		eq((front as Node2D).position, Vector2(16, 32), "FrontDoor position")
+		eq((front as Node2D).rotation_degrees, 90.0, "FrontDoor rotation")
+		meta(front, "shape", Rect2(0, 0, 32, 16))
+		meta(front, "size", Vector2(32, 16))
+		meta(front, "class", "Door")
+		meta(front, "locked", true)
+		eq(front.get_child_count(), 0, "FrontDoor children")
+	var back := need(n, "BackDoor")
+	if back: eq(back.get_class(), "Node2D", "BackDoor class")
+	var frame := need(n, "DoorFrame")
+	if frame:
+		eq(frame.get_class(), "Node2D", "DoorFrame class")
+		meta(frame, "shape", PackedVector2Array([Vector2(0, 0), Vector2(16, 0), Vector2(16, 16)]))
+	var lever := need(n, "Lever")
+	if lever:
+		eq(lever.get_class(), "Node2D", "Lever class")
+		meta(lever, "shape", Rect2(0, 0, 8, 8))
+	need(n, "Wall (SB)", "StaticBody2D") # no class: a StaticBody2D as before
+	# The default keeps the StaticBody2D, and warns all the same
+	var imp2 := _new_importer()
+	var d := _import_with(imp2, "unknown_class.tmx")
+	if d:
+		need(d, "FrontDoor (SB)", "StaticBody2D")
+		eq(imp2.get("last_warning_count"), 2, "warnings with the default fallback")
+	# Any Godot type name works as fallback
+	var a := _import("unknown_class.tmx", {"unknown_class_fallback": "area"})
+	if a: need(a, "BackDoor (Area)", "Area2D")
+	return done()
+
+
+func test_new_parallax2d_hierarchy() -> bool:
+	# B6: a layer with a parallax factor was moved out of its group into one ParallaxBackground
+	# (deprecated ParallaxLayer nodes): the group's offset and opacity were lost, factors > 1
+	# drew behind everything, the background colour was moved along. parallax_mode "parallax2d"
+	# (the default) wraps the layer in a Parallax2D at its place in the hierarchy.
+	var n := _import("parallax.tmx")
+	if n == null: return done()
+	check(n.find_children("*", "ParallaxBackground", true, false).is_empty(), "a ParallaxBackground was created")
+	check(n.find_children("*", "ParallaxLayer", true, false).is_empty(), "a ParallaxLayer was created")
+	var bg := n.get_node_or_null("Background Color")
+	check(bg is ColorRect, "background colour is not a direct child of the root")
+	var back := n.get_node_or_null("Back") as Node2D
+	if not is_type(back, "Node2D", "Back (root child)"): return done()
+	eq(back.position, Vector2(100, 0), "Back offset")
+	eq(back.modulate.a, 0.5, "Back opacity")
+	var fg_px := back.get_node_or_null("Fg (PX)") as Parallax2D
+	if is_type(fg_px, "Parallax2D", "Back/Fg (PX)"):
+		eq(fg_px.scroll_scale, Vector2(1.2, 1), "Fg scroll_scale")
+		eq(fg_px.scroll_offset, Vector2(40, 20) * (Vector2.ONE - Vector2(1.2, 1)), "Fg scroll_offset (parallax origin)")
+		is_type(fg_px.get_node_or_null("Fg"), "TileMapLayer", "Fg (PX)/Fg")
+	var sky_px := back.get_node_or_null("Sky (PX)") as Parallax2D
+	if is_type(sky_px, "Parallax2D", "Back/Sky (PX)"):
+		eq(sky_px.scroll_scale, Vector2(0.5, 1), "Sky scroll_scale")
+		eq(sky_px.repeat_size, Vector2(64, 0), "Sky repeat_size (image width)")
+		eq(sky_px.repeat_times, 2, "Sky repeat_times")
+		eq(sky_px.scroll_offset, Vector2(20, 0), "Sky scroll_offset")
+		var sky := sky_px.get_node_or_null("Sky") as TextureRect
+		if is_type(sky, "TextureRect", "Sky (PX)/Sky"):
+			check(sky.stretch_mode != TextureRect.STRETCH_TILE, "Sky tiled by the TextureRect as well")
+	# A parallax layer in a parallax group: Tiled multiplies the factors (0.5 * 0.5 = 0.25); a
+	# Parallax2D inside a Parallax2D adds its own scroll, so the inner one gets 1 - 0.5 * (1 - 0.5).
+	var far_px := n.get_node_or_null("Far (PX)") as Parallax2D
+	if is_type(far_px, "Parallax2D", "Far (PX)"):
+		eq(far_px.scroll_scale, Vector2(0.5, 1), "Far scroll_scale")
+		var inner := far_px.get_node_or_null("Far/FarTiles (PX)") as Parallax2D
+		if is_type(inner, "Parallax2D", "Far/FarTiles (PX)"):
+			eq(inner.scroll_scale, Vector2(0.75, 1), "FarTiles scroll_scale (composed)")
+	var clouds_px := n.get_node_or_null("Clouds (PX)") as Parallax2D
+	if is_type(clouds_px, "Parallax2D", "Clouds (PX)"):
+		eq(clouds_px.scroll_scale, Vector2(1, 0.5), "Clouds scroll_scale")
+		is_type(clouds_px.get_node_or_null("Clouds"), "Node2D", "Clouds (PX)/Clouds")
+	# The origin, checked against both engines' formulas. Tiled (MapScene::parallaxOffset, 1.12)
+	# moves a layer by (1 - factor) * (view centre + parallax origin). Parallax2D (4.7,
+	# _update_scroll, follow_viewport on, no repeat) sets its position to
+	# scroll_offset + screen_offset * (1 - scroll_scale), screen_offset being the screen's top-left
+	# corner. So scroll_offset = origin * (1 - factor) gives Tiled's offset with the top-left corner
+	# for the view centre: the layer is in place when the screen's top-left is at -origin. (A
+	# Parallax2D updates only inside the tree, which a test run from SceneTree._init does not have,
+	# so the engine's formula is evaluated here with the imported values.)
+	if fg_px:
+		var origin := Vector2(40, 20)
+		for screen: Vector2 in [-origin, Vector2(60, 30), Vector2(-200, 75)]:
+			var godot_pos := screen + fg_px.scroll_offset - screen * fg_px.scroll_scale
+			var tiled_offset := (Vector2.ONE - Vector2(1.2, 1)) * (screen + origin)
+			eq(godot_pos, tiled_offset, "Fg offset with the screen at %s" % str(screen))
+	# layers.tmx in this mode
+	var l := _import("layers.tmx")
+	if l:
+		check(l.get_node_or_null("layers (PBG)") == null, "layers (PBG) created")
+		var px := l.get_node_or_null("Parallaxed (PX)") as Parallax2D
+		if is_type(px, "Parallax2D", "Parallaxed (PX)"):
+			eq(px.scroll_scale, Vector2(0.5, 0.75), "Parallaxed scroll_scale")
+		var ip := l.get_node_or_null("ImgParallax (PX)") as Parallax2D
+		if is_type(ip, "Parallax2D", "ImgParallax (PX)"):
+			eq(ip.scroll_scale, Vector2(0.5, 1), "ImgParallax scroll_scale (parallaxy unset = 1)")
+	return done()
+
+
+func test_new_parallax_mode_legacy() -> bool:
+	# B6: parallax_mode "legacy" keeps the ParallaxBackground tree of 3.0.
+	var imp := _new_importer()
+	if not _require_option(imp, "parallax_mode"): return done()
+	eq(imp.get("parallax_mode"), "parallax2d", "default parallax_mode")
+	imp.set("parallax_mode", "legacy")
+	var n := _import_with(imp, "parallax.tmx")
+	if n == null: return done()
+	var pbg := n.get_node_or_null("parallax (PBG)")
+	if is_type(pbg, "ParallaxBackground", "parallax (PBG)"):
+		var pl := pbg.get_node_or_null("Fg (PL)") as ParallaxLayer
+		if is_type(pl, "ParallaxLayer", "Fg (PL)"):
+			eq(pl.motion_scale, Vector2(1.2, 1), "Fg motion_scale")
+			is_type(pl.get_node_or_null("Fg"), "TileMapLayer", "Fg (PL)/Fg")
+		is_type(pbg.get_node_or_null("Background Color"), "ColorRect", "background colour in the ParallaxBackground")
 	return done()
 
 
