@@ -255,16 +255,17 @@ jobs:
           BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          git tag -f "$TAG" "$GITHUB_SHA"
-          git push -f origin "refs/tags/$TAG"
           NOTES="Rolling build of the native importer for branch \`$BRANCH\`, from commit $GITHUB_SHA. Replaced on every push that touches the native importer. Download with \`bash tools/install_native.sh\` on that branch."
+          # The tag is moved through the Releases API, not `git push -f refs/tags/...`: GitHub
+          # refuses a GITHUB_TOKEN push of a ref whose new commits touch .github/workflows/
+          # ("without `workflows` permission"), which every workflow edit on the branch would
+          # trigger. Deleting the rolling release with its tag and creating it again at this
+          # commit has no such check; the release is a rolling one, nothing of it is kept.
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --prerelease --title "yati_native: $BRANCH" --notes "$NOTES"
-            gh release upload "$TAG" yati-native.zip yati-native.zip.sha256 --clobber
-          else
-            gh release create "$TAG" yati-native.zip yati-native.zip.sha256 \
-              --target "$GITHUB_SHA" --prerelease --title "yati_native: $BRANCH" --notes "$NOTES"
+            gh release delete "$TAG" --cleanup-tag --yes
           fi
+          gh release create "$TAG" yati-native.zip yati-native.zip.sha256 \
+            --target "$GITHUB_SHA" --prerelease --title "yati_native: $BRANCH" --notes "$NOTES"
 
       # A versioned release (a v* tag matching the crate's version, or a tag given by hand).
       - name: Attach to the release
