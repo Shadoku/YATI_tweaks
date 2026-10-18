@@ -389,3 +389,39 @@ numbers measured. Stages 1 and 2 are the bulk; 3 and 4 are what the two goals ne
     passes on a staged directory (the real Linux library, stand-ins for the other two) and fails on
     a wrong checksum. Not verified here: the Windows and macOS builds and their load tests, the
     release and bot-commit steps (they run on GitHub).
+
+## 7. Behaviour changes from the runtime improvement plan
+
+`docs/runtime-improvement-plan.md` (brought in 2026-10-18) reviews the GDScript runtime and
+lists bug fixes (B1 to B10), features (F1 to F5) and a Tiled extension (X1, set aside for
+now). They are taken up, and this is where each lands:
+
+- **The GDScript runtime first, the native builder second, the suite as the spec.** Every
+  item of parts A and B (except F4, below) is done in `runtime/` with its `test_bug_*` or
+  `test_new_*` test and fixture, in the order that plan suggests (B5, B3/B4, B7, B2, B1, B8,
+  B6, B9, B10, F2, F1, F3, F5). Stage 2's gate, "every test the GDScript runtime passes",
+  then covers them for the native builder without a second specification. None of them
+  changes `DictionaryBuilder`'s output, so stage 1's parity gate is untouched.
+- **New options** (`parallax_mode`, `unknown_class_fallback`, `animation_mode`,
+  `always_wrap_root`, `class_scenes`, `read_godot_scene_from_custom_types`,
+  `assign_node_properties`, `object_refs`) become variables of both `Importer.gd` facades
+  and fields of `TiledImportOptions`, with the defaults that plan recommends (parallax2d,
+  strip, `object_refs = "nodepath"`, `assign_node_properties` on, `always_wrap_root` off,
+  `unknown_class_fallback = "staticbody"`). B4 makes colour-typed metadata a `Color`
+  (breaking, the next minor version).
+- **F4 (tileset cache, shared TileSet resource, async import) is not done in GDScript.**
+  Stages 3 and 4 here are its native answer (`TiledTileSets`, `load_async`,
+  `TiledStreamer`); the GDScript runtime stays synchronous and its counters static.
+- **F3 (world files, map bounds)** is done in both: `runtime/WorldLoader.gd` and `map_rect`
+  metadata as that plan says; in the native version `tiled_core` parses `.world` files
+  (explicit `maps` and `patterns`; the directory listing a pattern needs is one more request
+  of the file protocol, answered by the main thread), `TiledMap` exposes `map_rect`, the
+  builder sets the metadata, and stage 4's `TiledStreamer` gets a world mode: several maps
+  placed by the world file, each a chunk source, loaded and unloaded as the window reaches
+  them.
+- **B9's strip animation mode** in the native builder composes the strip image on the main
+  thread (`Image.blit_rect`; textures are engine objects) and caches it in `TiledTileSets`
+  per (tileset, tile), as that plan's cache note asks.
+- **F1's `_tiled_import` hook and property assignment** run on the main thread in the
+  builder; the type coercions listed there are the builder's, from the model's typed
+  property values.
