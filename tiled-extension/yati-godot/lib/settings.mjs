@@ -329,13 +329,18 @@ export function stringifyGenerated(record) {
 
 // The fixes the project file needs beyond what the API sets (apply.mjs, patchProjectText), kept
 // so that every action re-applies all of them after Tiled has saved the project from memory:
-// {flags: [enum names], floats: {type: [member names]}} (JSON in the project property yati_fixups).
+// {flags: [enum names], floats: {type: [member names]}, written: N} (JSON in the project property
+// yati_fixups). `written` counts the extension's writes of the project file; the patch writes the
+// record with the next count into the file only, so after the reload the extension asks for, the
+// project's value tells whether Tiled read the file (yati-godot.mjs, reloadProject).
 export function parseFixups(raw) {
-	const out = { flags: [], floats: {} };
+	const out = { flags: [], floats: {}, written: 0 };
 	if (raw === undefined || raw === null || raw === "")
 		return out;
 	try {
 		const v = JSON.parse(String(raw));
+		if (v && typeof v.written === "number" && v.written >= 0)
+			out.written = Math.floor(v.written);
 		if (v && Array.isArray(v.flags))
 			out.flags = v.flags.map(String);
 		if (v && v.floats && typeof v.floats === "object" && !Array.isArray(v.floats)) {
@@ -358,7 +363,7 @@ export function stringifyFixups(fixups) {
 		if (fixups.floats[keys[i]].length > 0)
 			floats[keys[i]] = fixups.floats[keys[i]].slice().sort();
 	}
-	return JSON.stringify({ flags: fixups.flags.slice().sort(), floats: floats });
+	return JSON.stringify({ flags: fixups.flags.slice().sort(), floats: floats, written: fixups.written === undefined ? 0 : fixups.written });
 }
 
 // What Configure stores for a chosen directory: relative to the project file when the two share

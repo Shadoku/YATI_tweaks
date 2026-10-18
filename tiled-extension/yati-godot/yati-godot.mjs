@@ -390,32 +390,44 @@ function finishApply(api, settings, result) {
 	if (recordText !== stringifyGenerated(settings.generated))
 		project.setProperty(SETTING_NAMES.generated, recordText);
 	const fixups = mergeFixups(settings.fixups, result.fixups, result.record);
-	const fixupsText = stringifyFixups(fixups.kept);
-	if (fixupsText !== stringifyFixups(settings.fixups))
-		project.setProperty(SETTING_NAMES.fixups, fixupsText);
+	const kept = { flags: fixups.kept.flags, floats: fixups.kept.floats, written: settings.fixups.written };
+	const keptText = stringifyFixups(kept);
 
 	// What the API cannot set goes into the file Tiled has just saved, all of it every time: a
 	// save of the project from memory (any change above) has dropped what an earlier run wrote.
+	// The record of the fixes goes into the file with them, with the write counted, and not
+	// through the API: the project in memory keeps the old record until Tiled reads the file, so
+	// the counter tells reloadProject whether the reload happened.
 	const text = readText(api, project.fileName);
-	let reopen = false;
+	let reload = null;
 	if (text !== null) {
-		const patched = patchProjectText(text, fixups.patch);
+		const next = { flags: kept.flags, floats: kept.floats, written: kept.written + 1 };
+		const nextText = stringifyFixups(next);
+		const properties = {};
+		properties[SETTING_NAMES.fixups] = nextText;
+		const patched = patchProjectText(text, fixups.patch, properties);
 		if (patched.error)
 			lines.push("Error: " + patched.error);
 		if (patched.changes.length > 0) {
 			writeText(api, project.fileName, patched.text);
-			reopen = true;
+			reload = { expect: nextText };
 			lines.push("Set in the project file (the scripting API cannot): " + patched.changes.join("; "));
+		} else if (keptText !== stringifyFixups(settings.fixups)) {
+			project.setProperty(SETTING_NAMES.fixups, keptText);
 		}
 	}
-	return { lines: lines, reopen: reopen };
+	return { lines: lines, reload: reload };
 }
 
-const REOPEN_TEXT = "Reopen the project now (File > Open File or Project, or Project > Recent Projects) so " +
-	"Tiled reads what was written into the project file. Until then Tiled's next save of the project " +
-	"(any change to custom types or project properties) overwrites it; running the action again repairs it.";
+const RELOAD_TEXT = "The project is reloaded now, so that Tiled reads it. Open maps are reopened; one with " +
+	"unsaved changes asks to be saved first (Cancel there keeps everything as it is: then reopen the project " +
+	"yourself later).";
+const REOPEN_TEXT = "The project was not reloaded. Reopen it yourself (File > Open File or Project, or Project > " +
+	"Recent Projects) so that Tiled reads what was written into the project file. Until then Tiled's next save " +
+	"of the project (any change to custom types or project properties) overwrites it; running the action again " +
+	"repairs it.";
 
-function report(api, headline, lines, reopen) {
+function report(api, headline, lines, reload) {
 	const t = api.tiled;
 	t.log("YATI: " + headline);
 	for (let i = 0; i < lines.length; i++)
@@ -423,9 +435,37 @@ function report(api, headline, lines, reopen) {
 	let text = headline;
 	if (lines.length > 0)
 		text += "\n\n" + lines.join("\n");
-	if (reopen)
-		text += "\n\n" + REOPEN_TEXT;
+	if (reload)
+		text += "\n\n" + RELOAD_TEXT;
 	t.alert(text, TITLE);
+}
+
+// Reopens the project from its file: tiled.open on a .tiled-project goes through Tiled's
+// MainWindow::openFile, which loads the project from disk and switches to it (the open files are
+// recorded in the session, closed, and reopened by the session restore; an unsaved one asks).
+// Nothing in the reference says so (read in Tiled 1.12's scriptmodule.cpp, documentmanager.cpp
+// and mainwindow.cpp), and without the editor (tiled --evaluate) open() throws, so the result is
+// read back: the project's record equals what the file was written with only after a reload.
+// The action's last statement: the project object it held is replaced by the reload.
+function reloadProject(api, reload) {
+	const t = api.tiled;
+	const before = currentProject(api);
+	if (before === null)
+		return;
+	const fileName = before.fileName;
+	try {
+		t.open(fileName);
+	} catch (e) {
+		t.log("YATI: tiled.open(" + fileName + ") failed: " + (e && e.message ? e.message : String(e)));
+	}
+	const after = currentProject(api);
+	const record = after === null ? undefined : after.property(SETTING_NAMES.fixups);
+	if (after !== null && record !== undefined && String(record) === reload.expect) {
+		t.log("YATI: the project was reloaded from " + fileName + ".");
+		return;
+	}
+	t.log("YATI: " + REOPEN_TEXT);
+	t.alert(REOPEN_TEXT, TITLE);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -441,7 +481,9 @@ function syncGodotProject(api) {
 	const result = applyDefinitions(api, sync.defs, s.generated, s.projectDir);
 	const done = finishApply(api, s, result);
 	const lines = done.lines.concat(sync.skipped.map(function (x) { return "Not generated: " + x; }));
-	report(api, "Synced with the Godot project " + (info.name !== "" ? "'" + info.name + "' " : "") + "(" + s.godotProject + ").", lines, done.reopen);
+	report(api, "Synced with the Godot project " + (info.name !== "" ? "'" + info.name + "' " : "") + "(" + s.godotProject + ").", lines, done.reload !== null);
+	if (done.reload !== null)
+		reloadProject(api, done.reload);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -498,7 +540,9 @@ function importScenes(api) {
 	}
 	for (let i = 0; i < built.warnings.length; i++)
 		lines.push(built.warnings[i]);
-	report(api, "Imported " + built.classes.length + " scene(s) as classes.", lines, done.reopen);
+	report(api, "Imported " + built.classes.length + " scene(s) as classes.", lines, done.reload !== null);
+	if (done.reload !== null)
+		reloadProject(api, done.reload);
 }
 
 // ---------------------------------------------------------------------------------------------

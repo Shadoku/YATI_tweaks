@@ -278,22 +278,61 @@ test("sync, scenes and check offer the Configure dialog until the Godot project 
 	assert.ok(t.fake.out.logs.some((l) => /^confirm: No project\.godot in '.*nowhere' \(the setting godot_project\)\.\n\nOpen YATI: Configure… now\?$/.test(l)));
 });
 
-test("sync: the layer enums with flags (patched into the file), GodotNodeType, MapRef; then nothing to do", () => {
+test("sync: the layer enums with flags (patched into the file), GodotNodeType, MapRef; the project reloaded; then nothing to do", () => {
 	const s = make({ properties: configured() });
+	const map = s.fake.openFile(path.join(s.maps, "clean.tmx"));
 	s.fake.trigger(ACTIONS.sync);
 	const alert = s.fake.out.alerts[0];
 	assert.match(alert, /^Synced with the Godot project 'Extension Fixture'/);
 	assert.match(alert, /Created: GodotPhysicsLayers, GodotNavigationLayers, GodotRenderLayers, GodotNodeType, MapRef/);
-	assert.match(alert, /Reopen the project now/);
+	assert.match(alert, /Set in the project file \(the scripting API cannot\): GodotPhysicsLayers: values as flags; /);
+	assert.match(alert, /\n\nThe project is reloaded now, so that Tiled reads it\. Open maps are reopened; one with unsaved changes asks/);
+	assert.equal(s.fake.out.alerts.length, 1);
 	const types = s.projectJson().propertyTypes;
 	assert.deepEqual(types.filter((t) => t.valuesAsFlags).map((t) => t.name), ["GodotPhysicsLayers", "GodotNavigationLayers", "GodotRenderLayers"]);
-	assert.equal(s.property("yati_fixups"), "{\"flags\":[\"GodotNavigationLayers\",\"GodotPhysicsLayers\",\"GodotRenderLayers\"],\"floats\":{}}");
+	// The record went into the file with the fixes, counted; the reload read it (memory had none).
+	const record = "{\"flags\":[\"GodotNavigationLayers\",\"GodotPhysicsLayers\",\"GodotRenderLayers\"],\"floats\":{},\"written\":1}";
+	assert.equal(s.property("yati_fixups"), record);
+	assert.equal(s.fake.out.reloads, 1);
+	assert.equal(s.fake.api.tiled.project.property("yati_fixups"), record);
+	assert.ok(s.fake.out.logs.some((l) => l === "YATI: the project was reloaded from " + s.projectFile + "."));
 	assert.ok(s.fake.out.logs.some((l) => l.indexOf("YATI:   Created:") === 0));
-	// A second sync changes nothing (the file already has what memory lacks).
+	// The open map came back (the session restore) as the active asset.
+	assert.equal(s.fake.api.tiled.activeAsset.fileName, map.fileName);
+	assert.equal(s.fake.api.tiled.openAssets.length, 1);
+	// A second sync changes nothing: no patch, no reload.
 	const before = fs.readFileSync(s.projectFile, "utf8");
 	s.fake.trigger(ACTIONS.sync);
 	assert.match(s.fake.out.alerts[1], /Unchanged: GodotPhysicsLayers/);
+	assert.ok(s.fake.out.alerts[1].indexOf("reloaded") < 0);
 	assert.equal(fs.readFileSync(s.projectFile, "utf8"), before);
+	assert.equal(s.fake.out.reloads, 1);
+	// Tiled saved the project from memory meanwhile (a type edited by hand): the flags are gone from
+	// the file; the next sync writes them back (counted again) and reloads.
+	s.fake.project.save();
+	assert.deepEqual(s.projectJson().propertyTypes.filter((t) => t.valuesAsFlags), []);
+	s.fake.trigger(ACTIONS.sync);
+	assert.equal(s.fake.out.reloads, 2);
+	assert.equal(s.property("yati_fixups"), record.replace("\"written\":1", "\"written\":2"));
+	assert.deepEqual(s.projectJson().propertyTypes.filter((t) => t.valuesAsFlags).length, 3);
+});
+
+test("sync: when the reload does not happen (a save prompt cancelled, no editor), the user is told to reopen", () => {
+	const s = make({ properties: configured(), fakeOptions: { reloadFails: true } });
+	s.fake.trigger(ACTIONS.sync);
+	assert.equal(s.fake.out.alerts.length, 2);
+	assert.match(s.fake.out.alerts[0], /The project is reloaded now/);
+	assert.match(s.fake.out.alerts[1], /^The project was not reloaded\. Reopen it yourself \(File > Open File or Project, or Project > Recent Projects\)/);
+	assert.equal(s.fake.out.reloads, 0);
+	// The file holds the fixes and the counted record; the project in memory holds no record (so a
+	// manual reopen, or the next action, is enough).
+	assert.match(s.property("yati_fixups"), /"written":1\}$/);
+	assert.equal(s.fake.api.tiled.project.property("yati_fixups"), undefined);
+	assert.deepEqual(s.projectJson().propertyTypes.filter((t) => t.valuesAsFlags).length, 3);
+	// The sync again: the file is right already, memory still lacks the record, so it is written again (count 2).
+	s.fake.trigger(ACTIONS.sync);
+	assert.match(s.fake.out.alerts[2], /Unchanged: GodotPhysicsLayers/);
+	assert.equal(s.fake.out.alerts.length, 3);
 });
 
 test("scenes: asks first, makes the classes, reports notes and skips", () => {

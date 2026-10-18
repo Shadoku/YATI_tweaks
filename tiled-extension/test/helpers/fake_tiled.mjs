@@ -802,13 +802,14 @@ function fakeFileModule() {
 // The fake
 
 // options: {projectFile, files: [promptOpenFile answers], confirms: [answers], dialogs: [functions],
-//           process: function (binary, args) -> {code, stdout, stderr}}
+//           process: function (binary, args) -> {code, stdout, stderr},
+//           reloadFails: bool (tiled.open of the project file does nothing)}
 export function createFakeTiled(options) {
 	const opts = options || {};
 	const rec = new Recorder();
 	const out = {
 		alerts: [], logs: [], warnings: [], errors: [], actions: {}, menus: {}, issues: [],
-		processes: [], dialogs: [],
+		processes: [], dialogs: [], reloads: 0,
 	};
 	const signals = { assetAboutToBeSaved: [] };
 	const files = (opts.files || []).slice();
@@ -863,6 +864,26 @@ export function createFakeTiled(options) {
 			out.menus[menu] = (out.menus[menu] || []).concat(items);
 		},
 		open(fileName) {
+			// A .tiled-project: MainWindow::openFile loads it from disk and switches to it, closing the
+			// open files and reopening them from the session (an unsaved one asks; `reloadFails` is the
+			// user cancelling that, or no editor: nothing changes). The old project object is gone.
+			if (fileName.endsWith(".tiled-project")) {
+				if (opts.reloadFails)
+					return null;
+				out.reloads++;
+				const files = openAssets.map((a) => a.fileName);
+				const active = activeAsset === null ? "" : activeAsset.fileName;
+				openAssets.length = 0;
+				activeAsset = null;
+				fake._project = new FakeProject(fake, fileName);
+				for (const f of files) {
+					const a = f.endsWith(".tsx") ? new FakeTileset(fake, f) : new FakeMap(fake, f);
+					openAssets.push(a);
+					if (f === active)
+						activeAsset = a;
+				}
+				return null;
+			}
 			const a = fileName.endsWith(".tsx") ? new FakeTileset(fake, fileName) : new FakeMap(fake, fileName);
 			openAssets.push(a);
 			activeAsset = a;

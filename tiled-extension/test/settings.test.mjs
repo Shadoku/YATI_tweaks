@@ -101,6 +101,11 @@ test("records: yati_generated and yati_fixups round trip, junk is empty", () => 
 	assert.deepEqual(parseGenerated("not json"), {});
 	assert.deepEqual(parseGenerated(undefined), {});
 	const f = parseFixups("{\"flags\":[\"B\",\"A\"],\"floats\":{\"T\":[\"y\",\"x\"],\"E\":[]}}");
-	assert.equal(stringifyFixups(f), "{\"flags\":[\"A\",\"B\"],\"floats\":{\"T\":[\"x\",\"y\"]}}");
-	assert.deepEqual(parseFixups("[1]"), { flags: [], floats: {} });
+	assert.equal(f.written, 0);
+	assert.equal(stringifyFixups(f), "{\"flags\":[\"A\",\"B\"],\"floats\":{\"T\":[\"x\",\"y\"]},\"written\":0}");
+	assert.deepEqual(parseFixups("[1]"), { flags: [], floats: {}, written: 0 });
+	const w = parseFixups("{\"flags\":[],\"floats\":{},\"written\":3}");
+	assert.equal(w.written, 3);
+	assert.equal(stringifyFixups(w), "{\"flags\":[],\"floats\":{},\"written\":3}");
+	assert.equal(parseFixups("{\"written\":\"x\"}").written, 0);
 });

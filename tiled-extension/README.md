@@ -12,7 +12,8 @@ through the `.tiled-project` file, the maps, and (for the check) the Godot binar
 > loads, the sync and the scenes action write the committed project file, a second run reports
 > "Unchanged", the save hook files the sample map's mistakes, the *Configure* dialog is built with
 > Tiled's own widgets and saved. What a headless run cannot reach is the editor: the Issues'
-> double-click, the dialog's look, *Check map in Godot* on the active map, the reopen. Go through
+> double-click, the dialog's look, *Check map in Godot* on the active map, the reload of the
+> project after a sync (headless there is no editor to reload, and the fallback runs). Go through
 > the [manual checklist](#manual-checklist-in-a-real-tiled-112)'s steps 4 to 8 in your Tiled 1.12
 > before relying on those, and report what differs in `docs/tiled-extension-plan.md` (section 5)
 > or `docs/tiled-extension-ux-plan.md` (section 4).
@@ -60,7 +61,7 @@ the project file unless they are absolute.
 | `yati_import_options` | (none) | options for the check, as `name=value` pairs, e.g. `warn_unknown_classes=false assign_node_properties=false` ([Runtime.md's options](../Runtime.md#options); `class_scenes`, a Dictionary, cannot be given here) |
 | `yati_validate` | `true` | `false` turns the validation on save off |
 | `yati_generated` | (written by the extension) | which types and class members the extension made: `{"Type": ["member", ...]}` |
-| `yati_fixups` | (written by the extension) | what it wrote into the project file past the API (see [What the API cannot set](#what-the-api-cannot-set)) |
+| `yati_fixups` | (written by the extension) | what it wrote into the project file past the API, and how many times (see [What the API cannot set](#what-the-api-cannot-set)) |
 
 ### The Configure dialog
 
@@ -155,11 +156,16 @@ reference's `EnumPropertyType` has only `storageType` and `values`, and Tiled's 
 `valuesAsFlags` property either. Its `setMember` also stores a whole JavaScript number (`0`, `40.0`)
 as an `int`. So after applying the types through the API, the extension writes these into the
 project file that Tiled has just saved: `valuesAsFlags` on the layer enums, and `float` on float
-members. The list is kept in `yati_fixups`. Then it asks you to **reopen the project** (*File > Open
-File or Project*, or *Project > Recent Projects*) so that Tiled reads the file. Until you do, the
-next time Tiled saves the project from memory it overwrites the fixes. That happens on any change to
-custom types or project properties. Running any of the actions again writes them back. A second run
-after reopening changes nothing and asks for nothing.
+members, with the list of them in `yati_fixups` (the number of such writes, `written`, is in it
+too). Then it **reloads the project** itself, the way *File > Open File or Project* on the
+`.tiled-project` does: the message says so first, Tiled closes the open maps, reads the project
+file again and reopens the maps (a map with unsaved changes asks to be saved first; Cancel there
+keeps everything as it is). The extension reads back whether the reload happened (the project
+then holds the `yati_fixups` that was written into the file). If it did not (a save prompt
+cancelled, or no editor), a second message asks you to reopen the project yourself. Until a
+reload, the next time Tiled saves the project from memory it overwrites the fixes, which happens
+on any change to custom types or project properties; running any of the actions again writes
+them back. A second run after a reload changes nothing and reloads nothing.
 
 ## Validation on save
 
@@ -215,14 +221,16 @@ what `test/real_tiled.test.mjs` runs headless; the rest needs the editor, so do 
    settings. (Without Godot on `PATH`, *Save* first warns that `godot` could not start and asks for
    *Save anyway*; *Test* says the same.) Clear the option again before going on, or expect it in
    the project file. Then *YATI: Sync Godot project…*: the message lists four created types and
-   asks you to reopen. (The
-   sample names no navigation layer, so there is no `GodotNavigationLayers`, and the report says
-   so.) Reopen the project. In *View > Custom Types Editor*, `GodotPhysicsLayers` has `World,
-   Player, Enemies, Layer 4, Pickups` with *Allow multiple values (flags)* checked. Run it again:
-   "Unchanged", no request to reopen.
+   says the project is reloaded now. (The sample names no navigation layer, so there is no
+   `GodotNavigationLayers`, and the report says so.) After the message the project reloads: an
+   open map closes and comes back. In *View > Custom Types Editor*, `GodotPhysicsLayers` has
+   `World, Player, Enemies, Layer 4, Pickups` with *Allow multiple values (flags)* checked, with no
+   reopen by hand. Run it again: "Unchanged", no reload. To see the fallback: change a map, run the
+   sync after editing a type by hand (the flags are then lost from the file), and press Cancel in
+   the save prompt: a second message asks you to reopen the project yourself.
 3. *YATI: Import scenes as classes…*: confirm. `Slime` and `Chest` are created, with the enums
    `Chest.material` and `Slime.Mood` and the class `Vector2`, and the report names
-   `torch.tscn` as skipped (no script). Reopen. `diff` the project file with
+   `torch.tscn` as skipped (no script). The project reloads. `diff` the project file with
    `expected.tiled-project`: they should be equal. Run the action again: "Unchanged".
 4. In the Custom Types Editor add a member `note` to `Slime` by hand. Rename `hp` in
    `godot/scripts/slime.gd` to `health`, and run the scenes action: `health` is added, `hp` is
@@ -257,7 +265,8 @@ menu, and the extension logs that instead of failing).
 
 - Tiled below 1.12 has no type API: the extension does not work there.
 - Class members cannot be lists, so `Array` exports get no member (see the table).
-- The flags switch and float members go through the project file and a reopen.
+- The flags switch and float members go through the project file and a reload of the project
+  (the open maps close and reopen).
 - Validation cannot see the game's `class_scenes`, and checks templates only as last saved.
 - *Check map in Godot* blocks Tiled while Godot runs (`Process.exec`).
 - The GDScript parser reads declarations, not expressions: a default computed from constants or
@@ -289,8 +298,9 @@ AppImage has only Qt's xcb platform plugin) and with a config directory of its o
 extensions, no session). The harness installs the extension through `install(api)` with the message
 boxes stubbed (a confirmation is yes) and drives the actions, the Configure dialog (built with the
 real `Dialog`, filled through its widgets, *Save* pressed with `click()`; `exec()` would block) and
-the save hook (a map read through Tiled's own format). Each run is a fresh Tiled, so "reopen the project" is the
-next run. Without a Tiled the test is skipped; on another platform install Tiled 1.12 and set
+the save hook (a map read through Tiled's own format). Each run is a fresh Tiled: without the
+editor the extension's reload of the project cannot happen (`tiled.open` throws, and the
+fallback message runs), so the reload is the next run. Without a Tiled the test is skipped; on another platform install Tiled 1.12 and set
 `TILED=<binary>`. CI installs Tiled and runs it.
 
 | File | What |

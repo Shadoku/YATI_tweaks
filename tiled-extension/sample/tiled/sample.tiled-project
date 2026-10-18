@@ -17,7 +17,7 @@
             "name": "yati_fixups",
             "propertytype": "",
             "type": "string",
-            "value": "{\"flags\":[\"GodotPhysicsLayers\",\"GodotRenderLayers\"],\"floats\":{\"Slime\":[\"speed\"],\"Vector2\":[\"x\",\"y\"]}}"
+            "value": "{\"flags\":[\"GodotPhysicsLayers\",\"GodotRenderLayers\"],\"floats\":{\"Slime\":[\"speed\"],\"Vector2\":[\"x\",\"y\"]},\"written\":2}"
         },
         {
             "name": "yati_generated",

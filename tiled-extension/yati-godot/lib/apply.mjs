@@ -280,9 +280,11 @@ export function mergeFixups(kept, run, record) {
 }
 
 // The project file's text with the fixups applied: flags on the named enums, int/float on the
-// named members. {text, changes: [descriptions]}; `text` is the input when nothing changed.
-// Written back as Tiled writes it (keys sorted, 4 spaces).
-export function patchProjectText(text, fixups) {
+// named members, and, when something changed, `properties` ({name: string value}) set as project
+// properties of the file (added or replaced, as Tiled writes them). {text, changes:
+// [descriptions]}; `text` is the input when nothing changed (then the properties are not written
+// either: they ride only with a change). Written back as Tiled writes it (keys sorted, 4 spaces).
+export function patchProjectText(text, fixups, properties) {
 	let json;
 	try {
 		json = JSON.parse(text);
@@ -327,5 +329,24 @@ export function patchProjectText(text, fixups) {
 	}
 	if (changes.length === 0)
 		return { text: text, changes: changes, missing: missing };
+	const names = Object.keys(properties || {});
+	if (names.length > 0) {
+		if (!Array.isArray(json.properties))
+			json.properties = [];
+		for (let i = 0; i < names.length; i++) {
+			let entry = null;
+			for (let k = 0; k < json.properties.length; k++) {
+				if (json.properties[k].name === names[i])
+					entry = json.properties[k];
+			}
+			if (entry === null) {
+				entry = { name: names[i], propertytype: "", type: "string", value: "" };
+				json.properties.push(entry);
+			}
+			entry.type = "string";
+			entry.value = String(properties[names[i]]);
+		}
+		json.properties.sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
+	}
 	return { text: JSON.stringify(sortKeys(json), null, 4) + "\n", changes: changes, missing: missing };
 }

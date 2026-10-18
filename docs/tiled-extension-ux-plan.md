@@ -232,3 +232,23 @@ extension reopen the project itself.
   file is unchanged by a save that changes nothing. Not confirmed, for the editor: the layout
   under `ManualRows` (the binary row with its two buttons, the status labels' wrapping), the
   red status, `exec()` returning on *Save*, `promptOpenFile` from *Browse…*.
+- 2026-10-18, **stage 2 done**: `patchProjectText(text, fixups, properties)` writes the
+  `yati_fixups` record into the file's `properties` with the other changes (never alone);
+  `parseFixups`/`stringifyFixups` carry `written`, the count of the extension's writes of the
+  file, which `finishApply` increments on each write; `reloadProject` is the action's last
+  statement: `tiled.open(project.fileName)` in a try, then the project's `yati_fixups` read
+  back and compared with what the file was written with: equal means reloaded (logged), else
+  the old instruction in a second message box (the file keeps the fixes and the counted record,
+  the project in memory keeps the old record, so a reopen by hand or the next action is enough:
+  nothing is written through the API in that case, which would save from memory and drop the
+  fixes). A record that changed with nothing to patch (a float member removed) is set through
+  the API as before, since memory and file then agree. The fake's `tiled.open` of a
+  `.tiled-project` re-reads the project from the file and reopens the open assets, or does
+  nothing with `reloadFails`. Decision past section 2: a counter inside `yati_fixups` rather
+  than the record alone, because a sync after a hand edit writes the same record again, so
+  equality alone could not tell a reload from the old value. The sample's expected project file
+  gained `"written":2`. In the real Tiled headless, `tiled.open` throws "Editor not available",
+  which the try catches: the fallback runs, as `real_tiled.test.mjs` now asserts. **For the
+  editor (checklist step 2):** that `tiled.open` on the project file reloads it from within the
+  action, the open maps come back, the save prompt's Cancel leads to the fallback, and the
+  extension is not torn down by the switch (the extensions path is the same).

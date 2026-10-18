@@ -85,17 +85,22 @@ test("real Tiled: sync and scenes on the sample give the committed project; a se
 	some(lines, /^HARNESS installed: Tiled 1\.1[2-9]/);
 	some(lines, /^HARNESS installed: .*globals ClassPropertyType=function/);
 	has(lines, "YATI:   Created: GodotPhysicsLayers, GodotRenderLayers, GodotNodeType, MapRef");
-	some(lines, /^ALERT \[YATI\]: Synced with the Godot project 'YATI Sample' .*Reopen the project now/);
+	// The extension reloads the project itself; without the editor tiled.open throws ("Editor not
+	// available"), which it catches, reads back that nothing was reloaded, and says what to do.
+	some(lines, /^ALERT \[YATI\]: Synced with the Godot project 'YATI Sample' .*The project is reloaded now, so that Tiled reads it\./);
+	has(lines, "YATI: tiled.open(" + s.projectFile + ") failed: Editor not available");
+	some(lines, /^ALERT \[YATI\]: The project was not reloaded\. Reopen it yourself \(File > Open File or Project, or Project > Recent Projects\)/);
 	lines = runTiled(s.projectFile, ["sync"]);
 	has(lines, "YATI:   Unchanged: GodotPhysicsLayers, GodotRenderLayers, GodotNodeType, MapRef");
-	none(lines, /Reopen the project now/);
+	none(lines, /reloaded/);
 	lines = runTiled(s.projectFile, ["scenes"]);
 	some(lines, /^CONFIRM \(yes\): Make or update 2 class type\(s\)/);
 	has(lines, "YATI:   Created: Chest.material, Slime.Mood, Vector2, Chest, Slime");
 	has(lines, "YATI:   Slime: export 'drops' skipped (Tiled class members cannot be lists)");
+	some(lines, /^ALERT \[YATI\]: The project was not reloaded\./);
 	lines = runTiled(s.projectFile, ["scenes"]);
 	has(lines, "YATI:   Unchanged: Chest.material, Slime.Mood, Vector2, Chest, Slime");
-	none(lines, /Reopen the project now/);
+	none(lines, /reloaded/);
 	assert.equal(fs.readFileSync(s.projectFile, "utf8"), fs.readFileSync(EXPECTED_PROJECT, "utf8"));
 	// The Configure dialog, built with the real Dialog and its widgets, saved with nothing changed:
 	// the file stays as it is. godot is not on PATH here, so the first Save warns (through Process).

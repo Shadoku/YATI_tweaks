@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before *Save* closes it: what cannot work is refused with the reason, what may still work warns and
   asks for *Save anyway*. *Sync*, *Import scenes* and *Check map* open it when the Godot project is not
   set. The settings and their storage are unchanged (`docs/tiled-extension-ux-plan.md`, stage 1).
+- Tiled extension: after *Sync Godot project* or *Import scenes as classes* has written into the project
+  file what the API cannot set, the extension reloads the project itself (as *File > Open File or
+  Project* on the `.tiled-project` does: the open maps close and come back) instead of asking for a
+  reopen by hand, and reads back whether the reload happened; when it did not (a save prompt cancelled,
+  no editor) the old instruction shows. `yati_fixups` counts the writes (`written`)
+  (`docs/tiled-extension-ux-plan.md`, stage 2).
 - `docs/tiled-extension-plan.md`: the plan for the Tiled extension (part C of the runtime improvement
   plan): what Tiled 1.12's API allows, what the importers already read, the decisions and stages.
 - Node properties (`assign_node_properties`, both importers): a `class` value whose members are exactly `x` and `y`,
