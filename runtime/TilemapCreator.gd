@@ -1085,6 +1085,10 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 					template_obj["name"] = obj["name"]
 				if obj.has("opacity"):
 					template_obj["opacity"] = obj["opacity"]
+				# Attributes saved on the instance override the template's (TMX spec, "Template files")
+				for key in ["width", "height", "rotation", "visible"]:
+					if obj.has(key):
+						template_obj[key] = obj[key]
 				# An instance's own text (TMX spec: attributes saved on the instance override the template's)
 				if obj.has("text") and obj["text"] is Dictionary:
 					if template_obj.has("text") and template_obj["text"] is Dictionary:

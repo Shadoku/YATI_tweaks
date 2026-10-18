@@ -1368,7 +1368,7 @@ func test_bug_template_flipped_gid() -> bool:
 	if n == null: return done()
 	var objs := n # a single layer: the object layer is the root
 	var sprites := children_of_type(objs, "Sprite2D")
-	eq(sprites.size(), 2, "Sprite2D count (Flipped, Plain)")
+	eq(sprites.size(), 3, "Sprite2D count (Flipped, Big, Plain)")
 	check(find(n, "terrain_tile") == null and find(n, "tiles_tile") == null, "extra '_tile' sprite created")
 	var f := need(objs, "Flipped", "Sprite2D") as Sprite2D
 	if f:
@@ -1387,6 +1387,36 @@ func test_bug_template_flipped_gid() -> bool:
 		eq(l.get_theme_color("font_color"), Color(1, 0, 0, 1), "instance text colour")
 		eq(l.get_theme_font_size("font_size"), 12, "template pixel size kept")
 		eq(l.horizontal_alignment, HORIZONTAL_ALIGNMENT_CENTER, "template halign kept")
+	return done()
+
+
+func test_bug_template_overrides() -> bool:
+	# B1: an instance's width, height, rotation and visible override the template's (TMX spec,
+	# "Template files"); only id, class, type, name and opacity were applied.
+	var n := _import("templates.tmx")
+	if n == null: return done()
+	var big := need(n, "Big", "Sprite2D") as Sprite2D
+	if big:
+		eq(big.scale, Vector2(2, 2), "Big scale (32x32 instance of a 16x16 tile)")
+		eq(big.rotation_degrees, 45.0, "Big rotation")
+		check(big.visible, "Big hidden")
+	var wide := need(n, "Wide (Area)", "Area2D") as Area2D
+	if wide:
+		check(not wide.visible, "Wide visible (instance has visible=0)")
+		var cs := wide.get_child(0) as CollisionShape2D
+		if is_type(cs, "CollisionShape2D", "Wide shape") and is_type(cs.shape, "RectangleShape2D", "Wide shape resource"):
+			eq((cs.shape as RectangleShape2D).size, Vector2(40, 24), "Wide size")
+			eq(cs.rotation_degrees, 30.0, "Wide rotation")
+	var same := need(n, "Same (Area)", "Area2D") as Area2D
+	if same:
+		check(same.visible, "Same hidden")
+		var cs2 := same.get_child(0) as CollisionShape2D
+		if is_type(cs2, "CollisionShape2D", "Same shape") and cs2.shape is RectangleShape2D:
+			eq((cs2.shape as RectangleShape2D).size, Vector2(16, 16), "Same size (template's)")
+	var plain := need(n, "Plain", "Sprite2D") as Sprite2D
+	if plain:
+		eq(plain.scale, Vector2(1, 1), "Plain scale")
+		eq(plain.rotation_degrees, 0.0, "Plain rotation")
 	return done()
 
 

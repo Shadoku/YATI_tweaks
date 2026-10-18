@@ -61,6 +61,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   second node besides the template's (a `_tile` Sprite2D at scale 0.00001, or a second Label), and the
   template's node ignored the override. The instance's gid (a gid of the map's tilesets) and text
   (merged over the template's) now go into the template's object, and nothing else is created.
+- B1: a template instance's own `width`, `height`, `rotation` and `visible` were ignored (only `id`,
+  `class`, `type`, `name` and `opacity` were taken over): a 32x32 instance of a 16x16 template, rotated
+  45°, imported as 16x16 at 0°. Every attribute saved on the instance now overrides the template's, as
+  the TMX spec says.
 
 ## [3.0.0] — runtime-only fork (2026-10-17)
 
