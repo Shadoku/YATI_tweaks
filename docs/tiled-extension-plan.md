@@ -284,3 +284,13 @@ through the `.tiled-project` file, the maps and (for the check) the Godot binary
     back through `members` compare equal (else every run reports "Updated" and asks to reopen); a
     `res://` file property's empty `localFile` and its `url`; `Process.exec` finding `godot` on
     `PATH`.
+- 2026-10-18, follow-ups after stages 1 and 2 (commits `65d6071`, `4c35d36`, `861257b`): the
+  stage 1 entry's "to weigh" findings are settled. An unset `object` reference (id 0, also a list
+  item of 0, also a class member's default) resolves silently to an empty `NodePath()` in both
+  importers; a dangling id still warns (`Reference.md`, "Unset or dangling"; the extension's
+  validator dropped its unset-reference finding for the same reason). `Array` exports are skipped
+  by *Import scenes as classes* with the reason in the report, so no member of a generated class
+  makes the importers warn on an object that leaves it alone. The check-output reader was run
+  against the real `check_map.gd` on `unknown_class.tmx` and `scenes.tmx` (captured as test
+  fixtures): every `YATI_CHECK` line parsed as expected; Godot's other lines carry ANSI colour
+  codes even headless, which the reader now strips. Stage 3 (the game) follows.
