@@ -1,0 +1,608 @@
+[
+    {
+        "id": 1,
+        "name": "BaseUnit.Team",
+        "storageType": "string",
+        "type": "enum",
+        "values": [
+            "RED",
+            "BLUE"
+        ],
+        "valuesAsFlags": false
+    },
+    {
+        "id": 2,
+        "name": "Enemy.Mood",
+        "storageType": "string",
+        "type": "enum",
+        "values": [
+            "CALM",
+            "ANGRY",
+            "SLEEPY"
+        ],
+        "valuesAsFlags": false
+    },
+    {
+        "id": 3,
+        "name": "Item.Kind",
+        "storageType": "string",
+        "type": "enum",
+        "values": [
+            "KEY",
+            "GEM",
+            "COIN"
+        ],
+        "valuesAsFlags": false
+    },
+    {
+        "id": 4,
+        "name": "Enemy.gait",
+        "storageType": "string",
+        "type": "enum",
+        "values": [
+            "Walk",
+            "Run",
+            "Fly"
+        ],
+        "valuesAsFlags": false
+    },
+    {
+        "id": 5,
+        "name": "Enemy.heading",
+        "storageType": "string",
+        "type": "enum",
+        "values": [
+            "North",
+            "South"
+        ],
+        "valuesAsFlags": false
+    },
+    {
+        "color": "#ffa1e673",
+        "drawFill": true,
+        "id": 6,
+        "members": [
+            {
+                "name": "x",
+                "type": "float",
+                "value": 0
+            },
+            {
+                "name": "y",
+                "type": "float",
+                "value": 0
+            }
+        ],
+        "name": "Vector2",
+        "type": "class",
+        "useAs": [
+            "property"
+        ]
+    },
+    {
+        "color": "#ff73e6e4",
+        "drawFill": true,
+        "id": 7,
+        "members": [
+            {
+                "name": "x",
+                "type": "int",
+                "value": 0
+            },
+            {
+                "name": "y",
+                "type": "int",
+                "value": 0
+            }
+        ],
+        "name": "Vector2i",
+        "type": "class",
+        "useAs": [
+            "property"
+        ]
+    },
+    {
+        "color": "#ffe673e6",
+        "drawFill": true,
+        "id": 8,
+        "members": [
+            {
+                "name": "godot_scene",
+                "type": "file",
+                "value": "../godot_project/scenes/area.tscn"
+            },
+            {
+                "name": "radius",
+                "type": "float",
+                "value": 16
+            }
+        ],
+        "name": "AreaScene",
+        "type": "class",
+        "useAs": [
+            "object",
+            "tile"
+        ]
+    },
+    {
+        "color": "#ffe6738a",
+        "drawFill": true,
+        "id": 9,
+        "members": [
+            {
+                "name": "arena",
+                "type": "object",
+                "value": 0
+            },
+            {
+                "name": "boss",
+                "type": "bool",
+                "value": true
+            },
+            {
+                "name": "cell",
+                "propertyType": "Vector2i",
+                "type": "class",
+                "value": {
+                    "x": 2,
+                    "y": 3
+                }
+            },
+            {
+                "name": "cruise",
+                "type": "float",
+                "value": 0
+            },
+            {
+                "name": "description",
+                "type": "string",
+                "value": "A grunt.\nAngry."
+            },
+            {
+                "name": "dialog",
+                "type": "file",
+                "value": "../godot_project/data/dialog.json"
+            },
+            {
+                "name": "direction",
+                "propertyType": "Vector2",
+                "type": "class",
+                "value": {
+                    "x": -1,
+                    "y": 0
+                }
+            },
+            {
+                "name": "drops",
+                "type": "string",
+                "value": ""
+            },
+            {
+                "name": "elements",
+                "type": "int",
+                "value": 0
+            },
+            {
+                "name": "faction",
+                "type": "string",
+                "value": "orcs"
+            },
+            {
+                "name": "gait",
+                "propertyType": "Enemy.gait",
+                "type": "string",
+                "value": "Run"
+            },
+            {
+                "name": "godot_scene",
+                "type": "file",
+                "value": "../godot_project/scenes/boss.tscn"
+            },
+            {
+                "name": "heading",
+                "propertyType": "Enemy.heading",
+                "type": "string",
+                "value": "South"
+            },
+            {
+                "name": "hit_layers",
+                "propertyType": "GodotPhysicsLayers",
+                "type": "int",
+                "value": 5
+            },
+            {
+                "name": "icon",
+                "type": "file",
+                "value": "../godot_project/icon.png"
+            },
+            {
+                "name": "inferred_text",
+                "type": "string",
+                "value": "hi"
+            },
+            {
+                "name": "jump",
+                "type": "float",
+                "value": 1
+            },
+            {
+                "name": "level",
+                "type": "int",
+                "value": 3
+            },
+            {
+                "name": "lives",
+                "type": "int",
+                "value": 3
+            },
+            {
+                "name": "loot",
+                "type": "file",
+                "value": ""
+            },
+            {
+                "name": "loot_kind",
+                "propertyType": "Item.Kind",
+                "type": "string",
+                "value": "GEM"
+            },
+            {
+                "name": "max_hp",
+                "type": "int",
+                "value": 10
+            },
+            {
+                "name": "mood",
+                "propertyType": "Enemy.Mood",
+                "type": "string",
+                "value": "ANGRY"
+            },
+            {
+                "name": "nickname",
+                "type": "string",
+                "value": ""
+            },
+            {
+                "name": "offset",
+                "propertyType": "Vector2",
+                "type": "class",
+                "value": {
+                    "x": 4,
+                    "y": -8.5
+                }
+            },
+            {
+                "name": "outline_color",
+                "type": "color",
+                "value": "#ffff0000"
+            },
+            {
+                "name": "path_points",
+                "type": "string",
+                "value": ""
+            },
+            {
+                "name": "patrol",
+                "type": "object",
+                "value": 0
+            },
+            {
+                "name": "plain_color",
+                "type": "color",
+                "value": "#ff000000"
+            },
+            {
+                "name": "setter_inline",
+                "type": "int",
+                "value": 4
+            },
+            {
+                "name": "sounds",
+                "type": "string",
+                "value": "res://sounds"
+            },
+            {
+                "name": "spawn_point",
+                "type": "object",
+                "value": 0
+            },
+            {
+                "name": "speed",
+                "type": "float",
+                "value": 2.5
+            },
+            {
+                "name": "tag",
+                "type": "string",
+                "value": "grunt"
+            },
+            {
+                "name": "target",
+                "type": "object",
+                "value": 0
+            },
+            {
+                "name": "team",
+                "propertyType": "BaseUnit.Team",
+                "type": "string",
+                "value": "BLUE"
+            },
+            {
+                "name": "tint",
+                "type": "color",
+                "value": "#ffff8000"
+            },
+            {
+                "name": "untyped_number",
+                "type": "int",
+                "value": 7
+            }
+        ],
+        "name": "Boss",
+        "type": "class",
+        "useAs": [
+            "object",
+            "tile"
+        ]
+    },
+    {
+        "color": "#ff73dce6",
+        "drawFill": true,
+        "id": 10,
+        "members": [
+            {
+                "name": "godot_scene",
+                "type": "file",
+                "value": "../godot_project/scenes/door.tscn"
+            },
+            {
+                "name": "key",
+                "propertyType": "Item.Kind",
+                "type": "string",
+                "value": "KEY"
+            },
+            {
+                "name": "locked",
+                "type": "bool",
+                "value": false
+            },
+            {
+                "name": "target",
+                "type": "object",
+                "value": 0
+            },
+            {
+                "name": "width",
+                "type": "float",
+                "value": 32
+            }
+        ],
+        "name": "Door",
+        "type": "class",
+        "useAs": [
+            "object",
+            "tile"
+        ]
+    },
+    {
+        "color": "#ffe673c9",
+        "drawFill": true,
+        "id": 11,
+        "members": [
+            {
+                "name": "arena",
+                "type": "object",
+                "value": 0
+            },
+            {
+                "name": "boss",
+                "type": "bool",
+                "value": true
+            },
+            {
+                "name": "cell",
+                "propertyType": "Vector2i",
+                "type": "class",
+                "value": {
+                    "x": 2,
+                    "y": 3
+                }
+            },
+            {
+                "name": "cruise",
+                "type": "float",
+                "value": 0
+            },
+            {
+                "name": "description",
+                "type": "string",
+                "value": "A grunt.\nAngry."
+            },
+            {
+                "name": "dialog",
+                "type": "file",
+                "value": "../godot_project/data/dialog.json"
+            },
+            {
+                "name": "direction",
+                "propertyType": "Vector2",
+                "type": "class",
+                "value": {
+                    "x": -1,
+                    "y": 0
+                }
+            },
+            {
+                "name": "drops",
+                "type": "string",
+                "value": ""
+            },
+            {
+                "name": "elements",
+                "type": "int",
+                "value": 0
+            },
+            {
+                "name": "faction",
+                "type": "string",
+                "value": "orcs"
+            },
+            {
+                "name": "gait",
+                "propertyType": "Enemy.gait",
+                "type": "string",
+                "value": "Run"
+            },
+            {
+                "name": "godot_scene",
+                "type": "file",
+                "value": "../godot_project/scenes/enemy.tscn"
+            },
+            {
+                "name": "heading",
+                "propertyType": "Enemy.heading",
+                "type": "string",
+                "value": "South"
+            },
+            {
+                "name": "hit_layers",
+                "propertyType": "GodotPhysicsLayers",
+                "type": "int",
+                "value": 5
+            },
+            {
+                "name": "icon",
+                "type": "file",
+                "value": "../godot_project/icon.png"
+            },
+            {
+                "name": "inferred_text",
+                "type": "string",
+                "value": "hi"
+            },
+            {
+                "name": "jump",
+                "type": "float",
+                "value": 1
+            },
+            {
+                "name": "level",
+                "type": "int",
+                "value": 3
+            },
+            {
+                "name": "lives",
+                "type": "int",
+                "value": 3
+            },
+            {
+                "name": "loot",
+                "type": "file",
+                "value": ""
+            },
+            {
+                "name": "loot_kind",
+                "propertyType": "Item.Kind",
+                "type": "string",
+                "value": "GEM"
+            },
+            {
+                "name": "max_hp",
+                "type": "int",
+                "value": 10
+            },
+            {
+                "name": "mood",
+                "propertyType": "Enemy.Mood",
+                "type": "string",
+                "value": "ANGRY"
+            },
+            {
+                "name": "nickname",
+                "type": "string",
+                "value": ""
+            },
+            {
+                "name": "offset",
+                "propertyType": "Vector2",
+                "type": "class",
+                "value": {
+                    "x": 4,
+                    "y": -8.5
+                }
+            },
+            {
+                "name": "outline_color",
+                "type": "color",
+                "value": "#ffff0000"
+            },
+            {
+                "name": "path_points",
+                "type": "string",
+                "value": ""
+            },
+            {
+                "name": "patrol",
+                "type": "object",
+                "value": 0
+            },
+            {
+                "name": "plain_color",
+                "type": "color",
+                "value": "#ff000000"
+            },
+            {
+                "name": "setter_inline",
+                "type": "int",
+                "value": 4
+            },
+            {
+                "name": "sounds",
+                "type": "string",
+                "value": "res://sounds"
+            },
+            {
+                "name": "spawn_point",
+                "type": "object",
+                "value": 0
+            },
+            {
+                "name": "speed",
+                "type": "float",
+                "value": 2.5
+            },
+            {
+                "name": "tag",
+                "type": "string",
+                "value": "grunt"
+            },
+            {
+                "name": "target",
+                "type": "object",
+                "value": 0
+            },
+            {
+                "name": "team",
+                "propertyType": "BaseUnit.Team",
+                "type": "string",
+                "value": "BLUE"
+            },
+            {
+                "name": "tint",
+                "type": "color",
+                "value": "#ffff8000"
+            },
+            {
+                "name": "untyped_number",
+                "type": "int",
+                "value": 7
+            }
+        ],
+        "name": "Enemy",
+        "type": "class",
+        "useAs": [
+            "object",
+            "tile"
+        ]
+    }
+]

@@ -1,0 +1,80 @@
+[
+    {
+        "id": 1,
+        "name": "GodotPhysicsLayers",
+        "storageType": "int",
+        "type": "enum",
+        "values": [
+            "World",
+            "Player",
+            "Layer 3",
+            "Enemy"
+        ],
+        "valuesAsFlags": true
+    },
+    {
+        "id": 2,
+        "name": "GodotNavigationLayers",
+        "storageType": "int",
+        "type": "enum",
+        "values": [
+            "Ground"
+        ],
+        "valuesAsFlags": true
+    },
+    {
+        "id": 3,
+        "name": "GodotRenderLayers",
+        "storageType": "int",
+        "type": "enum",
+        "values": [
+            "Layer 1",
+            "Lights"
+        ],
+        "valuesAsFlags": true
+    },
+    {
+        "id": 4,
+        "name": "GodotNodeType",
+        "storageType": "string",
+        "type": "enum",
+        "values": [
+            "collision",
+            "staticbody",
+            "characterbody",
+            "rigidbody",
+            "animatablebody",
+            "area",
+            "navigation",
+            "occluder",
+            "line",
+            "path",
+            "polygon",
+            "instance",
+            "parallax"
+        ],
+        "valuesAsFlags": false
+    },
+    {
+        "color": "#ffe69d73",
+        "drawFill": true,
+        "id": 5,
+        "members": [
+            {
+                "name": "map",
+                "type": "file",
+                "value": ""
+            },
+            {
+                "name": "object",
+                "type": "int",
+                "value": 0
+            }
+        ],
+        "name": "MapRef",
+        "type": "class",
+        "useAs": [
+            "property"
+        ]
+    }
+]
