@@ -2632,6 +2632,10 @@ static func get_typed_array_for(info: Dictionary, list: Array, node: Node = null
 			item = StringName(item)
 		if elem_type == TYPE_NODE_PATH and typeof(item) == TYPE_STRING:
 			item = NodePath(item)
+		if (elem_type == TYPE_VECTOR2 or elem_type == TYPE_VECTOR2I) and typeof(item) == TYPE_DICTIONARY:
+			var vec := class_to_vector(item, elem_type)
+			if vec.is_empty(): return null
+			item = vec[0]
 		if typeof(item) != elem_type: return null
 		if elem_type == TYPE_OBJECT and not is_of_class(item, elem_class): return null
 		items.append(item)
@@ -3203,7 +3207,8 @@ static func get_property_type_name(info: Dictionary) -> String:
 # value (a custom property's value as metadata holds it) converted to the type of the property
 # info: [converted] or [] when it does not fit. Tiled int also fits float and enum properties, a
 # string an enum by its name, StringName and NodePath; a file loads its resource for a Resource
-# property; a list fits an array (a typed one when every item does); an untyped var takes any value.
+# property; a list fits an array (a typed one when every item does); a class of members x and y a
+# Vector2 or Vector2i (class_to_vector); an untyped var takes any value.
 func convert_for_property(info: Dictionary, type: String, value, file_base: String) -> Array:
 	var ptype: int = info["type"]
 	if ptype == TYPE_NIL:
@@ -3228,7 +3233,23 @@ func convert_for_property(info: Dictionary, type: String, value, file_base: Stri
 		return [StringName(value)]
 	if ptype == TYPE_NODE_PATH and vtype == TYPE_STRING:
 		return [NodePath(value)]
+	if (ptype == TYPE_VECTOR2 or ptype == TYPE_VECTOR2I) and vtype == TYPE_DICTIONARY:
+		return class_to_vector(value, ptype)
 	return []
+
+
+# A class value (its member dictionary) as a Vector2 or Vector2i (vector_type): [vector], or []
+# when its members are not exactly x and y, both numbers (both integral for a Vector2i).
+static func class_to_vector(value: Dictionary, vector_type: int) -> Array:
+	if value.size() != 2 or not value.has("x") or not value.has("y"): return []
+	var x = value["x"]
+	var y = value["y"]
+	for v in [x, y]:
+		if typeof(v) != TYPE_INT and typeof(v) != TYPE_FLOAT: return []
+	if vector_type == TYPE_VECTOR2:
+		return [Vector2(x, y)]
+	if float(x) != floorf(x) or float(y) != floorf(y): return []
+	return [Vector2i(int(x), int(y))]
 
 
 # The value of the enum constant name in an enum property's hint string ("A,B:5,C"), or null.

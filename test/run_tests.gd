@@ -1967,6 +1967,92 @@ func test_new_godot_scene_member() -> bool:
 	return done()
 
 
+func test_new_vector_class_property() -> bool:
+	# Stage 2 of docs/tiled-extension-plan.md: Tiled has no vector type, so a vector export is set
+	# with a class value of members x and y (the class types Vector2 / Vector2i the Tiled extension
+	# generates). Assigned to a Vector2 / Vector2i property it becomes that vector (a Vector2i only
+	# from integral members), also as the items of a typed array; as metadata it stays the Dictionary.
+	var imp := _new_importer({"class_scenes": {"Enemy": ENEMY_SCENE}})
+	var n := _import_with(imp, "scenes.tmx")
+	if n == null: return done()
+	eq(imp.get("last_warning_count"), 1, "warnings (Broken's hp only)")
+	var sc := need(n, "Scout")
+	if _is_scene(sc, ENEMY_SCENE, "Scout"):
+		eq(typeof(sc.get("home")), TYPE_VECTOR2, "Scout.home type")
+		eq(sc.get("home"), Vector2(1.5, -2), "Scout.home")
+		eq(typeof(sc.get("cell")), TYPE_VECTOR2I, "Scout.cell type")
+		eq(sc.get("cell"), Vector2i(3, -4), "Scout.cell")
+		var route: Variant = sc.get("route")
+		eq(route, [Vector2(0, 8), Vector2(16.5, 8)], "Scout.route (list of classes -> Array[Vector2])")
+		if route is Array: eq((route as Array).get_typed_builtin(), TYPE_VECTOR2, "Scout.route element type")
+		for key in ["home", "cell", "route"]:
+			check(not sc.has_meta(key), "Scout: " + key + " also stored as metadata")
+	# The scene from the project's godot_scene member, the class types in the project file
+	var p := _import("scenes.tmx", {}, "scenes.tiled-project")
+	if p:
+		var ps := need(p, "Scout")
+		if _is_scene(ps, ENEMY_SCENE, "Scout (project)"):
+			eq(ps.get("home"), Vector2(1.5, -2), "Scout.home (project)")
+			eq(ps.get("cell"), Vector2i(3, -4), "Scout.cell (project)")
+	# No such property (a StaticBody2D without the scene): metadata, the Dictionary as before
+	var d := _import("scenes.tmx", {"warn_unknown_classes": false})
+	if d:
+		var ds := need(d, "Scout (SB)", "StaticBody2D")
+		if ds:
+			meta(ds, "home", {"x": 1.5, "y": -2.0})
+			meta(ds, "cell", {"x": 3, "y": -4})
+	# What does not fit stays metadata with a warning: fractional members for a Vector2i, a third
+	# member; integral float members fit a Vector2i
+	var path := OUT + "vector_misfits.tmx"
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_string("""<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="8" height="8" tilewidth="16" tileheight="16" infinite="0" nextlayerid="2" nextobjectid="4">
+ <objectgroup id="1" name="Units">
+  <object id="1" name="Fraction" class="Enemy" x="16" y="16" width="16" height="16">
+   <properties>
+    <property name="cell" type="class" propertytype="Vector2">
+     <properties><property name="x" type="float" value="1.5"/><property name="y" type="float" value="2"/></properties>
+    </property>
+   </properties>
+  </object>
+  <object id="2" name="Deep" class="Enemy" x="48" y="16" width="16" height="16">
+   <properties>
+    <property name="home" type="class" propertytype="Vector3">
+     <properties><property name="x" type="float" value="1"/><property name="y" type="float" value="2"/><property name="z" type="float" value="3"/></properties>
+    </property>
+   </properties>
+  </object>
+  <object id="3" name="Whole" class="Enemy" x="80" y="16" width="16" height="16">
+   <properties>
+    <property name="cell" type="class" propertytype="Vector2">
+     <properties><property name="x" type="float" value="2"/><property name="y" type="float" value="-3"/></properties>
+    </property>
+   </properties>
+  </object>
+ </objectgroup>
+</map>
+""")
+	f.close()
+	var imp2 := _new_importer({"class_scenes": {"Enemy": ENEMY_SCENE}})
+	var m := _import_with(imp2, path)
+	if m == null: return done()
+	eq(imp2.get("last_warning_count"), 2, "warnings (Fraction's cell, Deep's home)")
+	var fr := need(m, "Fraction")
+	if fr:
+		eq(fr.get("cell"), Vector2i.ZERO, "Fraction.cell untouched")
+		meta(fr, "cell", {"x": 1.5, "y": 2.0})
+	var dp := need(m, "Deep")
+	if dp:
+		eq(fr.get("home") if fr else Vector2.ZERO, Vector2.ZERO, "Fraction.home untouched")
+		eq(dp.get("home"), Vector2.ZERO, "Deep.home untouched")
+		meta(dp, "home", {"x": 1.0, "y": 2.0, "z": 3.0})
+	var wh := need(m, "Whole")
+	if wh:
+		eq(typeof(wh.get("cell")), TYPE_VECTOR2I, "Whole.cell type")
+		eq(wh.get("cell"), Vector2i(2, -3), "Whole.cell (integral float members)")
+	return done()
+
+
 func test_new_assign_props_off() -> bool:
 	# F1: assign_node_properties = false keeps every custom property metadata, as before.
 	var imp := _new_importer({"class_scenes": {"Enemy": ENEMY_SCENE}})

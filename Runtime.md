@@ -69,7 +69,7 @@ they apply to every following call on that instance. See the [Reference](Referen
 | `warn_unknown_classes` | bool | `true` | Warn once per import about each class that is no Godot node type; off for a game that handles its classes itself (the fallback node is the same, only the warning and its count go) |
 | `class_scenes` | Dictionary | `{}` | Tiled class (case-insensitive) → scene path: objects and tile objects of that class become instances of the scene (like class `instance` with `res_path`) |
 | `read_godot_scene_from_custom_types` | bool | `true` | With a project file, a custom class's `godot_scene` (file) member maps its objects and tiles to that scene |
-| `assign_node_properties` | bool | `true` | A custom property named like a property of the created node (a script's `@export var`, ...) is assigned to it, converted to its type; others stay metadata. A node method `_tiled_import(info)` is called once the map is built. Off: all metadata, as before 3.1 |
+| `assign_node_properties` | bool | `true` | A custom property named like a property of the created node (a script's `@export var`, ...) is assigned to it, converted to its type; others stay metadata. A class value of members `x` and `y` fits a `Vector2` / `Vector2i`. A node method `_tiled_import(info)` is called once the map is built. Off: all metadata, as before 3.1 |
 | `object_refs` | String | `"nodepath"` | Object properties: `"nodepath"` gives a NodePath to the target object's node (or the node, for a Node-typed property of that name), lists of objects an `Array[NodePath]`; `"geometry"` the target's points, as before 3.1; `"both"` the NodePath and the points as metadata `<name>_shape` |
 
 ```gdscript

@@ -30,6 +30,50 @@
                 "object",
                 "tile"
             ]
+        },
+        {
+            "color": "#ff6fa8dc",
+            "drawFill": true,
+            "id": 2,
+            "members": [
+                {
+                    "name": "x",
+                    "type": "float",
+                    "value": 0
+                },
+                {
+                    "name": "y",
+                    "type": "float",
+                    "value": 0
+                }
+            ],
+            "name": "Vector2",
+            "type": "class",
+            "useAs": [
+                "property"
+            ]
+        },
+        {
+            "color": "#ff93c47d",
+            "drawFill": true,
+            "id": 3,
+            "members": [
+                {
+                    "name": "x",
+                    "type": "int",
+                    "value": 0
+                },
+                {
+                    "name": "y",
+                    "type": "int",
+                    "value": 0
+                }
+            ],
+            "name": "Vector2i",
+            "type": "class",
+            "useAs": [
+                "property"
+            ]
         }
     ]
 }

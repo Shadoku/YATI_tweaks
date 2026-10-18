@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `docs/tiled-extension-plan.md`: the plan for the Tiled extension (part C of the runtime improvement
   plan): what Tiled 1.12's API allows, what the importers already read, the decisions and stages.
+- Node properties (`assign_node_properties`, both importers): a `class` value whose members are exactly `x` and `y`,
+  both numbers, fits a `Vector2` property, and a `Vector2i` one when both are integral; a list of such values fits an
+  `Array[Vector2]` / `Array[Vector2i]`. As metadata the value stays the `Dictionary`. The Tiled extension generates
+  the class types `Vector2` and `Vector2i` for vector exports (`docs/tiled-extension-plan.md`, section 3).
 
 ## [3.1.0] — 2026-10-18
 

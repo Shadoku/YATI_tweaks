@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- F1: objects of class Enemy (mapped to enemy.tscn by class_scenes or the project's godot_scene member),
      their properties written into the scene's exports, a tile whose class is Enemy, a godot_node_type
-     that wins over the scene, a per-object godot_scene override, a property of the wrong type. -->
+     that wins over the scene, a per-object godot_scene override, a property of the wrong type; class
+     values of members x and y for Vector2 / Vector2i exports and a list of them (Scout). -->
 <map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="16" height="16" tilewidth="16" tileheight="16" infinite="0" nextlayerid="2" nextobjectid="10">
  <tileset firstgid="1" name="scene_tiles" tilewidth="16" tileheight="16" tilecount="32" columns="8">
   <image source="tiles.png" width="128" height="64"/>
@@ -47,6 +48,36 @@
   <object id="7" name="Elite" class="Enemy" x="64" y="160" width="16" height="16">
    <properties>
     <property name="godot_scene" type="file" value="ref_target.tscn"/>
+   </properties>
+  </object>
+  <object id="8" name="Scout" class="Enemy" x="96" y="160" width="16" height="16">
+   <properties>
+    <property name="cell" type="class" propertytype="Vector2i">
+     <properties>
+      <property name="x" type="int" value="3"/>
+      <property name="y" type="int" value="-4"/>
+     </properties>
+    </property>
+    <property name="home" type="class" propertytype="Vector2">
+     <properties>
+      <property name="x" type="float" value="1.5"/>
+      <property name="y" type="float" value="-2"/>
+     </properties>
+    </property>
+    <property name="route" type="list">
+     <item type="class" propertytype="Vector2">
+      <properties>
+       <property name="x" type="float" value="0"/>
+       <property name="y" type="float" value="8"/>
+      </properties>
+     </item>
+     <item type="class" propertytype="Vector2">
+      <properties>
+       <property name="x" type="float" value="16.5"/>
+       <property name="y" type="float" value="8"/>
+      </properties>
+     </item>
+    </property>
    </properties>
   </object>
  </objectgroup>

@@ -145,6 +145,57 @@
           "width": 16,
           "x": 64,
           "y": 160
+        },
+        {
+          "class": "Enemy",
+          "height": 16,
+          "id": 8,
+          "name": "Scout",
+          "properties": [
+            {
+              "name": "cell",
+              "propertytype": "Vector2i",
+              "type": "class",
+              "value": {
+                "x": 3,
+                "y": -4
+              }
+            },
+            {
+              "name": "home",
+              "propertytype": "Vector2",
+              "type": "class",
+              "value": {
+                "x": 1.5,
+                "y": -2.0
+              }
+            },
+            {
+              "name": "route",
+              "type": "list",
+              "value": [
+                {
+                  "propertytype": "Vector2",
+                  "type": "class",
+                  "value": {
+                    "x": 0.0,
+                    "y": 8.0
+                  }
+                },
+                {
+                  "propertytype": "Vector2",
+                  "type": "class",
+                  "value": {
+                    "x": 16.5,
+                    "y": 8.0
+                  }
+                }
+              ]
+            }
+          ],
+          "width": 16,
+          "x": 96,
+          "y": 160
         }
       ],
       "type": "objectgroup"

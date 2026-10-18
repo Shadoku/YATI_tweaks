@@ -12,6 +12,9 @@ enum Mood { CALM, ANGRY = 5 }
 @export var icon: Texture2D
 @export var loot: Dictionary = {}
 @export var drops: Array[int] = []
+@export var home: Vector2
+@export var cell: Vector2i
+@export var route: Array[Vector2] = []
 
 var imported: Dictionary = {}
 var hook_calls: int = 0

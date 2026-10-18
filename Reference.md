@@ -589,11 +589,14 @@ the node's `name` and `script` are never set this way (use the object's name and
 | `int` | `int`, `float`, an enum (the value) |
 | `string` | `String`, `StringName`, `NodePath`, an enum (a constant's name, e.g. `ANGRY`; case, blanks and `_` ignored) |
 | `file` | a Resource type (the file is loaded; it must be of that class), `String` (the path as saved) |
-| `class` | `Dictionary` (`{member: value}`) |
-| `list` | `Array`; a typed array (`Array[int]`, `Array[NodePath]`, ...) when every item fits |
+| `class` | `Dictionary` (`{member: value}`); `Vector2` when its members are exactly `x` and `y`, both numbers; `Vector2i` when they are also both integral (`3`, `3.0`, not `3.5`) |
+| `list` | `Array`; a typed array (`Array[int]`, `Array[NodePath]`, `Array[Vector2]` from `x`/`y` class items, ...) when every item fits |
 | `object` | `NodePath`, a Node type, see [Object references](#object-references) |
 
 An untyped `var` takes the value as metadata would hold it. A value that does not fit stays metadata, with a warning.
+Tiled has no vector type: a `Vector2` or `Vector2i` export is set with a class-typed property of the members `x` and
+`y` (declare class types `Vector2` with float members and `Vector2i` with int members in the project; the Tiled
+extension's scene sync generates them for vector exports). As metadata such a value stays the `Dictionary`.
 
 **Two passes.** `godot_script` is attached before any other property of the node is handled, so the script's
 variables exist when they are assigned, whatever the order of the properties in Tiled.

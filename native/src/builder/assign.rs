@@ -1,6 +1,7 @@
 //! Custom properties assigned to node properties of the same name (F1 of
 //! `docs/runtime-improvement-plan.md`: `get_assignable_properties`, `set_property_or_meta`,
-//! `convert_for_property`, `get_typed_array_for`, `get_enum_value`, `is_of_class`).
+//! `convert_for_property`, `get_typed_array_for`, `class_to_vector`, `get_enum_value`,
+//! `is_of_class`).
 
 use super::Build;
 use crate::files::load_resource;
@@ -130,6 +131,12 @@ pub(crate) fn typed_array_for(
         if elem_type == VariantType::NODE_PATH.ord() as i64 && it == VariantType::STRING {
             item = NodePath::from(&item.to::<GString>()).to_variant();
         }
+        if (elem_type == VariantType::VECTOR2.ord() as i64
+            || elem_type == VariantType::VECTOR2I.ord() as i64)
+            && it == VariantType::DICTIONARY
+        {
+            item = class_to_vector(&item, VariantType::from_ord(elem_type as i32))?;
+        }
         if item.get_type().ord() as i64 != elem_type {
             return None;
         }
@@ -155,6 +162,32 @@ pub(crate) fn typed_array_for(
         }
         None => Some(items.to_variant()),
     }
+}
+
+/// `class_to_vector`: a class value (its member dictionary) as a `Vector2` or `Vector2i`
+/// (`ty`), `None` when its members are not exactly `x` and `y`, both numbers (both integral
+/// for a `Vector2i`).
+pub(crate) fn class_to_vector(value: &Variant, ty: VariantType) -> Option<Variant> {
+    let d = value.try_to::<VarDictionary>().ok()?;
+    if d.len() != 2 {
+        return None;
+    }
+    let num = |k: &str| -> Option<f64> {
+        let v = d.get(k)?;
+        match v.get_type() {
+            VariantType::INT => Some(v.to::<i64>() as f64),
+            VariantType::FLOAT => Some(v.to::<f64>()),
+            _ => None,
+        }
+    };
+    let (x, y) = (num("x")?, num("y")?);
+    if ty == VariantType::VECTOR2 {
+        return Some(Vector2::new(x as f32, y as f32).to_variant());
+    }
+    if x.fract() != 0.0 || y.fract() != 0.0 {
+        return None;
+    }
+    Some(Vector2i::new(x as i32, y as i32).to_variant())
 }
 
 /// `get_enum_value`: the value of the constant `name` in an enum property's hint string
@@ -242,8 +275,9 @@ impl Build<'_> {
     /// `convert_for_property`: `value` (as metadata holds it) converted to the property's type,
     /// `None` when it does not fit. A Tiled int also fits float and enum properties, a string
     /// an enum by its name, StringName and NodePath; a file loads its resource for a Resource
-    /// property; a list fits an array (a typed one when every item does); an untyped variable
-    /// takes any value.
+    /// property; a list fits an array (a typed one when every item does); a class of members
+    /// `x` and `y` a `Vector2` or `Vector2i` (`class_to_vector`); an untyped variable takes any
+    /// value.
     fn convert_for_property(
         &mut self,
         node: &Gd<Node>,
@@ -289,6 +323,11 @@ impl Build<'_> {
         }
         if pt == VariantType::NODE_PATH && vt == VariantType::STRING {
             return Some(NodePath::from(&value.to::<GString>()).to_variant());
+        }
+        if (pt == VariantType::VECTOR2 || pt == VariantType::VECTOR2I)
+            && vt == VariantType::DICTIONARY
+        {
+            return class_to_vector(value, pt);
         }
         None
     }
