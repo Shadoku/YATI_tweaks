@@ -19,7 +19,9 @@ through the `.tiled-project` file, the maps, and (for the check) the Godot binar
 - Requires **Tiled 1.12** or newer (the custom-type API is new in 1.12).
 - The check action also needs **Godot 4.7** and the game's `addons/yati_native/` with
   `check_map.gd`, which is in releases after YATI 3.1.0.
-- The plan with its decisions: [docs/tiled-extension-plan.md](../docs/tiled-extension-plan.md).
+- The plan with its decisions: [docs/tiled-extension-plan.md](../docs/tiled-extension-plan.md); the
+  planned UX pass (one configuration dialog, no manual reopen):
+  [docs/tiled-extension-ux-plan.md](../docs/tiled-extension-ux-plan.md).
 
 ## Install
 

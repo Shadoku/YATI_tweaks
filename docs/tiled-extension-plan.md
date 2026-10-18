@@ -327,3 +327,6 @@ through the `.tiled-project` file, the maps and (for the check) the Godot binary
   "unsaved map"). Still for the editor only: an Issue's activation, the dialogs, *Check map in
   Godot* on the active map, the reopen. Five Tiled runs take under two seconds; CI installs Tiled
   (cached by `.tiled-version`) and runs the test.
+- 2026-10-18, **part 2 planned**: the UX pass (`YATI: Configure…` as one dialog with a field
+  per setting, tooltips and validation before it closes; the project reopened by the extension
+  through `tiled.open(project.fileName)` instead of by hand) is `docs/tiled-extension-ux-plan.md`.
