@@ -8,6 +8,7 @@
 - [Custom properties reference](#custom-properties-reference)
 - [Scene mapping and node properties](#scene-mapping-and-node-properties)
 - [Object references](#object-references)
+- [World files and map bounds](#world-files-and-map-bounds)
 - [Specialities](#specialities)
 - [Newly supported Tiled features](#newly-supported-tiled-features)
 - [Tiled features not supported](#tiled-features-not-supported)
@@ -628,6 +629,54 @@ not resolved; the game resolves it when it needs to, e.g. by importing the other
 on) and looking for the node with that `id` metadata. Join the `map` member with the directory of the map that
 holds the property.
 
+## World files and map bounds
+
+**Map bounds.** The root node of every imported map (also a single layer returned as the root) has the metadata:
+
+| Metadata | Type | Value |
+|----------|------|-------|
+| `map_rect` | `Rect2` | the map's bounds in pixels, in the root's coordinates |
+| `map_size_tiles` | `Vector2i` | the map's size in tiles (an infinite map's: of the union of its chunks) |
+| `tile_size` | `Vector2i` | the map's tile width and height |
+| `orientation` | `String` | `orthogonal`, `isometric`, `staggered` or `hexagonal` |
+
+`map_rect` is Tiled's map size: `(0, 0, width * tilewidth, height * tileheight)` for an orthogonal map; the bounding box
+of the diamond for an isometric one, `(0, 0, (width + height) * tilewidth / 2, (width + height) * tileheight / 2)` (the
+importer places the diamond's left corner at x = 0); Tiled's size of the staggered or hexagonal grid
+(`hexsidelength` included). An infinite map's bounds are those of the union of the chunks of all its tile layers (in
+tiles, then in pixels as above; negative coordinates included), `Rect2()` without chunks. Layer offsets are not
+included. `TilemapCreator.get_map_rect()` returns the same after `create()`. A camera's limits, for example:
+
+```gdscript
+var r: Rect2 = map.get_meta("map_rect")
+camera.limit_left = int(r.position.x); camera.limit_top = int(r.position.y)
+camera.limit_right = int(r.end.x); camera.limit_bottom = int(r.end.y)
+```
+
+**World files.** `WorldLoader.gd` reads Tiled's `.world` files:
+
+```gdscript
+const WorldLoader = preload("res://runtime/WorldLoader.gd")
+for entry in WorldLoader.parse("res://maps/overworld.world"):
+	print(entry.path, " at ", entry.rect)   # String, Rect2i in pixels
+```
+
+- `maps` entries: `fileName` (relative to the world file) and `x`, `y`, `width`, `height` as written.
+- `patterns` entries: every `.tmx` / `.tmj` file directly in the world file's directory (not in subdirectories) whose
+  name matches `regexp` (searched, not anchored, as Tiled does) and that is not listed under `maps`; captures 1 and 2
+  are the x and y indices: position `(x * multiplierX + offsetX, y * multiplierY + offsetY)`, size `mapWidth` /
+  `mapHeight` when the pattern has them, else the map's own size in pixels (`map_rect`, read from the map file once
+  and cached; `WorldLoader.clear_cache()` forgets it). A file matching several patterns takes the first.
+- The result lists the `maps` entries in their order, then the pattern matches sorted by file name.
+- `onlyShowAdjacentMaps` is an editor setting and ignored.
+- `WorldLoader.parse(world_file, zip_file)` reads the world file, its directory and the maps from a zip archive
+  (paths inside it).
+
+`Importer.import_world(world_file, project_file = "")` imports every map and returns a `Node2D` named after the world
+file with each map's root as a child at its `rect.position` (the importer's options apply to each map;
+`last_error_count` and `last_warning_count` add up all maps). It is meant for small worlds and tests: a world streamer
+calls `WorldLoader.parse()` once and `import()` for the maps it needs.
+
 ## Specialities
 
 - For some custom properties e.g. 'use_parent_material' there's a catch that this can be ambiguous.  
@@ -661,6 +710,8 @@ Supported by this runtime fork in addition to upstream YATI 2.2.x:
 | A class mapped to a scene (`class_scenes`, a `godot_scene` member of a custom class) | Instances of the scene ([Scene mapping and node properties](#scene-mapping-and-node-properties)) |
 | Custom properties named like a node property (e.g. a script's `@export var`) | Assigned to the property ([assign_node_properties](#assign_node_properties)) |
 | Object references (`object` properties) | A `NodePath` to the target's node, or the node for a `Node`-typed property of that name ([Object references](#object-references)) |
+| Tiled worlds (`.world`: `maps` and `patterns`) | `WorldLoader.parse()`, `Importer.import_world()` ([World files and map bounds](#world-files-and-map-bounds)) |
+| Map bounds | Metadata `map_rect`, `map_size_tiles`, `tile_size`, `orientation` on the root |
 | Object references (`object` properties) to objects inside group layers | Resolved like references to top-level objects |
 | Deprecated XML tile layer data (`<tile gid="..."/>` children, no encoding) | Imported like CSV data |
 | Tileset class | Metadata `class` on the generated TileSet |

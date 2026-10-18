@@ -1987,6 +1987,123 @@ func test_new_tiled_import_hook() -> bool:
 	return done()
 
 
+func _map_meta(n: Node, rect: Rect2, size_tiles: Vector2i, tile_size: Vector2i, orientation: String) -> void:
+	meta(n, "map_rect", rect)
+	meta(n, "map_size_tiles", size_tiles)
+	meta(n, "tile_size", tile_size)
+	meta(n, "orientation", orientation)
+
+
+func test_new_map_rect_finite() -> bool:
+	# F3: the root carries the map's bounds in pixels (Tiled's map size for each orientation), its
+	# size in tiles, the tile size and the orientation; also a single-layer root.
+	var n := _import("objects.tmx")
+	if n: _map_meta(n, Rect2(0, 0, 400, 320), Vector2i(25, 20), Vector2i(16, 16), "orthogonal")
+	var iso := _import("isometric.tmx")
+	if iso: _map_meta(iso, Rect2(0, 0, 96, 48), Vector2i(3, 3), Vector2i(32, 16), "isometric")
+	var st := _import("staggered.tmx")
+	if st: _map_meta(st, Rect2(0, 0, 144, 40), Vector2i(4, 4), Vector2i(32, 16), "staggered")
+	var hx := _import("hexagonal.tmx")
+	if hx: _map_meta(hx, Rect2(0, 0, 40, 56), Vector2i(3, 3), Vector2i(16, 16), "hexagonal")
+	var single := _import("single_layer.tmx")
+	if single and is_type(single, "TileMapLayer", "single layer root"):
+		_map_meta(single, Rect2(0, 0, 32, 32), Vector2i(2, 2), Vector2i(16, 16), "orthogonal")
+	var tc_script: Variant = _runtime_script("TilemapCreator.gd")
+	if check(tc_script != null, "no TilemapCreator.gd"):
+		var tc: Object = tc_script.new()
+		if check(tc.has_method("get_map_rect"), "TilemapCreator has no get_map_rect()"):
+			var r: Node = tc.call("create", FIX + "isometric.tmx")
+			if r: _to_free.append(r)
+			eq(tc.call("get_map_rect"), Rect2(0, 0, 96, 48), "TilemapCreator.get_map_rect()")
+	return done()
+
+
+func test_new_map_rect_infinite() -> bool:
+	# F3: an infinite map's bounds are the union of its chunks (in every tile layer), negative
+	# coordinates included.
+	for f in ["infinite.tmx", "infinite.tmj"]:
+		var n := _import(f)
+		if n: _map_meta(n, Rect2(-256, 0, 512, 512), Vector2i(32, 32), Vector2i(16, 16), "orthogonal")
+	return done()
+
+
+func _world_loader() -> Variant:
+	var wl: Variant = _runtime_script("WorldLoader.gd")
+	check(wl != null, "runtime has no WorldLoader.gd")
+	return wl
+
+
+func _world_entry(entries: Array, file: String) -> Dictionary:
+	for e in entries:
+		if e is Dictionary and str(e.get("path", "")).get_file() == file:
+			return e
+	fail("world entry '" + file + "' missing (have " + str(entries.map(func(e): return str(e.get("path", "")).get_file())) + ")")
+	return {}
+
+
+func test_new_world_explicit() -> bool:
+	# F3: WorldLoader.parse() reads a Tiled .world file: an explicit 'maps' entry gives its path
+	# (relative to the world file) and rect; import_world() imports every map placed at its rect.
+	var wl: Variant = _world_loader()
+	if wl == null: return done()
+	var entries: Array = wl.call("parse", FIX + "world/test.world")
+	eq(entries.size(), 4, "world entries")
+	if entries.size() > 0:
+		eq(entries[0].get("path"), FIX + "world/hub.tmx", "first entry: the explicit map")
+		eq(entries[0].get("rect"), Rect2i(-160, 0, 160, 160), "hub rect")
+	var imp := _new_importer()
+	if not check(imp.has_method("import_world"), "Importer has no import_world()"): return done()
+	var w: Node = imp.call("import_world", FIX + "world/test.world")
+	if not check(w != null, "import_world returned null"): return done()
+	_to_free.append(w)
+	eq(String(w.name), "test", "world root name")
+	eq(w.get_child_count(), 4, "world maps")
+	var hub := w.get_node_or_null("hub") as Node2D
+	if is_type(hub, "Node2D", "hub"):
+		eq(hub.position, Vector2(-160, 0), "hub position")
+		meta(hub, "map_rect", Rect2(0, 0, 160, 160))
+	eq(imp.get("last_error_count"), 0, "import_world errors")
+	return done()
+
+
+func test_new_world_pattern() -> bool:
+	# F3: a 'patterns' entry lists the .tmx/.tmj files of the world's directory whose name matches
+	# its regexp, captures 1 and 2 times the multipliers plus the offset as position, the size from
+	# the map's header; explicitly listed maps are not listed again. Also from a zip archive.
+	var wl: Variant = _world_loader()
+	if wl == null: return done()
+	var entries: Array = wl.call("parse", FIX + "world/test.world")
+	var files: Array = entries.map(func(e): return str(e.get("path", "")).get_file())
+	eq(files, ["hub.tmx", "area_0_0.tmx", "area_0_1.tmj", "area_1_0.tmx"], "entries in order")
+	eq(_world_entry(entries, "area_0_0.tmx").get("rect"), Rect2i(16, -32, 160, 160), "area_0_0 rect")
+	eq(_world_entry(entries, "area_1_0.tmx").get("rect"), Rect2i(176, -32, 160, 128), "area_1_0 rect (10 x 8 tiles)")
+	eq(_world_entry(entries, "area_0_1.tmj").get("rect"), Rect2i(16, 128, 192, 160), "area_0_1 rect (JSON, 12 x 10 tiles)")
+	eq(_world_entry(entries, "area_0_0.tmx").get("path"), FIX + "world/area_0_0.tmx", "area_0_0 path")
+	var w: Node = _new_importer().call("import_world", FIX + "world/test.world")
+	if check(w != null, "import_world returned null"):
+		_to_free.append(w)
+		var a := w.get_node_or_null("area_1_0") as Node2D
+		if is_type(a, "Node2D", "area_1_0"):
+			eq(a.position, Vector2(176, -32), "area_1_0 position")
+			# A single-layer map: its root is the layer (always_wrap_root off)
+			if is_type(a, "TileMapLayer", "area_1_0 root"):
+				check((a as TileMapLayer).get_used_cells().size() > 0, "area_1_0 has no cells")
+	# The same world from a zip archive
+	var zip_path := OUT + "world.zip"
+	var zp := ZIPPacker.new()
+	if not check(zp.open(zip_path) == OK, "cannot write " + zip_path): return done()
+	for f in ["test.world", "hub.tmx", "area_0_0.tmx", "area_1_0.tmx", "area_0_1.tmj", "area_5_5.tmx.bak"]:
+		zp.start_file("w/" + f)
+		zp.write_file(FileAccess.get_file_as_bytes(FIX + "world/" + f))
+		zp.close_file()
+	zp.close()
+	var zipped: Array = wl.call("parse", "w/test.world", zip_path)
+	eq(zipped.map(func(e): return str(e.get("path", ""))), ["w/hub.tmx", "w/area_0_0.tmx", "w/area_0_1.tmj", "w/area_1_0.tmx"], "zip entries")
+	if zipped.size() == 4:
+		eq(zipped[3].get("rect"), Rect2i(176, -32, 160, 128), "zip area_1_0 rect")
+	return done()
+
+
 # ---------------------------------------------------------------------------
 # Zip (keep last: the pre-change runtime leaks zip mode, see _reset_zip_mode)
 

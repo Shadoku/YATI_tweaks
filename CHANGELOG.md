@@ -73,6 +73,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exist. A node method `_tiled_import(info)` is called once the map is built, with the object's id, name, class,
   typed properties, rect and shape. `CustomTypes.get_class_member()` reads a member of a custom class;
   `TilemapCreator.instantiate_scene()` is the one place scenes are instantiated.
+- F3: every imported root (a single-layer one too) has metadata `map_rect` (the map's bounds in pixels: Tiled's
+  map size per orientation, an infinite map's union of chunks), `map_size_tiles`, `tile_size` and `orientation`;
+  `TilemapCreator.get_map_rect()`. `runtime/WorldLoader.gd`: `WorldLoader.parse(world_file, zip_file = "")` reads a
+  Tiled `.world` file into `{path, rect}` entries (explicit `maps`, and `patterns` matched against the world
+  directory's `.tmx`/`.tmj` files, sizes from the maps' headers, cached), from the file system or a zip;
+  `Importer.import_world(world_file, project_file = "")` imports a whole world under one Node2D.
+  `DataLoader.list_files(dir)` lists a directory in either mode.
+- F3, native: `tiled_core::world` (`native/tiled/src/world.rs`): `World::parse` for a world file's own content,
+  `WorldLoader` resolving its patterns through the file-request protocol (the world file, a `ListDir` request for
+  its directory, the matching maps' files; `WorldLoader::from_zip`, `load_world_from_fs`), and `Map::map_rect()` /
+  `tile_rect()` / `pixel_rect()` with the GDScript runtime's formula. `tiled_core` depends on `regex` for the patterns.
 
 ### Changed
 - F1: with the new default `assign_node_properties = true` a custom property named like a property of the created

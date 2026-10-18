@@ -33,6 +33,7 @@ resources from this crate's model on the main thread.
 | `cells.rs` | `CellResolver` (gid → source id, tileset, local id, atlas coords, flips), `GidLookup`, `BlobWriter`, `tile_map_data`, `chunk_blobs`, `layer_blob`, `merge_blobs`, `layer_blobs(_parallel)` |
 | `load.rs` | `Loader`, `Status`, `load_from_fs` |
 | `value.rs` | `Value` (Null, Bool, Int, Float, String, Array, Dict) and the model's dictionaries: `Map/Tileset/Template::to_value()`, `to_json()` |
+| `world.rs` | Tiled world files: `World::parse` (explicit `maps`, `patterns` as written), `WorldLoader` (patterns resolved through the request protocol: the world file, `WorldRequest::ListDir` for its directory, the matching maps; `from_zip`, `run`, `load_world_from_fs`), `WorldMap`, `WorldPattern`; `Map::tile_rect` / `map_rect` / `pixel_rect` (the runtime's `map_rect` metadata) |
 | `path.rs` | `cleanup` (`CommonUtils.cleanup_path` after a `res://`, `user://`, `/` or drive prefix), `resolve`, `base_dir`, `join` |
 | `godot_str.rs` | Godot's `is_valid_int` / `is_valid_float` / `to_int` / `to_float`, which the XML typing needs |
 | `error.rs` | `Error`, `ErrorKind` |
@@ -72,6 +73,37 @@ After `Done`: `map.tileset_slots()` / `map.slot_tileset(slot)` (embedded or exte
 `Arc`), `map.template(reference)`, `map.instantiate(object)` (the template merge of
 `TilemapCreator.create_object`), `map.project()`, `map.images()` (every image reference,
 resolved, for the Godot side to load; the core never reads images), `map.errors()`.
+
+## World files
+
+```rust
+use tiled_core::world::{WorldLoader, WorldRequest, WorldStatus};
+
+let mut loader = WorldLoader::new("res://maps/overworld.world");
+let world = loop {
+    match loader.step() {
+        WorldStatus::NeedFiles => {
+            for request in loader.needs().to_vec() {
+                match request {
+                    WorldRequest::File(path) => match read(&path) {
+                        Some(bytes) => loader.supply(&path, bytes),
+                        None => loader.missing(&path),
+                    },
+                    // the names of the files directly in the directory
+                    WorldRequest::ListDir(dir) => loader.supply_listing(&dir, list(&dir)),
+                }
+            }
+        }
+        WorldStatus::Done(world) => break world,   // world.maps: path + rect (x, y, w, h) px
+        WorldStatus::Failed(errors) => return Err(errors),
+    }
+};
+```
+
+Up to three rounds: the world file; the listing of its directory (only with `patterns`); the files of the maps a
+pattern lists without `mapWidth` / `mapHeight` (parsed for `Map::map_rect`'s size). The result is the GDScript
+`WorldLoader.parse()`'s: explicit maps first, then the pattern matches by file name. The loader does not cache map
+sizes (the GDScript one does): a streamer keeps the `World`.
 
 ## Tests
 

@@ -28,6 +28,7 @@ const CustomTypes := preload("CustomTypes.gd")
 const DataLoader := preload("DataLoader.gd")
 const TilemapCreator := preload("TilemapCreator.gd")
 const PostProcessing := preload("PostProcessing.gd")
+const WorldLoader := preload("WorldLoader.gd")
 
 # Import options: set them on the Importer instance before calling one of the import methods.
 # Use Godot's default texture filter instead of 'nearest' on the created layers.
@@ -87,6 +88,39 @@ func import(source_file: String, project_file: String = ""):
 # The archive is used for this call only, later calls of import() read from the file system again.
 func import_from_zip(zip_file: String, source_file_in_zip: String, project_file_in_zip: String = ""):
 	return _import(source_file_in_zip, project_file_in_zip, zip_file, "")
+
+
+# Imports every map of a Tiled world file (.world, see WorldLoader.parse) into one Node2D named
+# after the world file, each map's root at its position in the world. Meant for small worlds and
+# tests; a streamer uses WorldLoader.parse() and imports the maps it needs with import().
+# Returns null if the world file cannot be read; last_error_count / last_warning_count sum up all maps.
+func import_world(world_file: String, project_file: String = ""):
+	CommonUtils.error_count = 0
+	CommonUtils.warning_count = 0
+	var entries: Array = WorldLoader.parse(world_file)
+	var errors: int = CommonUtils.error_count
+	var warnings: int = CommonUtils.warning_count
+	var root: Node2D = null
+	if errors == 0 or not entries.is_empty():
+		root = Node2D.new()
+		root.name = world_file.get_file().get_basename()
+		for entry in entries:
+			var map = import(entry["path"], project_file)
+			errors += last_error_count
+			warnings += last_warning_count
+			if map == null: continue
+			if map is Node2D or map is Control:
+				map.position = Vector2(entry["rect"].position)
+			root.add_child(map)
+			# Owned by the world root, like the map's own nodes (an instanced scene's keep theirs)
+			for node in map.find_children("*", "", true, false):
+				if node.owner == map:
+					node.owner = root
+			map.owner = root
+	last_error_count = errors if root != null else max(errors, 1)
+	last_warning_count = warnings
+	print("Import of world '" + world_file + "' finished with " + str(last_error_count) + " error(s) and " + str(last_warning_count) + " warning(s).")
+	return root
 
 
 # If you don't need post-processing better remove the methods below and also PostProcessing.gd to minimize useless code in your build

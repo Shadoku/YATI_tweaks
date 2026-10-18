@@ -72,6 +72,8 @@ var _map_height: int = 0
 var _map_tile_width: int = 0
 var _map_tile_height: int = 0
 var _infinite = false
+var _map_rect := Rect2()			# the map's bounds in pixels (F3)
+var _map_size_tiles := Vector2i.ZERO	# the map's size in tiles (an infinite map's: of its chunks' union)
 var _parallax_origin_x: float = 0.0
 var _parallax_origin_y: float = 0.0
 var _background_color = ""
@@ -272,6 +274,11 @@ func get_tileset():
 	return _tileset
 
 
+# The bounds of the last created map in pixels (see get_map_rect_of)
+func get_map_rect() -> Rect2:
+	return _map_rect
+
+
 static func recursively_change_owner(node: Node, new_owner: Node):
 	if node != new_owner:
 		node.owner = new_owner
@@ -322,6 +329,10 @@ func create(source_file: String):
 
 	if _ct != null:
 		_ct.merge_custom_properties(_base_dictionary, "map")
+
+	var tile_rect := get_map_tile_rect(_base_dictionary)
+	_map_size_tiles = tile_rect.size
+	_map_rect = get_pixel_rect(_base_dictionary, tile_rect)
 
 	if _base_dictionary.has("tilesets"):
 		var tilesets = _base_dictionary["tilesets"]
@@ -423,7 +434,7 @@ func create(source_file: String):
 	if _base_node.get_child_count() != 1 or _always_wrap_root:
 		var base = _base_node
 		_base_node = null
-		finish_import()
+		finish_import(base)
 		return base
 
 	# Single child: return it parentless and free the wrapper node
@@ -434,7 +445,7 @@ func create(source_file: String):
 		handle_properties(ret, _base_dictionary["properties"])
 		resolve_object_refs()
 	ret.name = _base_name
-	finish_import()
+	finish_import(ret)
 	_base_node.free()
 	_base_node = null
 	_background = null
@@ -676,6 +687,74 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 			set_layer_class_meta(texture_rect, layer)
 			if layer.has("properties"):
 				handle_properties(texture_rect, layer["properties"])
+
+
+# The map's extent in tiles: (0, 0, width, height) for a finite map; for an infinite map the union
+# of the chunks of every tile layer (also inside groups), Rect2i() when it has none.
+static func get_map_tile_rect(map_dict: Dictionary) -> Rect2i:
+	if not is_true(map_dict.get("infinite", false)):
+		return Rect2i(0, 0, int(map_dict.get("width", 0)), int(map_dict.get("height", 0)))
+	var acc := [false, Rect2i()]
+	add_chunk_rects(map_dict.get("layers", []), acc)
+	return acc[1]
+
+
+static func add_chunk_rects(layers: Array, acc: Array) -> void:
+	for layer in layers:
+		if str(layer.get("type", "tilelayer")) == "tilelayer":
+			for chunk in layer.get("chunks", []):
+				var r := Rect2i(int(chunk.get("x", 0)), int(chunk.get("y", 0)), int(chunk.get("width", 0)), int(chunk.get("height", 0)))
+				acc[1] = r if not acc[0] else acc[1].merge(r)
+				acc[0] = true
+		if layer.has("layers"):
+			add_chunk_rects(layer["layers"], acc)
+
+
+# A rect of tiles (x0, y0, w, h) of a map (its header: orientation, width, height, tile size,
+# hexsidelength, staggeraxis) in pixels, the map's origin where the importer puts it:
+# - orthogonal: (x0 * tw, y0 * th, w * tw, h * th)
+# - isometric: the bounding box of the diamond, ((x0 - y0 - h + H) * tw / 2, (x0 + y0) * th / 2,
+#   (w + h) * tw / 2, (w + h) * th / 2) with H the map's height in tiles (the importer shifts layers
+#   by H * tw / 2, so the finite map's box starts at 0)
+# - staggered and hexagonal: Tiled's map size (HexagonalRenderer::mapSize) of w x h tiles, from the
+#   position of tile (x0, y0)
+# For a finite map (0, 0, width, height) this is Tiled's map size in pixels.
+static func get_pixel_rect(header: Dictionary, r: Rect2i) -> Rect2:
+	var tw := int(header.get("tilewidth", 0))
+	var th := int(header.get("tileheight", 0))
+	var x0 := float(r.position.x)
+	var y0 := float(r.position.y)
+	var w := float(r.size.x)
+	var h := float(r.size.y)
+	match str(header.get("orientation", "orthogonal")):
+		"isometric":
+			var map_h := float(int(header.get("height", 0)))
+			return Rect2((x0 - y0 - h + map_h) * tw / 2.0, (x0 + y0) * th / 2.0, (w + h) * tw / 2.0, (w + h) * th / 2.0)
+		"staggered", "hexagonal":
+			var hexagonal: bool = str(header.get("orientation", "")) == "hexagonal"
+			var stagger_x: bool = str(header.get("staggeraxis", "y")) == "x"
+			var side := int(header.get("hexsidelength", 0)) if hexagonal else 0
+			var tile_w := tw & ~1
+			var tile_h := th & ~1
+			var side_x := side if stagger_x else 0
+			var side_y := 0 if stagger_x else side
+			@warning_ignore("integer_division")
+			var side_offset_x := (tile_w - side_x) / 2
+			@warning_ignore("integer_division")
+			var side_offset_y := (tile_h - side_y) / 2
+			var column_w := side_offset_x + side_x
+			var row_h := side_offset_y + side_y
+			if stagger_x:
+				var height := h * (tile_h + side_y) + (row_h if r.size.x > 1 else 0)
+				return Rect2(x0 * column_w, y0 * (tile_h + side_y), w * column_w + side_offset_x, height)
+			var width := w * (tile_w + side_x) + (column_w if r.size.y > 1 else 0)
+			return Rect2(x0 * (tile_w + side_x), y0 * row_h, width, h * row_h + side_offset_y)
+	return Rect2(x0 * tw, y0 * th, w * tw, h * th)
+
+
+# The bounds of a map (its dictionary) in pixels: get_pixel_rect of get_map_tile_rect
+static func get_map_rect_of(map_dict: Dictionary) -> Rect2:
+	return get_pixel_rect(map_dict, get_map_tile_rect(map_dict))
 
 
 # A layer's modulate: its Tiled tint colour (#RRGGBB or #AARRGGBB) with the layer opacity on its alpha
@@ -2366,9 +2445,14 @@ func register_object_node(obj_id, node: Node, set_id_meta: bool = true, obj: Dic
 		node.set_meta("id", id)
 
 
-# The end of an import: every object node that has a method _tiled_import gets it called (F1),
-# once the tree is complete and object references are resolved; then the per-import node maps go.
-func finish_import() -> void:
+# The end of an import: the root gets the map's bounds as metadata (F3); every object node that
+# has a method _tiled_import gets it called (F1), once the tree is complete and object references
+# are resolved; then the per-import node maps go.
+func finish_import(root: Node) -> void:
+	root.set_meta("map_rect", _map_rect)
+	root.set_meta("map_size_tiles", _map_size_tiles)
+	root.set_meta("tile_size", Vector2i(_map_tile_width, _map_tile_height))
+	root.set_meta("orientation", _map_orientation)
 	var nodes := _object_nodes
 	_object_nodes = []
 	for entry in nodes:

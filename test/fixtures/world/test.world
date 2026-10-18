@@ -1,0 +1,22 @@
+{
+    "maps": [
+        {
+            "fileName": "hub.tmx",
+            "height": 160,
+            "width": 160,
+            "x": -160,
+            "y": 0
+        }
+    ],
+    "onlyShowAdjacentMaps": false,
+    "patterns": [
+        {
+            "multiplierX": 160,
+            "multiplierY": 160,
+            "offsetX": 16,
+            "offsetY": -32,
+            "regexp": "area_(\\d+)_(\\d+)\\.tm[xj]"
+        }
+    ],
+    "type": "world"
+}
