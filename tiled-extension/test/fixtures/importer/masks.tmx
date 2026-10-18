@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- F5: layer-mask properties as ints (a flags enum stored as int saves the bits), as names of a flags
+     enum stored as string (looked up in masks.tiled-project), and as the old "1,3,5-7" numbers. -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="8" height="8" tilewidth="16" tileheight="16" infinite="0" nextlayerid="3" nextobjectid="10">
+ <tileset firstgid="1" name="mask_tiles" tilewidth="16" tileheight="16" tilecount="32" columns="8">
+  <properties>
+   <property name="collision_layer" type="int" propertytype="PhysicsFlags" value="6"/>
+   <property name="collision_mask" propertytype="PhysicsNames" value="World,Pickup"/>
+   <property name="layers" type="int" value="3"/>
+   <property name="light_mask_1" propertytype="PhysicsNames" value="Player"/>
+  </properties>
+  <image source="tiles.png" width="128" height="64"/>
+ </tileset>
+ <layer id="2" name="Ground" width="8" height="8">
+  <properties>
+   <property name="light_mask" type="int" value="9"/>
+  </properties>
+  <data encoding="csv">
+1,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0
+</data>
+ </layer>
+ <objectgroup id="1" name="Things">
+  <object id="1" name="IntMask" class="area" x="0" y="0" width="16" height="16">
+   <properties>
+    <property name="collision_layer" type="int" value="5"/>
+    <property name="collision_mask" type="int" propertytype="PhysicsFlags" value="10"/>
+   </properties>
+  </object>
+  <object id="2" name="EnumMask" class="area" x="32" y="0" width="16" height="16">
+   <properties>
+    <property name="collision_layer" propertytype="PhysicsNames" value="Player,Enemy"/>
+    <property name="collision_mask" propertytype="PhysicsNames" value="World"/>
+    <property name="visibility_layer" propertytype="PhysicsNames" value="Pickup"/>
+   </properties>
+  </object>
+  <object id="3" name="StringMask" class="area" x="64" y="0" width="16" height="16">
+   <properties>
+    <property name="collision_layer" value="1,3"/>
+    <property name="collision_mask" value="2-4"/>
+   </properties>
+  </object>
+  <object id="4" name="Walker" class="characterbody" x="96" y="0" width="16" height="16">
+   <properties>
+    <property name="collision_layer" type="int" value="2"/>
+    <property name="platform_floor_layers" type="int" value="3"/>
+    <property name="platform_wall_layers" propertytype="PhysicsNames" value="Enemy"/>
+   </properties>
+  </object>
+  <object id="5" name="Nav" class="navigation" x="0" y="32" width="32" height="32">
+   <properties>
+    <property name="navigation_layers" type="int" value="2"/>
+    <property name="parsed_collision_mask" type="int" value="12"/>
+   </properties>
+  </object>
+  <object id="6" name="Occ" class="occluder" x="48" y="32" width="16" height="16">
+   <properties>
+    <property name="occluder_light_mask" type="int" value="4"/>
+   </properties>
+  </object>
+ </objectgroup>
+</map>

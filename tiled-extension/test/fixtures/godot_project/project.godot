@@ -1,0 +1,33 @@
+; Engine configuration file.
+; A fixture for tiled-extension's tests: layer names with gaps, an [input] section whose values
+; span lines, and settings the extension ignores.
+
+config_version=5
+
+[application]
+
+config/name="Extension Fixture"
+run/main_scene="res://scenes/enemy.tscn"
+config/features=PackedStringArray("4.7")
+
+[input]
+
+jump={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"keycode":32,"unicode":32,"echo":false,"script":null)
+, "[not a section]"]
+}
+
+[layer_names]
+
+2d_physics/layer_1="World"
+2d_physics/layer_2="Player"
+2d_physics/layer_4="Enemy"
+2d_navigation/layer_1="Ground"
+2d_render/layer_2="Lights"
+3d_physics/layer_1="Ignored3D"
+avoidance/layer_1="IgnoredAvoidance"
+
+[rendering]
+
+textures/canvas_textures/default_texture_filter=0

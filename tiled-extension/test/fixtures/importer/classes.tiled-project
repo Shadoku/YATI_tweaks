@@ -1,0 +1,190 @@
+{
+    "automappingRulesFile": "",
+    "commands": [],
+    "compatibilityVersion": 1100,
+    "extensionsPath": "extensions",
+    "folders": [
+        "."
+    ],
+    "properties": [],
+    "propertyTypes": [
+        {
+            "id": 1,
+            "name": "Faction",
+            "storageType": "string",
+            "type": "enum",
+            "values": [
+                "orcs",
+                "elves"
+            ],
+            "valuesAsFlags": false
+        },
+        {
+            "color": "#ffa0a0a4",
+            "drawFill": true,
+            "id": 2,
+            "members": [
+                {
+                    "name": "hp",
+                    "type": "int",
+                    "value": 1
+                },
+                {
+                    "name": "label",
+                    "type": "string",
+                    "value": ""
+                }
+            ],
+            "name": "Stats",
+            "type": "class",
+            "useAs": [
+                "property"
+            ]
+        },
+        {
+            "color": "#ffa0a0a4",
+            "drawFill": true,
+            "id": 3,
+            "members": [
+                {
+                    "name": "count",
+                    "type": "int",
+                    "value": 1
+                },
+                {
+                    "name": "item",
+                    "type": "string",
+                    "value": ""
+                },
+                {
+                    "name": "stats",
+                    "propertyType": "Stats",
+                    "type": "class",
+                    "value": {
+                        "hp": 3
+                    }
+                }
+            ],
+            "name": "Loot",
+            "type": "class",
+            "useAs": [
+                "property"
+            ]
+        },
+        {
+            "color": "#ffa0a0a4",
+            "drawFill": true,
+            "id": 4,
+            "members": [
+                {
+                    "name": "ambient",
+                    "type": "color",
+                    "value": "#ff202020"
+                },
+                {
+                    "name": "level",
+                    "type": "int",
+                    "value": 1
+                }
+            ],
+            "name": "Room",
+            "type": "class",
+            "useAs": [
+                "map"
+            ]
+        },
+        {
+            "color": "#ffa0a0a4",
+            "drawFill": true,
+            "id": 5,
+            "members": [
+                {
+                    "name": "friction",
+                    "type": "float",
+                    "value": 0.5
+                }
+            ],
+            "name": "Floor",
+            "type": "class",
+            "useAs": [
+                "layer"
+            ]
+        },
+        {
+            "color": "#ffa0a0a4",
+            "drawFill": true,
+            "id": 6,
+            "members": [
+                {
+                    "name": "breakable",
+                    "type": "bool",
+                    "value": true
+                },
+                {
+                    "name": "faction",
+                    "propertyType": "Faction",
+                    "type": "string",
+                    "value": "orcs"
+                },
+                {
+                    "name": "loot",
+                    "propertyType": "Loot",
+                    "type": "class",
+                    "value": {
+                        "item": "coin"
+                    }
+                }
+            ],
+            "name": "Crate",
+            "type": "class",
+            "useAs": [
+                "object"
+            ]
+        },
+        {
+            "color": "#ffa0a0a4",
+            "drawFill": true,
+            "id": 7,
+            "members": [
+                {
+                    "name": "weight",
+                    "type": "float",
+                    "value": 2.5
+                },
+                {
+                    "name": "breakable",
+                    "type": "bool",
+                    "value": false
+                }
+            ],
+            "name": "Crate",
+            "type": "class",
+            "useAs": [
+                "object"
+            ]
+        },
+        {
+            "color": "#ffa0a0a4",
+            "drawFill": true,
+            "id": 8,
+            "members": [
+                {
+                    "name": "cost",
+                    "type": "float",
+                    "value": 1
+                },
+                {
+                    "name": "walkable",
+                    "type": "bool",
+                    "value": true
+                }
+            ],
+            "name": "Terrain",
+            "type": "class",
+            "useAs": [
+                "tile",
+                "tileset"
+            ]
+        }
+    ]
+}
