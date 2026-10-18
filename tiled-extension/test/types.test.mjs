@@ -53,8 +53,14 @@ test("scenes: classes, enums and vectors equal the expected fragment", () => {
 		"res://scenes/decor.tscn: skipped, its root has no script",
 	]);
 	const enemy = built.classes.find((c) => c.name === "Enemy");
-	assert.deepEqual(enemy.skipped.map((s) => s.name), ["extra", "counts", "godot_scene"]);
-	assert.deepEqual(enemy.notes.map((n) => n.split(":")[0]), ["drops", "path_points"]);
+	assert.deepEqual(enemy.skipped.map((s) => s.name + ": " + s.reason), [
+		"drops: Tiled class members cannot be lists",
+		"path_points: Tiled class members cannot be lists",
+		"extra: a Dictionary has no Tiled member type",
+		"counts: a Dictionary has no Tiled member type",
+		"godot_scene: a name the importer never assigns",
+	]);
+	assert.deepEqual(enemy.notes, []);
 });
 
 // One export (a line of GDScript) -> its member, as the README's table says.
@@ -98,8 +104,10 @@ test("export forms -> member types (the README's table)", () => {
 	assert.deepEqual(member("@export_flags_2d_physics var a: int = 3", { knownEnums: { GodotPhysicsLayers: true } }), { name: "a", type: "int", value: 3, propertyType: "GodotPhysicsLayers" });
 	assert.deepEqual(member("@export_flags_2d_physics var a: int = 3"), { name: "a", type: "int", value: 3 });
 	assert.deepEqual(member("@export_flags(\"A\", \"B\") var a: int = 2"), { name: "a", type: "int", value: 2 });
-	assert.deepEqual(member("@export var a: Array[int] = [1]"), { name: "a", type: "string", value: "" });
-	assert.deepEqual(member("@export var a: PackedStringArray"), { name: "a", type: "string", value: "" });
+	assert.equal(member("@export var a: Array[int] = [1]"), "skip: Tiled class members cannot be lists");
+	assert.equal(member("@export var a: Array"), "skip: Tiled class members cannot be lists");
+	assert.equal(member("@export var a = [1, 2]"), "skip: Tiled class members cannot be lists");
+	assert.equal(member("@export var a: PackedStringArray"), "skip: Tiled class members cannot be lists");
 	assert.equal(member("@export var a: Dictionary = {}"), "skip: a Dictionary has no Tiled member type");
 	assert.equal(member("@export var a"), "skip: untyped without a default to infer the type from");
 	assert.equal(member("@export var a: Rect2"), "skip: type Rect2 is neither a known Node nor a Resource class");

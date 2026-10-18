@@ -115,11 +115,14 @@ test("scenes: asks first, makes the classes, reports notes and skips", () => {
 	assert.match(alert, /^Imported 4 scene\(s\) as classes\./);
 	assert.match(alert, /Created: BaseUnit\.Team, Enemy\.Mood, Item\.Kind, Enemy\.gait, Enemy\.heading, Vector2, Vector2i, AreaScene, Boss, Door, Enemy/);
 	assert.match(alert, /Enemy: export 'extra' skipped \(a Dictionary has no Tiled member type\)/);
+	assert.match(alert, /Enemy: export 'drops' skipped \(Tiled class members cannot be lists\)/);
+	assert.match(alert, /Enemy: export 'path_points' skipped \(Tiled class members cannot be lists\)/);
 	assert.match(alert, /res:\/\/scenes\/decor\.tscn: skipped, its root has no script/);
 	const enemy = s.projectJson().propertyTypes.find((t) => t.name === "Enemy");
 	assert.equal(enemy.members.find((m) => m.name === "godot_scene").value, "godot_project/scenes/enemy.tscn");
 	assert.equal(enemy.members.find((m) => m.name === "speed").type, "float");
 	assert.equal(enemy.members.find((m) => m.name === "jump").type, "float");	// 1.0, patched
+	assert.equal(enemy.members.find((m) => m.name === "drops" || m.name === "path_points"), undefined);
 	// No scenes with scripts: nothing asked.
 	const t = make({ properties: configured([{ name: "godot_scenes_dir", type: "string", value: "res://data" }]) });
 	t.fake.trigger(ACTIONS.scenes);

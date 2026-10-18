@@ -297,14 +297,11 @@ export function memberForExport(ex, resolved, ctx, scriptPath) {
 		return { member: { name: name, type: "int", value: mask }, note: "an int: run Sync Godot project first to type it " + layerEnum };
 	}
 
-	// By the variable's type.
-	const arrayMatch = /^(Array(\[.*\])?|Packed[A-Za-z0-9]*Array)$/.exec(type);
-	if (arrayMatch) {
-		return {
-			member: { name: name, type: "string", value: "" },
-			note: "a string: Tiled class members cannot be lists; give an object a list property '" + name + "' instead (the importer skips the string with a warning)",
-		};
-	}
+	// By the variable's type. A list has no member type: a placeholder member would reach every
+	// object of the class and make the importers warn that it does not fit the Array; an object
+	// gives such a property as a list property of its own.
+	if (/^(Array(\[.*\])?|Packed[A-Za-z0-9]*Array)$/.test(type))
+		return { skip: "Tiled class members cannot be lists" };
 	switch (type) {
 	case "int":
 		return { member: { name: name, type: "int", value: lit.kind === "int" ? lit.value : (lit.kind === "float" ? Math.round(lit.value) : 0) } };

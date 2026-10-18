@@ -173,11 +173,6 @@
                 }
             },
             {
-                "name": "drops",
-                "type": "string",
-                "value": ""
-            },
-            {
                 "name": "elements",
                 "type": "int",
                 "value": 0
@@ -275,11 +270,6 @@
                 "name": "outline_color",
                 "type": "color",
                 "value": "#ffff0000"
-            },
-            {
-                "name": "path_points",
-                "type": "string",
-                "value": ""
             },
             {
                 "name": "patrol",
@@ -433,11 +423,6 @@
                 }
             },
             {
-                "name": "drops",
-                "type": "string",
-                "value": ""
-            },
-            {
                 "name": "elements",
                 "type": "int",
                 "value": 0
@@ -535,11 +520,6 @@
                 "name": "outline_color",
                 "type": "color",
                 "value": "#ffff0000"
-            },
-            {
-                "name": "path_points",
-                "type": "string",
-                "value": ""
             },
             {
                 "name": "patrol",

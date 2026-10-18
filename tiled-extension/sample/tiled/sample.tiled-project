@@ -20,7 +20,7 @@
         {
             "name": "yati_generated",
             "type": "string",
-            "value": "{\"Chest\":[\"godot_scene\",\"locked\",\"loot\",\"material\"],\"Chest.material\":[],\"GodotNodeType\":[],\"GodotPhysicsLayers\":[],\"GodotRenderLayers\":[],\"MapRef\":[\"map\",\"object\"],\"Slime\":[\"drops\",\"godot_scene\",\"hits\",\"home\",\"hp\",\"mood\",\"patrol\",\"speed\",\"tint\"],\"Slime.Mood\":[],\"Vector2\":[\"x\",\"y\"]}"
+            "value": "{\"Chest\":[\"godot_scene\",\"locked\",\"loot\",\"material\"],\"Chest.material\":[],\"GodotNodeType\":[],\"GodotPhysicsLayers\":[],\"GodotRenderLayers\":[],\"MapRef\":[\"map\",\"object\"],\"Slime\":[\"godot_scene\",\"hits\",\"home\",\"hp\",\"mood\",\"patrol\",\"speed\",\"tint\"],\"Slime.Mood\":[],\"Vector2\":[\"x\",\"y\"]}"
         }
     ],
     "propertyTypes": [
@@ -176,11 +176,6 @@
             "drawFill": true,
             "id": 9,
             "members": [
-                {
-                    "name": "drops",
-                    "type": "string",
-                    "value": ""
-                },
                 {
                     "name": "godot_scene",
                     "type": "file",
