@@ -164,7 +164,19 @@ What a Tiled object becomes whose class (or `godot_node_type`) is not one of the
   asks for one), a point a Marker2D, a text a Label.
 
 `"instance"` and `"parallax"` are not accepted (a warning, then `"staticbody"`).
-Each unknown class is reported once per import with a warning, whatever `add_class_as_metadata` says.
+Each unknown class is reported once per import with a warning, whatever `add_class_as_metadata` says,
+unless [warn_unknown_classes](#warn_unknown_classes) is off.
+
+### warn_unknown_classes
+
+Type `bool`, default: `true`
+
+Whether an object whose class is no Godot node type is reported: one warning per class name and
+import, counted in `last_warning_count`, naming the fallback used. Turn it off in a game that handles
+its Tiled classes itself (a `Hopper` or `enemy_spawn` object read from the metadata `class` after the
+import): the objects still become [unknown_class_fallback](#unknown_class_fallback)'s node, only the
+warning and its count are skipped. An unknown `godot_node_type` property value is still reported (it
+is a typo, not a class). Both importers have the option.
 
 ### object_refs
 

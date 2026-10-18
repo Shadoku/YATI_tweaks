@@ -108,6 +108,7 @@ var _parallax_scale := Vector2.ONE			# parallax2d mode: product of the enclosing
 var _unknown_class_fallback: String = "staticbody"
 var _unknown_class_type = _godot_type.BODY
 var _reported_unknown_classes: Dictionary = {}	# class names already warned about in this import
+var _warn_unknown_classes: bool = true
 var _object_refs: String = "nodepath"		# object properties: "nodepath", "geometry" or "both"
 var _nodes_by_object_id: Dictionary = {}	# Tiled object id -> the node created for it (this import)
 var _pending_object_refs: Array = []		# object properties waiting for every node to exist (resolve_object_refs)
@@ -240,6 +241,11 @@ func set_unknown_class_fallback(value: String):
 		_unknown_class_fallback = "staticbody"
 		t = _godot_type.BODY
 	_unknown_class_type = t
+
+
+# Warn once per import about each class that is no Godot node type (the fallback applies either way)
+func set_warn_unknown_classes(value: bool):
+	_warn_unknown_classes = value
 
 
 # What an object property becomes: "nodepath" (a NodePath to the target object's node, resolved
@@ -1278,7 +1284,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 		if godot_node_type_prop_found:
 			print_rich("[color=" + WARNING_COLOR +"] -- Unknown " + GODOT_NODE_TYPE_PROPERTY + " '" + godot_node_type_property_string + "'. -> Using '" + _unknown_class_fallback + "'[/color]")
 			CommonUtils.warning_count += 1
-		elif not _reported_unknown_classes.has(class_string):
+		elif _warn_unknown_classes and not _reported_unknown_classes.has(class_string):
 			# Once per class name and import, whatever add_class_as_metadata says
 			_reported_unknown_classes[class_string] = true
 			print_rich("[color=" + WARNING_COLOR +"] -- Class '" + class_string + "' is not a Godot node type -> using '" + _unknown_class_fallback + "'. Set '" + GODOT_NODE_TYPE_PROPERTY + "', map the class to a scene ('class_scenes') or set the option 'unknown_class_fallback' (see Reference).[/color]")

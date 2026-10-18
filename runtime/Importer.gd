@@ -58,6 +58,10 @@ var always_wrap_root: bool = false
 # What an object of a class that is no Godot node type becomes: "staticbody", any other class
 # name of the Reference's mapping table (e.g. "area"), or "node2d" (a Node2D with the shape as metadata).
 var unknown_class_fallback: String = "staticbody"
+# Warn about each class that is no Godot node type (once per class name and import; the warning
+# counts in last_warning_count). Off for a game that handles its Tiled classes itself (reading the
+# metadata "class"): the objects still become unknown_class_fallback's node, without the warning.
+var warn_unknown_classes: bool = true
 # What an object property (a reference to another object) becomes: "nodepath" (a NodePath from the
 # node to the target object's node, or the node itself for a Node-typed property of that name),
 # "geometry" (the target's points, as before 3.1) or "both" (the NodePath, and the geometry as
@@ -181,6 +185,7 @@ func _create(source_file: String, project_file: String, zip_file: String):
 	tilemap_creator.set_always_wrap_root(always_wrap_root)
 	tilemap_creator.set_animation_mode(animation_mode)
 	tilemap_creator.set_unknown_class_fallback(unknown_class_fallback)
+	tilemap_creator.set_warn_unknown_classes(warn_unknown_classes)
 	tilemap_creator.set_object_refs(object_refs)
 	tilemap_creator.set_class_scenes(class_scenes)
 	tilemap_creator.set_read_godot_scene_from_custom_types(read_godot_scene_from_custom_types)

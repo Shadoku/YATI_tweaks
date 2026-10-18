@@ -38,7 +38,7 @@ const NATIVE_CLASS: String = "TiledNative"
 const OPTION_NAMES: Array[String] = [
 	"use_default_filter", "add_class_as_metadata", "add_id_as_metadata", "no_alternative_tiles",
 	"map_wangset_to_terrain", "custom_data_prefix", "save_tileset_to", "parallax_mode",
-	"animation_mode", "always_wrap_root", "unknown_class_fallback", "object_refs", "class_scenes",
+	"animation_mode", "always_wrap_root", "unknown_class_fallback", "warn_unknown_classes", "object_refs", "class_scenes",
 	"read_godot_scene_from_custom_types", "assign_node_properties",
 ]
 
@@ -70,6 +70,10 @@ var always_wrap_root: bool = false
 # What an object of a class that is no Godot node type becomes: "staticbody", any other class
 # name of the Reference's mapping table (e.g. "area"), or "node2d" (a Node2D with the shape as metadata).
 var unknown_class_fallback: String = "staticbody"
+# Warn about each class that is no Godot node type (once per class name and import; the warning
+# counts in last_warning_count). Off for a game that handles its Tiled classes itself (reading the
+# metadata "class"): the objects still become unknown_class_fallback's node, without the warning.
+var warn_unknown_classes: bool = true
 # What an object property (a reference to another object) becomes: "nodepath" (a NodePath from the
 # node to the target object's node, or the node itself for a Node-typed property of that name),
 # "geometry" (the target's points, as before 3.1) or "both" (the NodePath, and the geometry as

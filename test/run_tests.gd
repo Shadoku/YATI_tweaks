@@ -1467,6 +1467,33 @@ func test_new_unknown_class_fallback() -> bool:
 	return done()
 
 
+func test_new_warn_unknown_classes_off() -> bool:
+	# B8's warning names every unknown class once per import, with no way to silence it for a game
+	# that handles its Tiled classes itself (from the metadata). warn_unknown_classes = false skips
+	# the warning and its count; the fallback node is the same.
+	var imp := _new_importer()
+	if not _require_option(imp, "warn_unknown_classes"): return done()
+	eq(imp.get("warn_unknown_classes"), true, "warn_unknown_classes default")
+	var on := _import_with(imp, "unknown_class.tmx")
+	var warned: int = imp.get("last_warning_count")
+	imp.set("warn_unknown_classes", false)
+	var off := _import_with(imp, "unknown_class.tmx")
+	if on == null or off == null: return done()
+	eq(warned, 2, "warnings with the option on (Door and Lever)")
+	eq(imp.get("last_warning_count"), 0, "warnings with the option off")
+	eq(imp.get("last_error_count"), 0, "errors with the option off")
+	var shape := func(root: Node) -> PackedStringArray:
+		var lines: PackedStringArray = []
+		for c in root.find_children("*", "", true, false):
+			lines.append("%s %s %s" % [root.get_path_to(c), c.get_class(), c.get_meta("class", "")])
+		return lines
+	var a: PackedStringArray = shape.call(on)
+	eq(shape.call(off), a, "the same nodes with the option off")
+	check(a.size() > 5, "the fixture's nodes were found (%d)" % a.size())
+	need(off, "FrontDoor (SB)", "StaticBody2D") # the fallback, unchanged
+	return done()
+
+
 func test_new_parallax2d_hierarchy() -> bool:
 	# B6: a layer with a parallax factor was moved out of its group into one ParallaxBackground
 	# (deprecated ParallaxLayer nodes): the group's offset and opacity were lost, factors > 1

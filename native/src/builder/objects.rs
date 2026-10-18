@@ -370,7 +370,8 @@ impl Build<'_> {
                     " -- Unknown godot_node_type '{type_string}'. -> Using '{}'",
                     self.unknown_fallback
                 ));
-            } else if self.reported_unknown.insert(class.clone()) {
+            } else if self.opts.warn_unknown_classes && self.reported_unknown.insert(class.clone())
+            {
                 self.diag.warn(format!(
                     " -- Class '{class}' is not a Godot node type -> using '{}'. Set 'godot_node_type', map the class to a scene ('class_scenes') or set the option 'unknown_class_fallback' (see Reference).",
                     self.unknown_fallback

@@ -37,6 +37,9 @@ F1, F2, F3, F5) and the native importer (`docs/native-importer-plan.md`, stages 
   which keeps no animation; `animation_mode = "atlas"` gives the 3.0 result.
 
 ### Added
+- Importer option `warn_unknown_classes` (default `true`), in both importers: off, an object whose class
+  is no Godot node type becomes `unknown_class_fallback`'s node without B8's warning and its count,
+  for a game that handles its Tiled classes itself (it got one warning per class on every load).
 - B8: importer option `unknown_class_fallback` (default `"staticbody"`, as before): what an object of a
   class that is no Godot node type becomes; `"node2d"` gives a plain Node2D with the shape as metadata
   `shape` (`Rect2` or `PackedVector2Array`) and `size`, any class name of the mapping table that node.

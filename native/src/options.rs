@@ -44,6 +44,10 @@ pub struct TiledImportOptions {
     /// class name of the mapping table, or `node2d`.
     #[var]
     pub unknown_class_fallback: GString,
+    /// Warn once per import about each class that is no Godot node type (off: the fallback
+    /// applies silently, for a game that handles its Tiled classes itself).
+    #[var]
+    pub warn_unknown_classes: bool,
     /// What an object property (a reference to another object) becomes: `nodepath` (a NodePath
     /// from the node to the target object's node, or the node itself for a Node-typed property
     /// of that name), `geometry` (the target's points, as before 3.1) or `both` (the NodePath,
@@ -83,6 +87,7 @@ impl IResource for TiledImportOptions {
             animation_mode: GString::from(d.animation_mode.as_str()),
             always_wrap_root: d.always_wrap_root,
             unknown_class_fallback: GString::from(d.unknown_class_fallback.as_str()),
+            warn_unknown_classes: d.warn_unknown_classes,
             object_refs: GString::from(d.object_refs.as_str()),
             class_scenes: VarDictionary::new(),
             read_godot_scene_from_custom_types: d.read_godot_scene_from_custom_types,
@@ -110,6 +115,7 @@ impl TiledImportOptions {
             animation_mode: self.animation_mode.to_string(),
             always_wrap_root: self.always_wrap_root,
             unknown_class_fallback: self.unknown_class_fallback.to_string(),
+            warn_unknown_classes: self.warn_unknown_classes,
             object_refs: self.object_refs.to_string(),
             // `set_class_scenes`: keys in lower case, both sides as `str()` prints them
             class_scenes: self
@@ -142,6 +148,7 @@ pub struct Options {
     pub animation_mode: String,
     pub always_wrap_root: bool,
     pub unknown_class_fallback: String,
+    pub warn_unknown_classes: bool,
     pub object_refs: String,
     /// `class_scenes`, its keys in lower case, in the dictionary's order.
     pub class_scenes: Vec<(String, String)>,
@@ -175,6 +182,7 @@ impl Default for Options {
             animation_mode: "strip".to_string(),
             always_wrap_root: false,
             unknown_class_fallback: "staticbody".to_string(),
+            warn_unknown_classes: true,
             object_refs: "nodepath".to_string(),
             class_scenes: Vec::new(),
             read_godot_scene_from_custom_types: true,

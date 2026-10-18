@@ -18,7 +18,7 @@ This directory is all a project needs; nothing else of the repository is require
   blend modes, tints; the runtime's options with its defaults, its metadata (`class`, `id`,
   `map_rect`, ...), object references as NodePaths, scenes for classes, node properties from custom
   properties and the `_tiled_import(info)` hook, world files, int and flag-enum masks. The
-  runtime's 103-test suite passes against this facade.
+  runtime's 104-test suite passes against this facade.
 - **4 to 5 times faster.** The benchmark map (320 × 320 cells in 6 layers, 2 720 objects) imports
   in 160 to 200 ms against 670 to 770 ms, most of what is left being the engine's own
   `tile_map_data` assignment and node creation; a small map (60 × 33 cells, 30 objects) in about
@@ -127,6 +127,7 @@ in pixels), `map_size_tiles`, `tile_size` and `orientation`. `WorldLoader.gd`:
 | `animation_mode` | `"strip"` | each animated tile gets an atlas of its frames; `"atlas"`: animate in the tileset's atlas |
 | `always_wrap_root` | `false` | a single-layer map returns a `Node2D` root too (recommended) |
 | `unknown_class_fallback` | `"staticbody"` | what an object of an unknown class becomes (`"area"`, `"node2d"`, ...) |
+| `warn_unknown_classes` | `true` | warn once per import about each unknown class; off for a game that handles its classes itself |
 | `class_scenes` | `{}` | Tiled class (case-insensitive) to a scene path: its objects become instances |
 | `read_godot_scene_from_custom_types` | `true` | a project class's `godot_scene` member maps the class to that scene |
 | `assign_node_properties` | `true` | custom properties named like a node property set it (typed); `_tiled_import(info)` is called |
