@@ -149,13 +149,47 @@ func import_from_zip_async(zip_file: String, source_file_in_zip: String, project
 
 
 # The TileSet cache every Importer shares when share_tilesets is on (a TiledTileSets; null without
-# the native library). Its clear() forgets the TileSets, clear_textures() the per-process texture
-# cache; `exclusive = false` on it shares a TileSet also between trees alive at the same time.
+# the native library): TiledTileSets.shared(), which TiledStreamer uses by default too. Its clear()
+# forgets the TileSets, clear_textures() the per-process texture cache; `exclusive = false` on it
+# shares a TileSet also between trees alive at the same time.
 static func shared_tilesets() -> RefCounted:
 	if _shared_tilesets == null and native_version() != "":
-		_shared_tilesets = ClassDB.instantiate("TiledTileSets")
-		_shared_tilesets.set("exclusive", true)
+		_shared_tilesets = ClassDB.class_call_static(&"TiledTileSets", &"shared")
 	return _shared_tilesets
+
+
+# A TiledStreamer (a Node2D, see README.md, "Streaming") for a map or a world, with this
+# importer's options (`options`: a TiledImportOptions to use instead) and the shared TileSet
+# cache. `map_or_world`: a path to a map (.tmx/.tmj, loaded asynchronously: the streamer starts
+# once it is loaded) or a world (.world), or a TiledMap or TiledWorld. Add it to the tree and
+# set its `follow` (or `window`). Null without the native library or with a world that cannot be read.
+#
+#     var streamer: TiledStreamer = importer.make_streamer("res://maps/overworld.tmx")
+#     streamer.follow = $Player
+#     add_child(streamer)
+func make_streamer(map_or_world: Variant, options: Resource = null, project_file: String = "") -> Node2D:
+	if native_version() == "":
+		printerr("ERROR: yati_native: the native library is not loaded (class " + NATIVE_CLASS + " is missing); build it with tools/build_native.sh or download it with tools/install_native.sh.")
+		return null
+	var source: Variant = map_or_world
+	if map_or_world is String or map_or_world is StringName:
+		var path := String(map_or_world)
+		if path.get_extension().to_lower() == "world":
+			source = ClassDB.instantiate("TiledWorld")
+			if source.call("load", path, "") != OK:
+				return null
+		else:
+			source = ClassDB.instantiate("TiledMap")
+			source.call("load_async", path, project_file)
+	var streamer: Node2D = ClassDB.instantiate("TiledStreamer")
+	streamer.set("options", options if options != null else make_options())
+	streamer.set("tilesets", shared_tilesets() if share_tilesets else ClassDB.instantiate("TiledTileSets"))
+	streamer.set("project_file", project_file)
+	if source is Object and (source as Object).is_class("TiledWorld"):
+		streamer.set("world", source)
+	else:
+		streamer.set("map", source)
+	return streamer
 
 
 # Imports every map of a Tiled world file (.world, see WorldLoader.parse) into one Node2D named

@@ -345,7 +345,7 @@ impl Build<'_> {
 
     /// `resolve_cell`: a raw cell value to (source, atlas, alternative), the tile and
     /// alternative tile created in the TileSet when missing.
-    fn resolve_cell(&mut self, raw: u32) -> Resolved {
+    pub(super) fn resolve_cell(&mut self, raw: u32) -> Resolved {
         let flip_h = raw & FLIPPED_HORIZONTALLY != 0;
         let flip_v = raw & FLIPPED_VERTICALLY != 0;
         let flip_d = raw & FLIPPED_DIAGONALLY != 0;

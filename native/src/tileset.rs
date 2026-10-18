@@ -1608,7 +1608,7 @@ impl TiledTileSets {
     /// `tileset_for` takes them from the cache. Messages are printed when the map's build uses
     /// them, not here.
     #[func]
-    fn build_step(
+    pub(crate) fn build_step(
         &mut self,
         map: Gd<TiledMap>,
         options: Option<Gd<TiledImportOptions>>,
@@ -1645,6 +1645,14 @@ impl TiledTileSets {
             self.store(key, c, &inner, &source);
         }
         true
+    }
+
+    /// The process-wide cache the facade's imports share (`Importer.shared_tilesets()`) and
+    /// streamers use by default: exclusive (a TileSet goes to one live tree at a time), made on
+    /// first use, released when the engine shuts down.
+    #[func]
+    fn shared() -> Gd<TiledTileSets> {
+        Self::shared_instance()
     }
 
     /// Forgets every cached TileSet (and those half created). The TileSets stay alive while
@@ -1694,7 +1702,29 @@ impl TiledTileSets {
     }
 }
 
+thread_local! {
+    static SHARED: std::cell::RefCell<Option<Gd<TiledTileSets>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Releases the shared cache (the extension's shutdown).
+pub(crate) fn clear_shared() {
+    SHARED.with(|s| s.borrow_mut().take());
+}
+
 impl TiledTileSets {
+    /// `shared()` for Rust callers.
+    pub(crate) fn shared_instance() -> Gd<TiledTileSets> {
+        SHARED.with(|s| {
+            s.borrow_mut()
+                .get_or_insert_with(|| {
+                    let mut t = TiledTileSets::new_gd();
+                    t.bind_mut().exclusive = true;
+                    t
+                })
+                .clone()
+        })
+    }
+
     fn params(map: &Map, zip: &str, opts: &Options, template: bool) -> BuildParams {
         let mode = opts.animation_mode.to_lowercase();
         let valid = mode == "strip" || mode == "atlas";
@@ -1844,6 +1874,11 @@ impl TiledTileSets {
             diag.replay(&e.diag);
         }
         built
+    }
+
+    /// The cache key of a map's TileSet: maps with equal keys can share one TileSet.
+    pub(crate) fn map_key(map: &Map, zip: &str, opts: &Options) -> String {
+        Self::key_for(map, &Source::Map, zip, opts).expect("a map has a key")
     }
 
     /// The map's TileSet and registry, built on first use; its messages reported into `diag`.

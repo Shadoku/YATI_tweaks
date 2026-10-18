@@ -141,7 +141,7 @@ impl TiledMap {
     /// GDScript runtime's wording and kept (`get_errors`, `get_warnings`). Returns `OK`, or
     /// `FAILED` when the map could not be loaded at all.
     #[func]
-    fn load(&mut self, path: GString, project_file: GString) -> GdError {
+    pub(crate) fn load(&mut self, path: GString, project_file: GString) -> GdError {
         self.start_fs(path.to_string(), project_file.to_string(), false);
         self.pump()
     }
@@ -168,7 +168,7 @@ impl TiledMap {
     /// Starts loading a map as `load` does, the parse on a worker thread: `poll()` it once per
     /// frame. Returns `OK` (failures show in `poll()`). A load in progress is cancelled first.
     #[func]
-    fn load_async(&mut self, path: GString, project_file: GString) -> GdError {
+    pub(crate) fn load_async(&mut self, path: GString, project_file: GString) -> GdError {
         self.start_fs(path.to_string(), project_file.to_string(), true);
         GdError::OK
     }
@@ -198,7 +198,7 @@ impl TiledMap {
     /// waits for the worker. Emits `loaded` or `failed` when the load ends in this call. Call it
     /// once per frame; after the end it only returns the status.
     #[func]
-    fn poll(&mut self) -> i32 {
+    pub(crate) fn poll(&mut self) -> i32 {
         let before = self.state;
         self.advance();
         let after = self.state;
@@ -220,7 +220,7 @@ impl TiledMap {
     /// The status `poll()` returned last (`READY` after a successful `load`, `FAILED` before
     /// any load).
     #[func]
-    fn get_status(&self) -> i32 {
+    pub(crate) fn get_status(&self) -> i32 {
         self.state.code()
     }
 
@@ -228,7 +228,7 @@ impl TiledMap {
     /// texture requests already made are collected by the engine's next frames. The map stays
     /// unloaded; `poll()` returns `FAILED` from now on, no signal is emitted.
     #[func]
-    fn cancel(&mut self) {
+    pub(crate) fn cancel(&mut self) {
         if matches!(self.state, State::Ready | State::Failed) {
             return;
         }
@@ -627,6 +627,22 @@ impl TiledMap {
     /// The parsed map.
     pub fn inner(&self) -> Option<Arc<Map>> {
         self.map.clone()
+    }
+
+    /// The map's path ("" before a load).
+    pub(crate) fn get_path_str(&self) -> GString {
+        self.get_path()
+    }
+
+    /// The map's tile size (16 × 16 before a load).
+    pub(crate) fn tile_size(&self) -> Vector2i {
+        match &self.map {
+            Some(m) => Vector2i::new(
+                m.tilewidth.unwrap_or(16) as i32,
+                m.tileheight.unwrap_or(16) as i32,
+            ),
+            None => Vector2i::new(16, 16),
+        }
     }
 }
 

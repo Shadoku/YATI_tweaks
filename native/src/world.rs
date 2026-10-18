@@ -94,6 +94,11 @@ impl TiledWorld {
 }
 
 impl TiledWorld {
+    /// The maps' paths and rects (pixels: x, y, width, height).
+    pub(crate) fn map_rects(&self) -> Vec<(String, (i64, i64, i64, i64))> {
+        self.maps.iter().map(|m| (m.path.clone(), m.rect)).collect()
+    }
+
     fn error(&mut self, msg: String) {
         printerr(&[msg.to_variant()]);
         self.errors.push(msg);
