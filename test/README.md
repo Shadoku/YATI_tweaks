@@ -116,7 +116,7 @@ godot --headless -s test/run_tests.gd -- --runtime=res://baseline_runtime
 |---|---|
 | `terrain.tsx` + `tiles.png` | external tileset: custom data (`data_` prefix) and metadata, probability, 3-frame animation, collision objectgroup (rectangle, ellipse, polygon, one-way polygon, `physics_layer=1`), wangset with 2 colours, tileset property |
 | `tilesets.tmx` | external + embedded tileset (margin, spacing, tileoffset) + image collection (one 32x48 tile on a 16x16 map), every flip combination of one tile |
-| `layers.tmx` | opacity, tintcolor, offsets, visible=0, parallax, class, `mode="add"`/`"multiply"`, `no_import`, group layer (tile + object layer), draworder topdown/index, image layers (plain, parallax, repeatx, Parallax2D with repeaty), map property |
+| `layers.tmx` | opacity, tintcolor, offsets, visible=0, parallax (its tests run in `parallax_mode = "legacy"`), class, `mode="add"`/`"multiply"`, `no_import`, group layer (tile + object layer), draworder topdown/index, image layers (plain, parallax, repeatx, Parallax2D with repeaty), map property |
 | `objects.tmx` + `enemy.tx` | every object shape and class mapping, text (bold/italic/wrap/halign), tile objects (flipped, with collision, with tile properties), opacity, visibility, every property type incl. class and object references (top level and inside a group), `godot_group`, `godot_node_type`, template used 3 times with one override, custom type from `custom.tiled-project` |
 | `encodings.tmx` | csv, base64, base64+zlib, base64+gzip, base64+zstd (generated) |
 | `infinite.tmx` | infinite map with csv and base64+zlib chunks (generated) |
@@ -133,3 +133,4 @@ godot --headless -s test/run_tests.gd -- --runtime=res://baseline_runtime
 | `layer_class.tmx` | B7: tile, object, group and image layers with and without a class |
 | `templates.tmx` + `probe_tpl.tx`, `probe_text.tx`, `probe_rect.tx` | B1/B2: template instances that override size, rotation, visibility (tile object and `area` rectangle), their own gid (flipped) and text |
 | `unknown_class.tmx` | B8: objects of unknown classes (two `Door` rectangles with a property, a `Door` polygon, a `Lever` ellipse) and one without a class |
+| `parallax.tmx` | B6: parallax origin, a group (offset, opacity) with a parallax tile layer (factor 1.2) and a repeated parallax image layer, a parallax group holding a parallax layer, a parallax object layer, background colour |

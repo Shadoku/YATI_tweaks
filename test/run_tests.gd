@@ -766,7 +766,8 @@ func test_new_option_save_tileset_to() -> bool:
 # Layers (layers.tmx, background.tmx, legacy_xml.tmx)
 
 func test_layers_root_children() -> bool:
-	var n := _import("layers.tmx")
+	# parallax_mode "legacy": parallax layers in a ParallaxBackground (B6 made "parallax2d" the default)
+	var n := _import("layers.tmx", {"parallax_mode": "legacy"})
 	if n == null: return done()
 	for c in ["Base", "Styled", "Hidden", "AddLayer", "MulLayer", "Group1", "TopDown", "Indexed",
 			"ImgPlain", "ImgRepeat", "ImgPx2D", "layers (PBG)"]:
@@ -796,7 +797,7 @@ func test_layer_attributes() -> bool:
 
 
 func test_layer_parallax() -> bool:
-	var n := _import("layers.tmx")
+	var n := _import("layers.tmx", {"parallax_mode": "legacy"})
 	var l := layer(n, "Parallaxed")
 	if l == null: return done()
 	var pl := l.get_parent()
@@ -850,7 +851,7 @@ func test_new_object_layer_draworder() -> bool:
 
 
 func test_image_layers() -> bool:
-	var n := _import("layers.tmx")
+	var n := _import("layers.tmx", {"parallax_mode": "legacy"})
 	var plain := need(n, "ImgPlain", "TextureRect") as TextureRect
 	if plain:
 		eq(plain.position, Vector2(4, 6), "ImgPlain position")
@@ -874,7 +875,7 @@ func test_image_layers() -> bool:
 func test_bug_parallax_layer_default_factor() -> bool:
 	# Tiled's default parallax factor is 1.0 for an axis that is not set; the ParallaxLayer path
 	# (layer with only parallaxx) uses 0.0, freezing the other axis.
-	var par := need(_import("layers.tmx"), "ImgParallax", "TextureRect")
+	var par := need(_import("layers.tmx", {"parallax_mode": "legacy"}), "ImgParallax", "TextureRect")
 	if par and is_type(par.get_parent(), "ParallaxLayer", "ImgParallax parent"):
 		eq((par.get_parent() as ParallaxLayer).motion_scale.y, 1.0, "ImgParallax motion_scale.y (parallaxy unset)")
 	return done()
@@ -1461,6 +1462,92 @@ func test_new_unknown_class_fallback() -> bool:
 	# Any Godot type name works as fallback
 	var a := _import("unknown_class.tmx", {"unknown_class_fallback": "area"})
 	if a: need(a, "BackDoor (Area)", "Area2D")
+	return done()
+
+
+func test_new_parallax2d_hierarchy() -> bool:
+	# B6: a layer with a parallax factor was moved out of its group into one ParallaxBackground
+	# (deprecated ParallaxLayer nodes): the group's offset and opacity were lost, factors > 1
+	# drew behind everything, the background colour was moved along. parallax_mode "parallax2d"
+	# (the default) wraps the layer in a Parallax2D at its place in the hierarchy.
+	var n := _import("parallax.tmx")
+	if n == null: return done()
+	check(n.find_children("*", "ParallaxBackground", true, false).is_empty(), "a ParallaxBackground was created")
+	check(n.find_children("*", "ParallaxLayer", true, false).is_empty(), "a ParallaxLayer was created")
+	var bg := n.get_node_or_null("Background Color")
+	check(bg is ColorRect, "background colour is not a direct child of the root")
+	var back := n.get_node_or_null("Back") as Node2D
+	if not is_type(back, "Node2D", "Back (root child)"): return done()
+	eq(back.position, Vector2(100, 0), "Back offset")
+	eq(back.modulate.a, 0.5, "Back opacity")
+	var fg_px := back.get_node_or_null("Fg (PX)") as Parallax2D
+	if is_type(fg_px, "Parallax2D", "Back/Fg (PX)"):
+		eq(fg_px.scroll_scale, Vector2(1.2, 1), "Fg scroll_scale")
+		eq(fg_px.scroll_offset, Vector2(40, 20) * (Vector2.ONE - Vector2(1.2, 1)), "Fg scroll_offset (parallax origin)")
+		is_type(fg_px.get_node_or_null("Fg"), "TileMapLayer", "Fg (PX)/Fg")
+	var sky_px := back.get_node_or_null("Sky (PX)") as Parallax2D
+	if is_type(sky_px, "Parallax2D", "Back/Sky (PX)"):
+		eq(sky_px.scroll_scale, Vector2(0.5, 1), "Sky scroll_scale")
+		eq(sky_px.repeat_size, Vector2(64, 0), "Sky repeat_size (image width)")
+		eq(sky_px.repeat_times, 2, "Sky repeat_times")
+		eq(sky_px.scroll_offset, Vector2(20, 0), "Sky scroll_offset")
+		var sky := sky_px.get_node_or_null("Sky") as TextureRect
+		if is_type(sky, "TextureRect", "Sky (PX)/Sky"):
+			check(sky.stretch_mode != TextureRect.STRETCH_TILE, "Sky tiled by the TextureRect as well")
+	# A parallax layer in a parallax group: Tiled multiplies the factors (0.5 * 0.5 = 0.25); a
+	# Parallax2D inside a Parallax2D adds its own scroll, so the inner one gets 1 - 0.5 * (1 - 0.5).
+	var far_px := n.get_node_or_null("Far (PX)") as Parallax2D
+	if is_type(far_px, "Parallax2D", "Far (PX)"):
+		eq(far_px.scroll_scale, Vector2(0.5, 1), "Far scroll_scale")
+		var inner := far_px.get_node_or_null("Far/FarTiles (PX)") as Parallax2D
+		if is_type(inner, "Parallax2D", "Far/FarTiles (PX)"):
+			eq(inner.scroll_scale, Vector2(0.75, 1), "FarTiles scroll_scale (composed)")
+	var clouds_px := n.get_node_or_null("Clouds (PX)") as Parallax2D
+	if is_type(clouds_px, "Parallax2D", "Clouds (PX)"):
+		eq(clouds_px.scroll_scale, Vector2(1, 0.5), "Clouds scroll_scale")
+		is_type(clouds_px.get_node_or_null("Clouds"), "Node2D", "Clouds (PX)/Clouds")
+	# The origin, checked against both engines' formulas. Tiled (MapScene::parallaxOffset, 1.12)
+	# moves a layer by (1 - factor) * (view centre + parallax origin). Parallax2D (4.7,
+	# _update_scroll, follow_viewport on, no repeat) sets its position to
+	# scroll_offset + screen_offset * (1 - scroll_scale), screen_offset being the screen's top-left
+	# corner. So scroll_offset = origin * (1 - factor) gives Tiled's offset with the top-left corner
+	# for the view centre: the layer is in place when the screen's top-left is at -origin. (A
+	# Parallax2D updates only inside the tree, which a test run from SceneTree._init does not have,
+	# so the engine's formula is evaluated here with the imported values.)
+	if fg_px:
+		var origin := Vector2(40, 20)
+		for screen: Vector2 in [-origin, Vector2(60, 30), Vector2(-200, 75)]:
+			var godot_pos := screen + fg_px.scroll_offset - screen * fg_px.scroll_scale
+			var tiled_offset := (Vector2.ONE - Vector2(1.2, 1)) * (screen + origin)
+			eq(godot_pos, tiled_offset, "Fg offset with the screen at %s" % str(screen))
+	# layers.tmx in this mode
+	var l := _import("layers.tmx")
+	if l:
+		check(l.get_node_or_null("layers (PBG)") == null, "layers (PBG) created")
+		var px := l.get_node_or_null("Parallaxed (PX)") as Parallax2D
+		if is_type(px, "Parallax2D", "Parallaxed (PX)"):
+			eq(px.scroll_scale, Vector2(0.5, 0.75), "Parallaxed scroll_scale")
+		var ip := l.get_node_or_null("ImgParallax (PX)") as Parallax2D
+		if is_type(ip, "Parallax2D", "ImgParallax (PX)"):
+			eq(ip.scroll_scale, Vector2(0.5, 1), "ImgParallax scroll_scale (parallaxy unset = 1)")
+	return done()
+
+
+func test_new_parallax_mode_legacy() -> bool:
+	# B6: parallax_mode "legacy" keeps the ParallaxBackground tree of 3.0.
+	var imp := _new_importer()
+	if not _require_option(imp, "parallax_mode"): return done()
+	eq(imp.get("parallax_mode"), "parallax2d", "default parallax_mode")
+	imp.set("parallax_mode", "legacy")
+	var n := _import_with(imp, "parallax.tmx")
+	if n == null: return done()
+	var pbg := n.get_node_or_null("parallax (PBG)")
+	if is_type(pbg, "ParallaxBackground", "parallax (PBG)"):
+		var pl := pbg.get_node_or_null("Fg (PL)") as ParallaxLayer
+		if is_type(pl, "ParallaxLayer", "Fg (PL)"):
+			eq(pl.motion_scale, Vector2(1.2, 1), "Fg motion_scale")
+			is_type(pl.get_node_or_null("Fg"), "TileMapLayer", "Fg (PL)/Fg")
+		is_type(pbg.get_node_or_null("Background Color"), "ColorRect", "background colour in the ParallaxBackground")
 	return done()
 
 

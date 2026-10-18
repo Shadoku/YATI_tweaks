@@ -70,8 +70,8 @@ var _map_height: int = 0
 var _map_tile_width: int = 0
 var _map_tile_height: int = 0
 var _infinite = false
-var _parallax_origin_x: int = 0
-var _parallax_origin_y: int = 0
+var _parallax_origin_x: float = 0.0
+var _parallax_origin_y: float = 0.0
 var _background_color = ""
 
 var _tilemap_layer = null
@@ -97,6 +97,8 @@ var _dont_use_alternative_tiles = false
 var _custom_data_prefix: String = ""
 var _tileset_save_path: String = ""
 var _object_groups
+var _parallax_mode: String = "parallax2d"
+var _parallax_scale := Vector2.ONE			# parallax2d mode: product of the enclosing groups' parallax factors
 var _unknown_class_fallback: String = "staticbody"
 var _unknown_class_type = _godot_type.BODY
 var _reported_unknown_classes: Dictionary = {}	# class names already warned about in this import
@@ -191,6 +193,16 @@ func set_save_tileset_to(path: String):
 	_tileset_save_path = path
 
 
+# How layers with a parallax factor are created: "parallax2d" (a Parallax2D at the layer's place)
+# or "legacy" (ParallaxLayers in one ParallaxBackground, as in 3.0)
+func set_parallax_mode(value: String):
+	_parallax_mode = value.to_lower()
+	if _parallax_mode != "parallax2d" and _parallax_mode != "legacy":
+		print_rich("[color=" + WARNING_COLOR + "] -- Option parallax_mode '" + value + "' is not supported. -> Using 'parallax2d'[/color]")
+		CommonUtils.warning_count += 1
+		_parallax_mode = "parallax2d"
+
+
 # What objects of an unknown class become: a GODOT_TYPE_MAP key (except instance/parallax) or "node2d"
 func set_unknown_class_fallback(value: String):
 	_unknown_class_fallback = value.to_lower()
@@ -225,6 +237,7 @@ func reset_import_state() -> void:
 	_tileset = null
 	_background = null
 	_parallax_layer_existing = false
+	_parallax_scale = Vector2.ONE
 	_atlas_index_cache.clear()
 	_first_gid_index_cache.clear()
 	_cell_cache.clear()
@@ -249,8 +262,8 @@ func create(source_file: String):
 	_map_tile_width = _base_dictionary.get("tilewidth", 0)
 	_map_tile_height = _base_dictionary.get("tileheight", 0)
 	_infinite = _base_dictionary.get("infinite", false)
-	_parallax_origin_x = _base_dictionary.get("parallaxoriginx", 0)
-	_parallax_origin_y = _base_dictionary.get("parallaxoriginy", 0)
+	_parallax_origin_x = float(_base_dictionary.get("parallaxoriginx", 0.0))
+	_parallax_origin_y = float(_base_dictionary.get("parallaxoriginy", 0.0))
 	_background_color = _base_dictionary.get("backgroundcolor", "")
 
 	if _ct != null:
@@ -300,10 +313,12 @@ func create(source_file: String):
 	_base_node = Node2D.new()
 	_base_name = source_file.get_file().get_basename()
 	_base_node.name = _base_name
-	_parallax_background = ParallaxBackground.new()
-	_base_node.add_child(_parallax_background)
-	_parallax_background.name = _base_name + " (PBG)"
-	_parallax_background.owner = _base_node
+	_parallax_background = null
+	if _parallax_mode == "legacy":
+		_parallax_background = ParallaxBackground.new()
+		_base_node.add_child(_parallax_background)
+		_parallax_background.name = _base_name + " (PBG)"
+		_parallax_background.owner = _base_node
 	if _background_color != "":
 		_background = ColorRect.new()
 		_background.color = CommonUtils.tiled_color(_background_color)
@@ -331,7 +346,7 @@ func create(source_file: String):
 	if _base_dictionary.has("properties"):
 		handle_properties(_base_node, _base_dictionary["properties"])
 
-	if _parallax_background.get_child_count() == 0:
+	if _parallax_background != null and _parallax_background.get_child_count() == 0:
 		_base_node.remove_child(_parallax_background)
 		# Nothing is inside a scene tree yet, so free immediately
 		_parallax_background.free()
@@ -394,7 +409,6 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 		if layer_opacity < 1.0 or tint_color != "#ffffff":
 			_tilemap_layer.modulate = layer_color(tint_color, layer_opacity)
 		_tilemap_layer.tile_set = _tileset
-		# Leave the old handling for the time being
 		handle_parallaxes(parent, _tilemap_layer, layer)
 		if _map_orientation == "isometric" or _map_orientation == "staggered":
 			_tilemap_layer.y_sort_enabled = true
@@ -436,13 +450,14 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 			layer_node = Parallax2D.new()
 			parent.add_child(layer_node)
 			layer_node.owner = _base_node
-			if layer.has("parallaxx") or layer.has("parallaxy"):
+			if _parallax_mode != "legacy":
+				configure_parallax2d(layer_node, layer)
+			elif layer.has("parallaxx") or layer.has("parallaxy"):
 				var par_x = layer.get("parallaxx", 1.0)
 				var par_y = layer.get("parallaxy", 1.0)
 				layer_node.scroll_scale = Vector2(par_x, par_y)
 		else:
 			layer_node = Node2D.new()
-			# Leave the old handling for the time being
 			handle_parallaxes(parent, layer_node, layer)
 		
 		if "name" in layer:
@@ -453,6 +468,9 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 		var layer_pos_x = layer.get("x", 0.0)
 		var layer_pos_y = layer.get("y", 0.0)
 		layer_node.position = Vector2(layer_pos_x + layer_offset_x, layer_pos_y + layer_offset_y)
+		if layer_node is Parallax2D and _parallax_mode != "legacy":
+			# A Parallax2D sets its own position, so the layer offset goes into its scroll_offset
+			layer_node.scroll_offset += layer_node.position
 		if not _use_default_filter:
 			layer_node.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		# Tiled's default draw order "topdown" sorts objects by y, "index" keeps the object order
@@ -477,13 +495,14 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 			group_node = Parallax2D.new()
 			parent.add_child(group_node)
 			group_node.owner = _base_node
-			if layer.has("parallaxx") or layer.has("parallaxy"):
+			if _parallax_mode != "legacy":
+				configure_parallax2d(group_node, layer)
+			elif layer.has("parallaxx") or layer.has("parallaxy"):
 				var par_x = layer.get("parallaxx", 1.0)
 				var par_y = layer.get("parallaxy", 1.0)
 				group_node.scroll_scale = Vector2(par_x, par_y)
 		else:
 			group_node = Node2D.new()
-			# Leave the old handling for the time being
 			handle_parallaxes(parent, group_node, layer)
 
 		group_node.name = layer.get("name", "group")
@@ -493,11 +512,18 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 		var layer_pos_x = layer.get("x", 0.0)
 		var layer_pos_y = layer.get("y", 0.0)
 		group_node.position = Vector2(layer_pos_x + layer_offset_x, layer_pos_y + layer_offset_y)
+		if group_node is Parallax2D and _parallax_mode != "legacy":
+			group_node.scroll_offset += group_node.position
 		apply_blend_mode(group_node, layer)
 
+		# Tiled multiplies the parallax factors of nested layers (see configure_parallax2d)
+		var enclosing_parallax_scale := _parallax_scale
+		if _parallax_mode != "legacy":
+			_parallax_scale *= get_parallax_factor(layer)
 		if layer.has("layers"):
 			for child_layer in layer["layers"]:
 				handle_layer(child_layer, group_node)
+		_parallax_scale = enclosing_parallax_scale
 
 		# A material on a plain Node2D does not affect its children: make the group's
 		# blend mode reach every descendant that has no material of its own.
@@ -516,7 +542,9 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 			parent.add_child(px_2d)
 			px_2d.owner = _base_node
 			px_2d.name = layer.get("name", "parallax")
-			if layer.has("parallaxx") or layer.has("parallaxy"):
+			if _parallax_mode != "legacy":
+				configure_parallax2d(px_2d, layer)
+			elif layer.has("parallaxx") or layer.has("parallaxy"):
 				var par_x = layer.get("parallaxx", 1.0)
 				var par_y = layer.get("parallaxy", 1.0)
 				px_2d.scroll_scale = Vector2(par_x, par_y)
@@ -564,7 +592,7 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 			texture_rect.texture = DataLoader.load_image(layer["image"], _base_path)
 			apply_blend_mode(texture_rect, layer)
 
-			# Repeated image (only if not handled by a ParallaxLayer's motion_mirroring)
+			# Repeated image (only if not handled by a ParallaxLayer's motion_mirroring or a Parallax2D's repeat_size)
 			if not layer.has("parallaxx") and not layer.has("parallaxy"):
 				var repeat_x: bool = int(layer.get("repeatx", 0)) == 1 and imagewidth > 0
 				var repeat_y: bool = int(layer.get("repeaty", 0)) == 1 and imageheight > 0
@@ -620,8 +648,41 @@ func apply_blend_mode(node: CanvasItem, layer: Dictionary) -> void:
 		print_rich("[color=" + WARNING_COLOR + "] -- Blend mode '" + mode + "' of layer '" + str(layer.get("name", "")) + "' is not supported. -> Ignored[/color]")
 		CommonUtils.warning_count += 1
 
+# Tiled's parallax factor of a layer (1.0 for an axis that is not set)
+static func get_parallax_factor(layer_dict: Dictionary) -> Vector2:
+	return Vector2(float(layer_dict.get("parallaxx", 1.0)), float(layer_dict.get("parallaxy", 1.0)))
+
+
+# Sets up a Parallax2D (parallax2d mode) for a layer: scroll scale, the map's parallax origin, repeat.
+# - Tiled multiplies a layer's factor with those of its parallax groups, while a Parallax2D inside a
+#   Parallax2D adds its own scrolling to its parent's: for the effective factor F * f (F of the
+#   enclosing groups) the nested node scrolls with 1 - F * (1 - f).
+# - Tiled moves a layer by (1 - factor) * (view centre + parallax origin); Parallax2D moves itself by
+#   scroll_offset + (1 - scroll_scale) * screen_offset (the screen's top-left corner). So
+#   scroll_offset = origin * (1 - scroll_scale): the same offset with the top-left corner for the centre.
+func configure_parallax2d(px: Parallax2D, layer_dict: Dictionary) -> void:
+	var scale := Vector2.ONE - _parallax_scale * (Vector2.ONE - get_parallax_factor(layer_dict))
+	px.scroll_scale = scale
+	px.scroll_offset = Vector2(_parallax_origin_x, _parallax_origin_y) * (Vector2.ONE - scale)
+	if int(layer_dict.get("repeatx", 0)) == 1 and int(layer_dict.get("imagewidth", 0)) > 0:
+		px.repeat_size.x = float(layer_dict["imagewidth"])
+		px.repeat_times = 2
+	if int(layer_dict.get("repeaty", 0)) == 1 and int(layer_dict.get("imageheight", 0)) > 0:
+		px.repeat_size.y = float(layer_dict["imageheight"])
+		px.repeat_times = 2
+
+
 func handle_parallaxes(parent: Node, layer_node: Node, layer_dict: Dictionary):
-	if layer_dict.has("parallaxx") or layer_dict.has("parallaxy"):
+	if (layer_dict.has("parallaxx") or layer_dict.has("parallaxy")) and _parallax_mode != "legacy":
+		# The layer stays at its place in the hierarchy, wrapped in a Parallax2D
+		var px := Parallax2D.new()
+		var px_name := str(layer_dict.get("name", ""))
+		px.name = px_name + " (PX)" if px_name != "" else "Parallax2D"
+		configure_parallax2d(px, layer_dict)
+		parent.add_child(px)
+		px.owner = _base_node
+		px.add_child(layer_node)
+	elif layer_dict.has("parallaxx") or layer_dict.has("parallaxy"):
 		if not _parallax_layer_existing:
 			if _background != null:
 				_background.owner = null

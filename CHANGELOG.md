@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - B8: importer option `unknown_class_fallback` (default `"staticbody"`, as before): what an object of a
   class that is no Godot node type becomes; `"node2d"` gives a plain Node2D with the shape as metadata
   `shape` (`Rect2` or `PackedVector2Array`) and `size`, any class name of the mapping table that node.
+- B6: importer option `parallax_mode`: `"parallax2d"` (the default) wraps a layer with a parallax factor
+  in a `Parallax2D` at its place in the hierarchy, its `scroll_offset` derived from the map's parallax
+  origin (`parallaxoriginx` / `parallaxoriginy`, unused until now) and factors of nested parallax groups
+  multiplied as in Tiled; `"legacy"` keeps the ParallaxBackground of 3.0.
 
 ### Changed
 - `test/run_tests.gd` checks that a runtime has `DataLoader.gd` / `CommonUtils.gd` before loading them,
@@ -43,6 +47,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - B8: an object of an unknown class is reported with a warning once per class name and import,
   whatever `add_class_as_metadata` says (it was silent with the option on, the default, so a `Door`
   became a solid StaticBody2D unnoticed); the warning names the fallback used.
+- B6: with the new default `parallax_mode = "parallax2d"` a map with parallax layers gives a different
+  tree: no `<map> (PBG)` ParallaxBackground and `(PL)` ParallaxLayers, but a `<layer> (PX)` Parallax2D
+  around each parallax layer where the layer is, and the background colour stays a child of the root.
+  Set `parallax_mode = "legacy"` for the 3.0 tree. Layers of class `parallax` take the parallax origin
+  and their offset into `scroll_offset`.
 
 ### Fixed
 - B5 (`docs/runtime-improvement-plan.md`): the Area2D gravity properties were misspelt in
@@ -71,6 +80,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `class`, `type`, `name` and `opacity` were taken over): a 32x32 instance of a 16x16 template, rotated
   45°, imported as 16x16 at 0°. Every attribute saved on the instance now overrides the template's, as
   the TMX spec says.
+- B6: a layer with a parallax factor was pulled out of its group into one ParallaxBackground (a
+  CanvasLayer at -100): its groups' offset, opacity and visibility were lost, a foreground factor > 1
+  drew behind everything, and the map background colour was moved along (fixed by the new default
+  `parallax_mode`).
 
 ## [3.0.0] — runtime-only fork (2026-10-17)
 
