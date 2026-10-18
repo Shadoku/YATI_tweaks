@@ -1,0 +1,59 @@
+name: CI
+
+# Builds the native importer (native/, a Rust GDExtension) for linux x86_64, loads it in the
+# Godot of .godot-version, and runs the test suite: the GDScript runtime (runtime/) must pass
+# it; the native importer's facade (addons/yati_native/) runs it for information until it
+# imports maps (docs/native-importer-plan.md, stage 2). The platform libraries that get
+# committed and published are native.yml's job, not this one's.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Godot
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/godot
+          key: godot-${{ runner.os }}-${{ hashFiles('.godot-version') }}
+
+      - name: Install Godot
+        run: |
+          set -euo pipefail
+          GODOT="$(bash tools/install_godot.sh | tail -n 1)"
+          echo "GODOT=$GODOT" >> "$GITHUB_ENV"
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and native/target/
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native -> target
+
+      - name: Build the native importer
+        run: bash tools/build_native.sh
+
+      # Godot loads a GDExtension at startup only when .godot/extension_list.cfg names it
+      # (and a fresh .godot/'s first import that discovers one mid-scan aborts at shutdown);
+      # test/run_all.sh seeds the same file.
+      - name: Load the native importer in Godot
+        run: |
+          set -euo pipefail
+          mkdir -p .godot
+          echo "res://addons/yati_native/yati_native.gdextension" > .godot/extension_list.cfg
+          "$GODOT" --headless --path . -s tools/smoke_native.gd
+
+      - name: Test the GDScript runtime (smoke test, test suite, benchmark)
+        run: sh test/run_all.sh --runtime=res://runtime
+
+      # Informational until stage 2 of docs/native-importer-plan.md (the one-shot builder and
+      # the facade): its gate makes this step required, so drop continue-on-error there.
+      - name: Test the native importer's facade (informational until stage 2)
+        continue-on-error: true
+        run: '"$GODOT" --headless -s test/run_tests.gd -- --runtime=res://addons/yati_native'
