@@ -16,6 +16,16 @@ pub(crate) struct PendingRef {
     pub what: RefKind,
 }
 
+impl PendingRef {
+    /// The object ids the reference names.
+    pub fn targets(&self) -> Vec<i64> {
+        match &self.what {
+            RefKind::Single(id) => vec![*id],
+            RefKind::List { refs, .. } => refs.iter().map(|r| r.2).collect(),
+        }
+    }
+}
+
 pub(crate) enum RefKind {
     /// An `object` property: the target's id.
     Single(i64),
@@ -59,24 +69,30 @@ impl Build<'_> {
     /// complete, so `get_path_to` works. A property of the node of the same name takes it.
     pub(super) fn resolve_object_refs(&mut self) {
         let pending = std::mem::take(&mut self.pending_refs);
-        for r in pending {
-            if !r.node.is_instance_valid() {
-                continue;
+        for r in &pending {
+            self.resolve_ref(r);
+        }
+    }
+
+    /// One pending reference resolved with the nodes that exist now (again, for a streamer's,
+    /// whenever its targets come or go).
+    pub(super) fn resolve_ref(&mut self, r: &PendingRef) {
+        if !r.node.is_instance_valid() {
+            return;
+        }
+        let mut node = r.node.clone();
+        match &r.what {
+            RefKind::List { list, refs } => {
+                for (arr, i, id) in refs {
+                    let path = self.ref_path(&node, &r.name, *id);
+                    arr.clone().set(*i, &path.to_variant());
+                }
+                self.assign_list_ref(&mut node, &r.name, list.clone());
             }
-            let mut node = r.node;
-            match r.what {
-                RefKind::List { list, refs } => {
-                    for (mut arr, i, id) in refs {
-                        let path = self.ref_path(&node, &r.name, id);
-                        arr.set(i, &path.to_variant());
-                    }
-                    self.assign_list_ref(&mut node, &r.name, list);
-                }
-                RefKind::Single(id) => {
-                    let path = self.ref_path(&node, &r.name, id);
-                    let target = self.nodes_by_id.get(&id).cloned();
-                    self.assign_object_ref(&mut node, &r.name, path, target);
-                }
+            RefKind::Single(id) => {
+                let path = self.ref_path(&node, &r.name, *id);
+                let target = self.object_node(*id);
+                self.assign_object_ref(&mut node, &r.name, path, target);
             }
         }
     }
@@ -97,6 +113,8 @@ impl Build<'_> {
     fn ref_path(&mut self, node: &Gd<Node>, name: &str, id: i64) -> NodePath {
         match self.object_node(id) {
             Some(t) => node.get_path_to(&t),
+            // A streamer's target may simply not be spawned yet: resolved when it is
+            None if self.skel.is_some() => NodePath::default(),
             None => {
                 let what = if id == 0 {
                     "is not set".to_string()

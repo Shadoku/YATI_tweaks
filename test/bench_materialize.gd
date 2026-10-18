@@ -21,7 +21,9 @@ extends SceneTree
 ##   chunk layer a separate 64×64 TileMapLayer per chunk, one added per frame
 ##
 ## User args (after "--"): --size=N (the layer is N×N cells, default 320), --fill=F
-## (default 0.85), --no-collision (skip the second variant).
+## (default 0.85), --no-collision (skip the second variant), --ysort (the layers y-sorted, as
+## an isometric or staggered map's are: the engine then draws every cell as its own canvas
+## item instead of in rendering quadrants).
 
 const SOURCE_ID := 7
 const CHUNK := 16
@@ -29,6 +31,7 @@ const CHUNK := 16
 var size := 320
 var fill := 0.85
 var with_collision := true
+var ysort := false
 
 
 func _init() -> void:
@@ -39,11 +42,13 @@ func _init() -> void:
 			fill = clampf(float(arg.substr(7)), 0.0, 1.0)
 		elif arg == "--no-collision":
 			with_collision = false
+		elif arg == "--ysort":
+			ysort = true
 	call_deferred("run")
 
 
 func run() -> void:
-	print("bench_materialize: %dx%d cells at %.0f%% fill, %s, Godot %s" % [size, size, fill * 100.0,
+	print("bench_materialize: %dx%d cells at %.0f%% fill%s, %s, Godot %s" % [size, size, fill * 100.0, ", y-sorted" if ysort else "",
 		"headless (no rendering quadrants)" if DisplayServer.get_name() == "headless" else DisplayServer.get_name() + " + " + str(RenderingServer.get_current_rendering_driver_name()),
 		Engine.get_version_info()["string"]])
 	var variants: Array[bool] = [false]
@@ -60,11 +65,13 @@ func run() -> void:
 		var bytes := bytes_for(cells)
 		var layer := TileMapLayer.new()
 		layer.tile_set = ts
+		layer.y_sort_enabled = ysort
 		var t0 := Time.get_ticks_usec()
 		layer.tile_map_data = bytes
 		var t1 := Time.get_ticks_usec()
 		var by_cell := TileMapLayer.new()
 		by_cell.tile_set = ts
+		by_cell.y_sort_enabled = ysort
 		var t2 := Time.get_ticks_usec()
 		for c in cells:
 			by_cell.set_cell(Vector2i(c.x, c.y), SOURCE_ID, Vector2i(c.z % 8, c.z / 8), 0)
@@ -114,6 +121,7 @@ func run() -> void:
 				var ta := Time.get_ticks_usec()
 				var chunk_layer := TileMapLayer.new()
 				chunk_layer.tile_set = ts
+				chunk_layer.y_sort_enabled = ysort
 				chunk_layer.tile_map_data = b
 				holder.add_child(chunk_layer)
 				var tb := Time.get_ticks_usec()

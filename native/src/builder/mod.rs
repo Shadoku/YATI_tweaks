@@ -9,6 +9,7 @@ mod cells;
 mod nodeprops;
 mod objects;
 mod refs;
+pub(crate) mod stream;
 
 use crate::diag::Diag;
 use crate::dynobj::{get_vec, set};
@@ -84,12 +85,41 @@ fn layer_class(l: &Layer) -> String {
     l.class.clone().unwrap_or_default()
 }
 
-/// One build: the port of `TilemapCreator.create` and the state it keeps.
-pub(crate) struct Build<'m> {
-    map: &'m Map,
+/// Declares [`Build`] and [`Suspended`] with one field list: a build borrows its map and
+/// TileSet cache for one call, everything else it owns, so a streamer can suspend a build
+/// between frames (its owned state moved into a `Suspended`) and resume it on the same map.
+macro_rules! build_state {
+    ($($(#[$m:meta])* $v:vis $f:ident : $t:ty,)*) => {
+        /// One build: the port of `TilemapCreator.create` and the state it keeps.
+        pub(crate) struct Build<'m> {
+            map: &'m Map,
+            tilesets: &'m mut TiledTileSets,
+            objects_by_id: Option<HashMap<i64, &'m Object>>,
+            $($(#[$m])* $v $f: $t,)*
+        }
+
+        /// A [`Build`]'s owned state between two calls (`Build::suspend`, `Build::resume`).
+        pub(crate) struct Suspended {
+            $($f: $t,)*
+        }
+
+        impl<'m> Build<'m> {
+            /// The build's owned state, the borrows released.
+            pub(crate) fn suspend(self) -> Suspended {
+                Suspended { $($f: self.$f,)* }
+            }
+
+            /// A suspended build resumed on its map (the same one) and a TileSet cache.
+            pub(crate) fn resume(map: &'m Map, tilesets: &'m mut TiledTileSets, s: Suspended) -> Self {
+                Build { map, tilesets, objects_by_id: None, $($f: s.$f,)* }
+            }
+        }
+    };
+}
+
+build_state! {
     json: bool,
     zip: String,
-    tilesets: &'m mut TiledTileSets,
     pub diag: Diag,
     opts: Options,
     parallax_mode: String,
@@ -117,7 +147,6 @@ pub(crate) struct Build<'m> {
     parallax_scale: Vector2,
     iso: Option<(f64, f64, Vector2)>,
     cells: cells::Cells,
-    objects_by_id: Option<HashMap<i64, &'m Object>>,
     atlas_index_cache: HashMap<u32, i32>,
     cell_cache: HashMap<u32, Option<[i16; 4]>>,
     /// `object_refs`, validated: `nodepath`, `geometry` or `both` (F2).
@@ -136,6 +165,12 @@ pub(crate) struct Build<'m> {
     /// `get_assignable_properties`' cache of scripted nodes: class -> script id -> properties
     /// by name.
     prop_info: HashMap<String, HashMap<i64, Rc<assign::PropInfos>>>,
+    /// A streamer's build: tile layers are left empty and object layers without objects, both
+    /// recorded here (`stream::Skeleton`); `None` for a one-shot build.
+    skel: Option<stream::Skeleton>,
+    /// Object references of a streamer's objects: kept and resolved again whenever their
+    /// targets come or go; a missing target is an empty path without a warning.
+    stream_refs: Vec<refs::PendingRef>,
 }
 
 impl<'m> Build<'m> {
@@ -228,6 +263,8 @@ impl<'m> Build<'m> {
             hooks: Vec::new(),
             scripts_set: 0,
             prop_info: HashMap::new(),
+            skel: None,
+            stream_refs: Vec::new(),
             opts,
         }
     }
@@ -358,6 +395,14 @@ impl<'m> Build<'m> {
     /// that has a method `_tiled_import` gets it called (F1), once the tree is complete and
     /// object references are resolved; then the per-import node maps go.
     fn finish_import(&mut self, root: &mut Gd<Node>) {
+        self.root_metadata(root);
+        self.call_import_hooks();
+        self.nodes_by_id.clear();
+        self.prop_info.clear();
+    }
+
+    /// The map's bounds and tile geometry as metadata of the root (F3).
+    fn root_metadata(&mut self, root: &mut Gd<Node>) {
         let map = self.map;
         let (tx, ty, tw, th) = map.tile_rect();
         let (x, y, w, h) = map.pixel_rect((tx, ty, tw, th));
@@ -378,9 +423,6 @@ impl<'m> Build<'m> {
             &Vector2i::new(self.tile_w as i32, self.tile_h as i32).to_variant(),
         );
         root.set_meta("orientation", &self.orientation.to_variant());
-        self.call_import_hooks();
-        self.nodes_by_id.clear();
-        self.prop_info.clear();
     }
 
     fn layer_props(&self, l: &Layer) -> Option<Vec<GProp>> {
@@ -439,7 +481,10 @@ impl<'m> Build<'m> {
                 }
                 self.apply_blend_mode(&mut tml.clone().upcast(), l);
                 self.texture_filter(&mut tml);
-                self.fill_layer(l, &mut tml);
+                match &mut self.skel {
+                    Some(skel) => skel.tile_layers.push((stream::layer_key(l), tml.clone())),
+                    None => self.fill_layer(l, &mut tml),
+                }
                 self.set_layer_class_meta(&mut tml, l);
                 let id = l.id.unwrap_or(0);
                 if self.opts.add_id_as_metadata && id != 0 {
@@ -484,10 +529,17 @@ impl<'m> Build<'m> {
                 }
                 self.apply_blend_mode(&mut layer_node.clone().upcast(), l);
                 let parent_node: Gd<Node> = layer_node.clone().upcast();
-                for obj in l.objects.iter().flatten() {
-                    let o = self.map_object(obj);
-                    let ts = self.built.clone();
-                    self.handle_object(o, &parent_node, &ts, Vector2::ZERO);
+                match &mut self.skel {
+                    Some(skel) => skel
+                        .object_layers
+                        .push((stream::layer_key(l), layer_node.clone())),
+                    None => {
+                        for obj in l.objects.iter().flatten() {
+                            let o = self.map_object(obj);
+                            let ts = self.built.clone();
+                            self.handle_object(o, &parent_node, &ts, Vector2::ZERO);
+                        }
+                    }
                 }
                 self.set_layer_class_meta(&mut layer_node, l);
                 if let Some(p) = &props {

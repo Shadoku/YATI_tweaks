@@ -28,15 +28,17 @@ it names the native importer's GDExtension in `.godot/extension_list.cfg` when t
 is in place (Godot loads an extension only when that file names it, and a fresh `.godot/`'s first import
 that discovers one mid-scan aborts at shutdown with exit code 134 on Godot 4.7.2), imports the project
 (the fixtures' images are imported textures, so a fresh clone needs it), runs the native smoke test,
-then the tests, the benchmark and, with the library, `test/test_async.gd` (below). Without the
-library the smoke test and the async test are skipped, unless the runtime under test is the native one.
+then the tests, the benchmark and, with the library, `test/test_async.gd` and `test/test_stream.gd`
+(below). Without the library the smoke test and those two are skipped, unless the runtime under test
+is the native one.
 
 ```sh
 # 4. What the engine itself charges for a map's tile layers (no importer involved): assigning
 #    tile_map_data, instantiating a packed layer, the frame after a layer enters the tree,
 #    set_cell / erase_cell of 16x16 chunks into a live layer, a layer per 64x64 chunk. Run it
 #    with a renderer for the numbers a game sees; headless it skips the rendering quadrants.
-#    Options after "--": --size=N --fill=F --no-collision. (docs/native-importer-plan.md)
+#    Options after "--": --size=N --fill=F --no-collision --ysort (the layers y-sorted, as an
+#    isometric or staggered map's are). (docs/native-importer-plan.md)
 xvfb-run -a godot --path . --rendering-driver opengl3 --audio-driver Dummy -s test/bench_materialize.gd
 ```
 
@@ -128,12 +130,34 @@ godot --headless -s tools/native_gate.gd          # -- --runtime=res://runtime f
 # cancelling mid-parse and mid-texture-load without leaks, TiledMap's signals, zip and failures.
 # Generates the benchmark map (test/benchmark.gd) when it is missing. Options: --rounds=N (3).
 godot --headless -s test/test_async.gd
+
+# TiledStreamer (stage 4): load_all() of 22 fixtures equals TiledBuilder.build's tree (every node's
+# path, class, position, metadata, every cell); a window over infinite.tmx loads exactly the
+# chunks it covers and erases them when it moves; objects spawn and despawn with their chunks,
+# references across chunks resolve when both exist (test/out/stream_test/spread.tmx, written by
+# the test); keep_objects_resident; a tiny budget takes several step()s and `settled` fires once;
+# y-sorted layers refused unless allowed; world mode over fixtures/world/test.world; make_streamer;
+# no leaks over 20 rounds of streaming in and out.
+godot --headless -s test/test_stream.gd
+
+# The streaming benchmark (needs a renderer): an infinite map of 4000 x 4000 cells (4 layers, one
+# with a collision polygon on every tile, an object in every third chunk), its isometric twin
+# (y-sorted, 1024 x 1024) and a world of 3 x 3 finite maps, each scrolled at two screens per second
+# while a Camera2D is followed: frame times against a control run (the same scroll over preloaded
+# content, the streamer paused), the streamer's own work per frame, chunks per second, the budget's
+# hit rate and the costs it measured; the map's memory. The maps are generated into
+# test/out/stream/ by test/gen_stream_bench.gd when missing. Options: --budget=4000 (µs),
+# --seconds=10, --only=map|iso|world, --verbose (the worst frames and what the streamer did in each).
+xvfb-run -a godot --path . --rendering-driver opengl3 --audio-driver Dummy -s test/bench_stream.gd
+godot --headless -s test/gen_stream_bench.gd     # -- --size=4000 --world-size=256
 ```
 
 `test_async.gd` turns the engine's headless frame sleep off (`OS.low_processor_usage_mode_sleep_usec
 = 0`; headless Godot otherwise pads every frame to 6.9 ms, since it cannot draw), so the wall time of
-a frame is the main thread's work in it. `test/run_all.sh` runs it after the benchmark whenever this
-platform's library is in place.
+a frame is the main thread's work in it. `test/run_all.sh` runs it and `test_stream.gd` after the
+benchmark whenever this platform's library is in place. `bench_stream.gd` compares quantiles of
+frame times with a control run rather than with one idle frame: on a shared machine with software
+GL, still frames alone spread by 4 ms at p95 and 8 ms at the worst.
 
 The facade has no `DataLoader.gd` (the zip archive is per call), so the suite's zip mode reset
 skips it; its `CommonUtils.gd` holds the error and warning counters of the last import, which

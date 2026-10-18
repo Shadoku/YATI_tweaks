@@ -16,10 +16,12 @@
 //!   `TilemapCreator`), tile layers filled through `tile_map_data`.
 //! - [`TiledWorld`](world::TiledWorld): a Tiled world file (`.world`), its maps placed, read
 //!   through the core's world loader on the main thread.
+//! - [`TiledStreamer`](streamer::TiledStreamer): a Node2D streaming a map's (or a world's)
+//!   chunks and objects in and out as a window moves, within a per-frame budget.
 //!
 //! Everything here runs on the main thread except the decoding of tile layer payloads, which
-//! runs on one thread per layer, and the asynchronous load's parse, which runs on a worker
-//! thread; both run `tiled_core` only (no Godot object; `experimental-threads` stays off).
+//! runs on one thread per layer (a streamer's finite layers: one thread per map), and the
+//! asynchronous load's parse, which runs on a worker thread; all run `tiled_core` only (no Godot object; `experimental-threads` stays off).
 
 use godot::init::InitStage;
 use godot::prelude::*;
@@ -32,6 +34,7 @@ mod gd;
 mod map;
 mod options;
 mod props;
+mod streamer;
 mod tileset;
 mod world;
 
@@ -51,6 +54,7 @@ unsafe impl ExtensionLibrary for YatiNative {
             // Before the engine goes: no texture request, cached texture or loader thread of
             // ours outlives it.
             files::drain_orphans(true);
+            tileset::clear_shared();
             files::clear_texture_cache();
             tiled_core::worker::join_detached();
         }
