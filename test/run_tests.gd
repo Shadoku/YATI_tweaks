@@ -140,14 +140,21 @@ func _free_tree(n: Node) -> void:
 ## The pre-change DataLoader keeps zip mode after import_from_zip (PLAN F2); undo it so that one
 ## zip test does not break every following test.
 func _reset_zip_mode() -> void:
-	var dl: Variant = load(runtime_dir.path_join("DataLoader.gd"))
+	var dl: Variant = _runtime_script("DataLoader.gd")
 	if dl != null:
 		dl.set("zip_file", "")
 
 
 func _error_count() -> int:
-	var cu: Variant = load(runtime_dir.path_join("CommonUtils.gd"))
+	var cu: Variant = _runtime_script("CommonUtils.gd")
 	return int(cu.get("error_count")) if cu != null else 0
+
+
+## One of the runtime's scripts, or null when the runtime has none of that name (the native
+## facade, addons/yati_native/, has only Importer.gd): checked first, so no load error is printed.
+func _runtime_script(file: String) -> Variant:
+	var path := runtime_dir.path_join(file)
+	return load(path) if ResourceLoader.exists(path) else null
 
 
 func fail(msg: String) -> void:

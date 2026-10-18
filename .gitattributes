@@ -12,3 +12,11 @@ README.md export-ignore
 Reference.md export-ignore
 Runtime.md export-ignore
 icon.png export-ignore
+# The native importer is not part of the GDScript runtime's archive: its crate and tools are
+# for building it, and its addon is useless (and prints errors on every start) without the
+# platform libraries, which come from its own release zip (tools/install_native.sh).
+native export-ignore
+tools export-ignore
+addons export-ignore
+.godot-version export-ignore
+.yati-native-version export-ignore
