@@ -25,6 +25,15 @@ cd /path/to/YATI && godot --headless -s test/benchmark.gd -- --runtime=res://run
 
 `test/run_all.sh` runs the tests and the benchmark in one go (`GODOT=/path/to/godot test/run_all.sh`).
 
+```sh
+# 4. What the engine itself charges for a map's tile layers (no importer involved): assigning
+#    tile_map_data, instantiating a packed layer, the frame after a layer enters the tree,
+#    set_cell / erase_cell of 16x16 chunks into a live layer, a layer per 64x64 chunk. Run it
+#    with a renderer for the numbers a game sees; headless it skips the rendering quadrants.
+#    Options after "--": --size=N --fill=F --no-collision. (docs/native-importer-plan.md)
+xvfb-run -a godot --path . --rendering-driver opengl3 --audio-driver Dummy -s test/bench_materialize.gd
+```
+
 ### Test runner options (after `--`)
 
 | Option | Meaning |

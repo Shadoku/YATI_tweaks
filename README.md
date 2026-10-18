@@ -60,7 +60,14 @@ By setting classes and custom properties in Tiled the resulting node tree can be
 
 ## Tests
 
-The `test` folder contains a headless test suite and a benchmark (see the comments in `test/run_tests.gd`).
+The `test` folder contains a headless test suite and a benchmark (see the comments in `test/run_tests.gd`),
+and `test/bench_materialize.gd`, which measures what the engine itself charges for a map's tile layers.
+
+## Native importer (planned)
+
+[docs/native-importer-plan.md](docs/native-importer-plan.md) explores a Rust (GDExtension) version of
+this runtime that imports maps during play without a hitch and streams chunks of infinite maps, with the
+measurements behind it and the stages to get there. The GDScript runtime stays as the reference.
 
 ## Credits
 

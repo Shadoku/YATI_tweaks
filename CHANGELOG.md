@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `docs/native-importer-plan.md`: the exploration and plan for a native (Rust GDExtension) importer
+  that needs no preloading and streams infinite maps, with the measurements behind it.
+- `test/bench_materialize.gd`: measures the engine's own cost of a map's tile layers (`tile_map_data`
+  assignment, packed-scene instantiation, the frame after a layer enters the tree, `set_cell` /
+  `erase_cell` of 16x16 chunks into a live layer, a layer per chunk).
+
 ## [3.0.0] — runtime-only fork (2026-10-17)
 
 This repository now contains only the GDScript runtime importer (`runtime/`) of
