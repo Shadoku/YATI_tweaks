@@ -187,6 +187,8 @@ Coll.(*): All tile collision objects (except point), ellipse is approximated by 
 
 Setting these properties affect the Godot settings accordingly.  
 Custom properties which are not in this list or not fitting to the element are added as Meta Data.  
+Their values are typed as in Tiled: `bool`, `int`, `float`, `string`, `file` (a path String), `color` (a `Color`;
+a String `#RRGGBBAA` before version 3.1), `object` (see below), `class` (a Dictionary) and `list` (an Array).  
 If assigned to a tile and the property name is starting with the custom data prefix they are added to the Tile Custom Data.
 
 > **Tile** custom properties: The property name and type will refer to a layer in the Godot TileSets's Custom Data Layer array,   
@@ -208,7 +210,9 @@ Remarks:
 - (*) refers to a string consisting of comma separated values, each value representing an element number to enable.  
 Example for a collision layer property (name+value), where layers 1,3,5,6,7 on physics layer 0 are to enable:  
 `collision_layer_0 = 1,3,5-7` (you can set ranges like 5-7 in this example)
-- (col) refers to a string consisting of an # followed by hex (RGB) values. Example: `#4e4aff`
+- (col) refers to a property of type `color` (Tiled's colour picker; Tiled saves it as `#AARRGGBB`, alpha first,
+and it is read that way) or of type `string`, read as Godot reads a colour: `#RRGGBB`, `#RRGGBBAA` (alpha last)
+or a colour name. Example: `#4e4aff`
 - (enum) refers to an int, value can be taken from the list
 
 Properties with "n is layer number": if number appendix is missing, layer 0 is assumed  

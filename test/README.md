@@ -129,3 +129,4 @@ godot --headless -s test/run_tests.gd -- --runtime=res://baseline_runtime
 | `missing_tileset.tmx` | error path: tileset file not found |
 | `postproc.gd` | post-processor for `import_with_post_processing` |
 | `area_gravity.tmx` | B5: Area2D gravity, gravity point, damp properties (a point-gravity area and a directional one) |
+| `colors.tmx` | B3/B4: `#AARRGGBB` colours: background, tints on tile/object/group/image layers, text colour; colour-typed `modulate`, `self_modulate`, `debug_color`, Polygon2D `color`, Line2D `default_color`, metadata; a string-typed `modulate`; an embedded tileset with a colour-typed tile `modulate`, custom data and metadata |

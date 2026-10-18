@@ -286,7 +286,7 @@ func create(source_file: String):
 	_parallax_background.owner = _base_node
 	if _background_color != "":
 		_background = ColorRect.new()
-		_background.color = Color(_background_color)
+		_background.color = CommonUtils.tiled_color(_background_color)
 		_background.size = Vector2(_map_width * _map_tile_width, _map_height * _map_tile_height)
 		_base_node.add_child(_background)
 		_background.name = BACKGROUND_COLOR_RECT_NAME
@@ -372,7 +372,7 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 		_tilemap_layer.visible = layer_visible
 		_tilemap_layer.position = Vector2(layer_offset_x, layer_offset_y)
 		if layer_opacity < 1.0 or tint_color != "#ffffff":
-			_tilemap_layer.modulate = Color(tint_color, layer_opacity)
+			_tilemap_layer.modulate = layer_color(tint_color, layer_opacity)
 		_tilemap_layer.tile_set = _tileset
 		# Leave the old handling for the time being
 		handle_parallaxes(parent, _tilemap_layer, layer)
@@ -432,7 +432,7 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 		if "name" in layer:
 			layer_node.name = layer["name"]
 		if layer_opacity < 1.0 or tint_color != "#ffffff":
-			layer_node.modulate = Color(tint_color, layer_opacity)
+			layer_node.modulate = layer_color(tint_color, layer_opacity)
 		layer_node.visible = layer.get("visible", true)
 		var layer_pos_x = layer.get("x", 0.0)
 		var layer_pos_y = layer.get("y", 0.0)
@@ -471,7 +471,7 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 
 		group_node.name = layer.get("name", "group")
 		if layer_opacity < 1.0 or tint_color != "#ffffff":
-			group_node.modulate = Color(tint_color, layer_opacity)
+			group_node.modulate = layer_color(tint_color, layer_opacity)
 		group_node.visible = layer.get("visible", true)
 		var layer_pos_x = layer.get("x", 0.0)
 		var layer_pos_y = layer.get("y", 0.0)
@@ -519,7 +519,7 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 			var imageheight = layer.get("imageheight", 0)
 			texture_rect.size = Vector2(imagewidth, imageheight)
 			if layer_opacity < 1.0 or tint_color != "#ffffff":
-				texture_rect.modulate = Color(tint_color, layer_opacity)
+				texture_rect.modulate = layer_color(tint_color, layer_opacity)
 			texture_rect.visible = layer_visible
 			texture_rect.texture = DataLoader.load_image(layer["image"], _base_path)
 			apply_blend_mode(texture_rect, layer)
@@ -540,7 +540,7 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 			var imageheight = layer.get("imageheight", 0)
 			texture_rect.size = Vector2(imagewidth, imageheight)
 			if layer_opacity < 1.0 or tint_color != "#ffffff":
-				texture_rect.modulate = Color(tint_color, layer_opacity)
+				texture_rect.modulate = layer_color(tint_color, layer_opacity)
 			texture_rect.visible = layer_visible
 			texture_rect.texture = DataLoader.load_image(layer["image"], _base_path)
 			apply_blend_mode(texture_rect, layer)
@@ -567,6 +567,13 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 
 			if layer.has("properties"):
 				handle_properties(texture_rect, layer["properties"])
+
+
+# A layer's modulate: its Tiled tint colour (#RRGGBB or #AARRGGBB) with the layer opacity on its alpha
+static func layer_color(tint_color: String, opacity: float) -> Color:
+	var c := CommonUtils.tiled_color(tint_color)
+	c.a *= opacity
+	return c
 
 
 # Returns the start coordinate (<= 0) of a repeated image so that the repeat phase matches the original offset
@@ -1304,7 +1311,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 			font.font_italic = true
 		obj_text.add_theme_font_override("font", font)
 		obj_text.add_theme_font_size_override("font_size", txt.get("pixelsize", 16))
-		obj_text.add_theme_color_override("font_color", Color(txt.get("color", "#000000")))
+		obj_text.add_theme_color_override("font_color", CommonUtils.tiled_color(str(txt.get("color", "#000000")), Color.BLACK))
 		if obj.has("properties"):
 			handle_properties(obj_text, obj["properties"])
 
@@ -2047,6 +2054,14 @@ func handle_list_property(current_array: Array, current_value: Array):
 			current_array.append(CommonUtils.get_right_typed_value(item_type, str(item_val)))
 
 
+# The value of a colour property: a Tiled colour (type 'color', #AARRGGBB) or a string as Godot
+# reads it (#RRGGBB, #RRGGBBAA or a colour name), as before colour-typed values were accepted.
+static func property_color(type: String, val: String) -> Color:
+	if type == "color":
+		return CommonUtils.tiled_color(val)
+	return Color(val)
+
+
 func handle_properties(target_node: Node, properties: Array):
 	var has_children = false
 	if target_node is StaticBody2D or target_node is Area2D or target_node is CharacterBody2D or target_node is RigidBody2D or target_node is AnimatableBody2D:
@@ -2091,10 +2106,10 @@ func handle_properties(target_node: Node, properties: Array):
 			target_node.set_script(load(path))
 
 		# CanvasItem properties
-		elif lname == "modulate" and type == "string":
-			target_node.modulate = Color(val)
-		elif lname == "self_modulate" and type == "string":
-			target_node.self_modulate = Color(val)
+		elif lname == "modulate" and (type == "string" or type == "color"):
+			target_node.modulate = property_color(type, val)
+		elif lname == "self_modulate" and (type == "string" or type == "color"):
+			target_node.self_modulate = property_color(type, val)
 		elif lname == "show_behind_parent" and type == "bool":
 			target_node.show_behind_parent = val.to_lower() == "true"
 		elif lname == "top_level" and type == "bool":
@@ -2217,10 +2232,10 @@ func handle_properties(target_node: Node, properties: Array):
 				child.one_way_collision_margin = float(val)
 
 		# CollisionShape2D properties
-		elif lname == "debug_color" and type == "string" and has_children:
+		elif lname == "debug_color" and (type == "string" or type == "color") and has_children:
 			for child in target_node.get_children():
 				if child is CollisionShape2D:
-					child.debug_color = Color(val)
+					child.debug_color = property_color(type, val)
 
 		# Area2D properties
 		elif lname == "monitoring" and type == "bool" and target_node is Area2D:
@@ -2454,14 +2469,14 @@ func handle_properties(target_node: Node, properties: Array):
 			target_node.occluder_light_mask = CommonUtils.get_bitmask_integer_from_string(val, 20)
 
 		# Polygon2D properties
-		elif lname == "color" and type == "string" and target_node is Polygon2D:
-			target_node.color = Color(val)
+		elif lname == "color" and (type == "string" or type == "color") and target_node is Polygon2D:
+			target_node.color = property_color(type, val)
 
 		# Line2D properties
 		elif lname == "width" and (type == "float" or type == "int") and target_node is Line2D:
 			target_node.width = float(val)
-		elif lname == "default_color" and type == "string" and target_node is Line2D:
-			target_node.default_color = Color(val)
+		elif lname == "default_color" and (type == "string" or type == "color") and target_node is Line2D:
+			target_node.default_color = property_color(type, val)
 
 		# Marker2D properties
 		elif lname == "gizmo_extents" and (type == "float" or type == "int") and target_node is Marker2D:

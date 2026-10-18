@@ -1145,7 +1145,7 @@ func test_object_property_types() -> bool:
 	meta(p, "p_int", 42)
 	meta(p, "p_float", 2.5)
 	meta(p, "p_bool", true)
-	meta(p, "p_color", "#ff000080") # Tiled #AARRGGBB -> Godot #RRGGBBAA string
+	meta(p, "p_color", Color("#ff000080")) # Tiled #AARRGGBB -> Color (a #RRGGBBAA String before B4)
 	meta(p, "p_file", "data/info.txt")
 	if p.has_meta("p_int"): eq(typeof(p.get_meta("p_int")), TYPE_INT, "p_int type")
 	if p.has_meta("p_bool"): eq(typeof(p.get_meta("p_bool")), TYPE_BOOL, "p_bool type")
@@ -1280,6 +1280,64 @@ func test_bug_area_gravity() -> bool:
 	check(not w.monitorable, "monitorable (listed after gravity) not applied")
 	for k in ["gravity_direction_x", "gravity_direction_y"]:
 		check(not w.has_meta(k), k + " stored as metadata")
+	return done()
+
+
+func test_bug_argb_colors() -> bool:
+	# B3: Tiled writes colours as #AARRGGBB, Godot's Color(String) reads #RRGGBBAA: a tint of
+	# #80ff0000 (red, 50 % alpha) became yellow-green, the background colour transparent.
+	var red_half := Color(1, 0, 0, 128.0 / 255.0)
+	var n := _import("colors.tmx")
+	if n == null: return done()
+	var bg := need(n, "Background Color", "ColorRect") as ColorRect
+	if bg: eq(bg.color, red_half, "background colour")
+	var tiles := layer(n, "TintTiles")
+	if tiles: eq(tiles.modulate, red_half, "tile layer tint")
+	var objs := need(n, "TintObjects", "Node2D") as Node2D
+	if objs: eq(objs.modulate, red_half, "object layer tint")
+	var grp := need(n, "TintGroup", "Node2D") as Node2D
+	if grp: eq(grp.modulate, Color(1, 0, 0, red_half.a * 0.5), "group tint x opacity")
+	var img := need(n, "TintImage", "TextureRect") as TextureRect
+	if img: eq(img.modulate, red_half, "image layer tint")
+	var lbl := need(n, "Caption", "Label") as Label
+	if lbl: eq(lbl.get_theme_color("font_color"), red_half, "text colour")
+	return done()
+
+
+func test_bug_color_property_type() -> bool:
+	# B4: colour-typed properties became #RRGGBBAA Strings (metadata) and did not drive the
+	# colour properties, which matched only type 'string'. Now they are Colors.
+	var n := _import("colors.tmx")
+	if n == null: return done()
+	var a := need(n, "Painted (Area)", "Area2D") as Area2D
+	if a:
+		eq(a.modulate, Color(0, 1, 0, 1), "modulate (color typed)")
+		eq(a.self_modulate, Color(0, 0, 1, 128.0 / 255.0), "self_modulate (color typed)")
+		var cs := a.get_child(0) as CollisionShape2D
+		if is_type(cs, "CollisionShape2D", "Painted shape"):
+			eq(cs.debug_color, Color(1, 1, 1, 64.0 / 255.0), "debug_color (color typed)")
+		if check(a.has_meta("tint"), "meta 'tint' missing"):
+			eq(typeof(a.get_meta("tint")), TYPE_COLOR, "meta 'tint' type")
+			eq(a.get_meta("tint"), Color(1, 0, 0, 128.0 / 255.0), "meta 'tint'")
+		# a string property is not reinterpreted
+		meta(a, "plain_modulate_string", "#ff000080")
+	var s := need(n, "StringTint (Area)", "Area2D") as Area2D
+	if s: eq(s.modulate, Color("#ff000080"), "string-typed modulate keeps Godot's #RRGGBBAA")
+	var poly := need(n, "Poly", "Polygon2D") as Polygon2D
+	if poly: eq(poly.color, Color(0, 0, 1, 128.0 / 255.0), "Polygon2D color (color typed)")
+	var line := need(n, "Wire", "Line2D") as Line2D
+	if line: eq(line.default_color, Color(0, 1, 0, 1), "Line2D default_color (color typed)")
+	# Tiles: modulate, a colour custom data layer (TYPE_COLOR) and colour metadata
+	var ts := tileset_of(n, "TintTiles")
+	var td := tile_data(ts, 0, Vector2i(1, 0))
+	if td:
+		eq(td.modulate, Color(0, 0, 1, 1), "tile modulate (color typed)")
+		var layer_id := ts.get_custom_data_layer_by_name("glow")
+		if check(layer_id >= 0, "custom data layer 'glow' missing"):
+			eq(ts.get_custom_data_layer_type(layer_id), TYPE_COLOR, "custom data layer type")
+			eq(td.get_custom_data("glow"), Color(0, 1, 0, 128.0 / 255.0), "custom data 'glow'")
+		if check(td.has_meta("hue"), "tile meta 'hue' missing"):
+			eq(td.get_meta("hue"), Color("#336699"), "tile meta 'hue'")
 	return done()
 
 

@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `test/run_tests.gd` checks that a runtime has `DataLoader.gd` / `CommonUtils.gd` before loading them,
   so the native facade (only an `Importer.gd`) runs the suite without a load error per test.
+- **Breaking** (B4): colour-typed properties that become metadata (on nodes, tiles, the TileSet, in
+  lists) and tile custom data are a `Color` instead of a `#RRGGBBAA` String. Code that passes the
+  value to `Color()` keeps working; code that treats it as a String does not. Class members and list
+  items inside class-typed properties keep Tiled's `#AARRGGBB` String (the parsed dictionary is unchanged).
 
 ### Fixed
 - B5 (`docs/runtime-improvement-plan.md`): the Area2D gravity properties were misspelt in
@@ -37,6 +41,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stopped the import of an object's remaining properties with a script error,
   `gravity_point_center_x/y` and `gravity_direction_x/y` became metadata. The Reference listed
   `gravity` as the custom property of Linear Damp and Angular Damp; it is `linear_damp` / `angular_damp`.
+- B3: Tiled colours (`#AARRGGBB`, alpha first) were read as Godot's `#RRGGBBAA`, so a layer tint
+  `#80ff0000` (red at 50 %) became yellow-green and a background colour `#80ff0000` transparent.
+  Layer tints (tile, object, group and image layers), the map background colour, text object colours
+  and wangcolors now go through the new `CommonUtils.tiled_color()`; a layer's opacity multiplies the
+  tint's alpha.
+- B4: colour-typed properties (`type="color"`) drove no colour property: `modulate`, `self_modulate`,
+  `debug_color`, `color` (Polygon2D), `default_color` (Line2D) and a tile's `modulate` matched only
+  `type="string"`. Both types are accepted now, a `color` read as Tiled's `#AARRGGBB` and a `string` as
+  before (Godot's `#RRGGBB` / `#RRGGBBAA` or a colour name). A colour-typed tile custom data property
+  on its `TYPE_COLOR` layer got a String.
 
 ## [3.0.0] — runtime-only fork (2026-10-17)
 
