@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- F1: objects of class Enemy (mapped to enemy.tscn by class_scenes or the project's godot_scene member),
+     their properties written into the scene's exports, a tile whose class is Enemy, a godot_node_type
+     that wins over the scene, a per-object godot_scene override, a property of the wrong type. -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="16" height="16" tilewidth="16" tileheight="16" infinite="0" nextlayerid="2" nextobjectid="10">
+ <tileset firstgid="1" name="scene_tiles" tilewidth="16" tileheight="16" tilecount="32" columns="8">
+  <image source="tiles.png" width="128" height="64"/>
+  <tile id="2" class="Enemy"/>
+ </tileset>
+ <objectgroup id="1" name="Units">
+  <object id="1" name="Grunt" class="Enemy" x="32" y="48" width="16" height="16">
+   <properties>
+    <property name="drops" type="list">
+     <item type="int" value="1"/>
+     <item type="int" value="2"/>
+    </property>
+    <property name="faction" value="orcs"/>
+    <property name="hp" type="int" value="10"/>
+    <property name="icon" type="file" value="tiles.png"/>
+    <property name="loot" type="class" propertytype="Loot">
+     <properties>
+      <property name="gold" type="int" value="5"/>
+     </properties>
+    </property>
+    <property name="mood" value="ANGRY"/>
+    <property name="note" value="hello"/>
+    <property name="patrol" type="object" value="3"/>
+    <property name="speed" type="int" value="3"/>
+    <property name="tag" value="boss"/>
+   </properties>
+  </object>
+  <object id="2" name="TileGrunt" gid="3" x="64" y="96" width="32" height="32"/>
+  <object id="3" name="Waypoint" x="128" y="48">
+   <point/>
+  </object>
+  <object id="4" name="Plain" class="enemy" x="160" y="48" width="16" height="16"/>
+  <object id="5" name="Typed" class="Enemy" x="192" y="48" width="16" height="16">
+   <properties>
+    <property name="godot_node_type" value="area"/>
+   </properties>
+  </object>
+  <object id="6" name="Broken" class="Enemy" x="32" y="160" width="16" height="16">
+   <properties>
+    <property name="hp" value="lots"/>
+   </properties>
+  </object>
+  <object id="7" name="Elite" class="Enemy" x="64" y="160" width="16" height="16">
+   <properties>
+    <property name="godot_scene" type="file" value="ref_target.tscn"/>
+   </properties>
+  </object>
+ </objectgroup>
+</map>

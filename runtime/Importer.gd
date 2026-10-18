@@ -62,6 +62,15 @@ var unknown_class_fallback: String = "staticbody"
 # "geometry" (the target's points, as before 3.1) or "both" (the NodePath, and the geometry as
 # metadata "<name>_shape").
 var object_refs: String = "nodepath"
+# Tiled class name (case-insensitive) -> scene path. Objects/tiles of that class are instantiated
+# like class 'instance' with res_path. Takes precedence over the class field mapping (not over a
+# 'godot_node_type' property). A relative path is relative to the map.
+var class_scenes: Dictionary = {}
+# Also accept a 'godot_scene' (file) member on Tiled custom class types (needs the project file).
+var read_godot_scene_from_custom_types: bool = true
+# Custom properties that match a property on the created node are assigned with set();
+# properties that match nothing become metadata (as before). Set false for the old behaviour.
+var assign_node_properties: bool = true
 
 # Results of the last import (any of the import methods)
 var last_error_count: int = 0
@@ -139,6 +148,9 @@ func _create(source_file: String, project_file: String, zip_file: String):
 	tilemap_creator.set_animation_mode(animation_mode)
 	tilemap_creator.set_unknown_class_fallback(unknown_class_fallback)
 	tilemap_creator.set_object_refs(object_refs)
+	tilemap_creator.set_class_scenes(class_scenes)
+	tilemap_creator.set_read_godot_scene_from_custom_types(read_godot_scene_from_custom_types)
+	tilemap_creator.set_assign_node_properties(assign_node_properties)
 
 	if project_file != "":
 		var ct = CustomTypes.new()

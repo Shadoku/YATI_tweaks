@@ -1830,7 +1830,8 @@ func test_new_object_ref_geometry_mode() -> bool:
 	if not _require_option(imp, "object_refs"): return done()
 	var g := _import_with(imp, "object_refs.tmx")
 	if g:
-		eq(imp.get("last_warning_count"), 0, "geometry mode warnings")
+		# Switch's waypoints (points, not NodePaths) do not fit its Array[NodePath]: metadata, a warning
+		eq(imp.get("last_warning_count"), 1, "geometry mode warnings")
 		var door := need(g, "Door (Area)")
 		if door:
 			meta(door, "target", Vector2(80, 48))
@@ -1846,6 +1847,143 @@ func test_new_object_ref_geometry_mode() -> bool:
 			var t: Variant = door.get_meta("targets", null)
 			if check(t is Array and (t as Array).size() == 2, "both: Door targets " + str(t)):
 				_check_ref(door, t[1], "Lever", "both: Door targets[1]")
+	return done()
+
+
+const ENEMY_SCENE := "res://test/fixtures/enemy.tscn"
+
+
+func _is_scene(n: Node, scene_path: String, msg: String) -> bool:
+	if not check(n != null, msg + ": node missing"): return false
+	return eq(n.scene_file_path, scene_path, msg + " scene")
+
+
+func test_new_class_scenes() -> bool:
+	# F1: an object of class Enemy needed class 'instance' and its own res_path. class_scenes maps the
+	# class (case-insensitively) to a scene, and a custom property that names an exported property of
+	# the node is assigned to it (typed: int -> float, an enum's name, a file -> its resource, ...)
+	# instead of becoming metadata.
+	var imp := _new_importer()
+	if not _require_option(imp, "class_scenes"): return done()
+	eq(imp.get("class_scenes"), {}, "default class_scenes")
+	eq(imp.get("assign_node_properties"), true, "default assign_node_properties")
+	imp.set("class_scenes", {"Enemy": ENEMY_SCENE})
+	var n := _import_with(imp, "scenes.tmx")
+	if n == null: return done()
+	eq(imp.get("last_warning_count"), 1, "warnings (Broken's hp is a string)")
+	eq(imp.get("last_error_count"), 0, "errors")
+	var g := need(n, "Grunt")
+	if _is_scene(g, ENEMY_SCENE, "Grunt"):
+		eq((g as Node2D).position, Vector2(32, 48), "Grunt position")
+		eq(g.get("hp"), 10, "Grunt.hp")
+		check(not g.has_meta("hp"), "Grunt: hp also stored as metadata")
+		eq(g.get("faction"), "orcs", "Grunt.faction")
+		var patrol: Variant = g.get("patrol")
+		if check(patrol is NodePath and not (patrol as NodePath).is_empty(), "Grunt.patrol: " + str(patrol)):
+			var wp := g.get_node_or_null(patrol)
+			check(wp != null and String(wp.name) == "Waypoint", "Grunt.patrol does not point at Waypoint")
+		eq(g.get("speed"), 3.0, "Grunt.speed (int -> float)")
+		eq(typeof(g.get("speed")), TYPE_FLOAT, "Grunt.speed type")
+		eq(g.get("mood"), 5, "Grunt.mood (enum name)")
+		eq(typeof(g.get("tag")), TYPE_STRING_NAME, "Grunt.tag type")
+		eq(g.get("tag"), &"boss", "Grunt.tag")
+		is_type(g.get("icon"), "Texture2D", "Grunt.icon (file -> resource)")
+		eq(g.get("loot"), {"gold": 5}, "Grunt.loot (class -> Dictionary)")
+		var drops: Variant = g.get("drops")
+		eq(drops, [1, 2], "Grunt.drops (list -> Array[int])")
+		meta(g, "note", "hello")
+		meta(g, "class", "Enemy")
+		check(not g.has_meta("godot_scene"), "Grunt: godot_scene as metadata")
+	_is_scene(need(n, "Plain"), ENEMY_SCENE, "Plain (class 'enemy')")
+	var tg := need(n, "TileGrunt")
+	if _is_scene(tg, ENEMY_SCENE, "TileGrunt (the tile's class)"):
+		eq((tg as Node2D).position, Vector2(64, 96), "TileGrunt position")
+		eq((tg as Node2D).scale, Vector2(2, 2), "TileGrunt scale (32x32 object of a 16x16 tile)")
+	need(n, "Typed (Area)", "Area2D") # godot_node_type wins over the scene
+	var b := need(n, "Broken")
+	if _is_scene(b, ENEMY_SCENE, "Broken"):
+		eq(b.get("hp"), 1, "Broken.hp (a string does not fit)")
+		meta(b, "hp", "lots")
+	# Without the mapping a class Enemy is an unknown class, reported once
+	var imp2 := _new_importer()
+	var d := _import_with(imp2, "scenes.tmx")
+	if d:
+		need(d, "Grunt (SB)", "StaticBody2D")
+		eq(imp2.get("last_warning_count"), 2, "warnings without class_scenes (classes Enemy and enemy)")
+	return done()
+
+
+func test_new_godot_scene_member() -> bool:
+	# F1: a class of the project file with a member 'godot_scene' (file, relative to the project file)
+	# maps the class to that scene; an object's own godot_scene (relative to the map) overrides it;
+	# class_scenes wins over the member.
+	var imp := _new_importer()
+	if not _require_option(imp, "read_godot_scene_from_custom_types"): return done()
+	eq(imp.get("read_godot_scene_from_custom_types"), true, "default read_godot_scene_from_custom_types")
+	var n := _import_with(imp, "scenes.tmx", "scenes.tiled-project")
+	if n == null: return done()
+	var g := need(n, "Grunt")
+	if _is_scene(g, ENEMY_SCENE, "Grunt"):
+		eq(g.get("hp"), 10, "Grunt.hp")
+		check(not g.has_meta("godot_scene"), "Grunt: godot_scene as metadata")
+	# The project's class names are case-sensitive, as in Tiled (class_scenes' are not)
+	need(n, "Plain (SB)", "StaticBody2D")
+	var tg := need(n, "TileGrunt")
+	if _is_scene(tg, ENEMY_SCENE, "TileGrunt (tile class, scope 'tile')"):
+		eq(tg.get("hp"), 1, "TileGrunt.hp (the member's default)")
+	_is_scene(need(n, "Elite"), "res://test/fixtures/ref_target.tscn", "Elite (own godot_scene)")
+	need(n, "Typed (Area)", "Area2D")
+	var off := _import("scenes.tmx", {"read_godot_scene_from_custom_types": false}, "scenes.tiled-project")
+	if off: need(off, "Grunt (SB)", "StaticBody2D")
+	var both := _import("scenes.tmx", {"class_scenes": {"enemy": "res://test/fixtures/ref_target.tscn"}}, "scenes.tiled-project")
+	if both: _is_scene(need(both, "Grunt"), "res://test/fixtures/ref_target.tscn", "Grunt (class_scenes over godot_scene)")
+	return done()
+
+
+func test_new_assign_props_off() -> bool:
+	# F1: assign_node_properties = false keeps every custom property metadata, as before.
+	var imp := _new_importer({"class_scenes": {"Enemy": ENEMY_SCENE}})
+	if not _require_option(imp, "assign_node_properties"): return done()
+	imp.set("assign_node_properties", false)
+	var n := _import_with(imp, "scenes.tmx")
+	if n == null: return done()
+	eq(imp.get("last_warning_count"), 0, "warnings")
+	var g := need(n, "Grunt")
+	if _is_scene(g, ENEMY_SCENE, "Grunt"):
+		eq(g.get("hp"), 1, "Grunt.hp untouched")
+		meta(g, "hp", 10)
+		meta(g, "speed", 3)
+		meta(g, "faction", "orcs")
+		eq(g.get("patrol"), NodePath(), "Grunt.patrol untouched")
+		if g.has_meta("patrol"): check(g.get_node_or_null(g.get_meta("patrol")) != null, "Grunt patrol meta does not resolve")
+		else: fail("Grunt: meta 'patrol' missing")
+	return done()
+
+
+func test_new_tiled_import_hook() -> bool:
+	# F1: a node with a method _tiled_import(info) gets it called once, after the whole map is built
+	# (object references resolved), with the object's id, name, class, typed properties and geometry.
+	var n := _import("scenes.tmx", {"class_scenes": {"Enemy": ENEMY_SCENE}})
+	if n == null: return done()
+	var g := need(n, "Grunt")
+	if not _is_scene(g, ENEMY_SCENE, "Grunt"): return done()
+	eq(g.get("hook_calls"), 1, "_tiled_import calls")
+	var info: Dictionary = g.get("imported")
+	eq(info.get("id"), 1, "info id")
+	eq(info.get("name"), "Grunt", "info name")
+	eq(info.get("class"), "Enemy", "info class")
+	eq(info.get("rect"), Rect2(32, 48, 16, 16), "info rect")
+	eq(info.get("shape"), Rect2(0, 0, 16, 16), "info shape")
+	eq(info.get("shape_type"), "rectangle", "info shape_type")
+	var props: Dictionary = info.get("properties", {})
+	eq(props.get("hp"), 10, "info properties hp")
+	eq(props.get("note"), "hello", "info properties note")
+	var patrol: Variant = props.get("patrol")
+	check(patrol is NodePath and g.get_node_or_null(patrol) != null, "info properties patrol: " + str(patrol))
+	var tg := need(n, "TileGrunt")
+	if tg:
+		eq(tg.get("hook_calls"), 1, "TileGrunt _tiled_import calls")
+		eq((tg.get("imported") as Dictionary).get("shape_type"), "tile", "TileGrunt shape_type")
 	return done()
 
 

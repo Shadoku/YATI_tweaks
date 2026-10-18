@@ -62,8 +62,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Array[NodePath]`; an unset or dangling reference an empty NodePath with a warning. `"geometry"` keeps the target's
   points (3.0), `"both"` writes the NodePath and the points as metadata `<name>_shape`. The Reference documents
   a `MapRef { map, object }` class convention for references into other maps.
+- F1: importer options `class_scenes` (default `{}`: Tiled class, case-insensitive, -> scene path),
+  `read_godot_scene_from_custom_types` (default `true`: a custom class's `godot_scene` file member, relative to the
+  project file, does the same) and `assign_node_properties` (default `true`): objects and tile objects of a mapped
+  class become instances of the scene without a `res_path` on each (after a `godot_node_type` property, before the
+  class mapping and `unknown_class_fallback`), and a custom property named like a property of the created node
+  (an `@export var`, an engine property) is assigned to it, converted to its type (int to float or an enum, a
+  string to an enum by name, StringName or NodePath, a file to its resource, a list to a typed array), else it
+  stays metadata with a warning. `godot_script` is attached before the other properties, so the script's variables
+  exist. A node method `_tiled_import(info)` is called once the map is built, with the object's id, name, class,
+  typed properties, rect and shape. `CustomTypes.get_class_member()` reads a member of a custom class;
+  `TilemapCreator.instantiate_scene()` is the one place scenes are instantiated.
 
 ### Changed
+- F1: with the new default `assign_node_properties = true` a custom property named like a property of the created
+  node sets that property instead of becoming metadata (e.g. a `rotation` float on an object, a `hp` int on an
+  instance whose script exports `hp`); set it `false` for the 3.0 result. B8's unknown-class warning names
+  `class_scenes` as a remedy.
 - F2: with the new default `object_refs = "nodepath"` an object property is a `NodePath` instead of the
   target's geometry (`PackedVector2Array` / `Vector2`); set `object_refs = "geometry"` for the 3.0 values. A text
   object's Label now gets metadata `id` with `add_id_as_metadata`, as every other object's node does.

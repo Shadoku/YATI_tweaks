@@ -65,6 +65,9 @@ they apply to every following call on that instance. See the [Reference](Referen
 | `animation_mode` | String | `"strip"` | Tile animations: `"strip"` gives each animated tile an atlas of its frames in their order (any sequence); `"atlas"` animates in the tileset's atlas as before 3.1 (only frames that follow the tile at equal steps) |
 | `always_wrap_root` | bool | `false` | Return a Node2D root (named after the map, holding the map's properties) also for a map with a single layer, instead of that layer; recommended, and planned as the default of 4.0 |
 | `unknown_class_fallback` | String | `"staticbody"` | What an object whose class is no Godot node type becomes: `"staticbody"`, another class of the mapping table (e.g. `"area"`) or `"node2d"` (a Node2D with the shape as metadata) |
+| `class_scenes` | Dictionary | `{}` | Tiled class (case-insensitive) → scene path: objects and tile objects of that class become instances of the scene (like class `instance` with `res_path`) |
+| `read_godot_scene_from_custom_types` | bool | `true` | With a project file, a custom class's `godot_scene` (file) member maps its objects and tiles to that scene |
+| `assign_node_properties` | bool | `true` | A custom property named like a property of the created node (a script's `@export var`, ...) is assigned to it, converted to its type; others stay metadata. A node method `_tiled_import(info)` is called once the map is built. Off: all metadata, as before 3.1 |
 | `object_refs` | String | `"nodepath"` | Object properties: `"nodepath"` gives a NodePath to the target object's node (or the node, for a Node-typed property of that name), lists of objects an `Array[NodePath]`; `"geometry"` the target's points, as before 3.1; `"both"` the NodePath and the points as metadata `<name>_shape` |
 
 ```gdscript

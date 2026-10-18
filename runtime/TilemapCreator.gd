@@ -39,6 +39,8 @@ const CLASS_INTERNAL = "class"
 const GODOT_NODE_TYPE_PROPERTY = "godot_node_type"
 const GODOT_GROUP_PROPERTY = "godot_group"
 const GODOT_SCRIPT_PROPERTY = "godot_script"
+const GODOT_SCENE_PROPERTY = "godot_scene"
+const IMPORT_HOOK_METHOD = "_tiled_import"
 const DEFAULT_ALIGNMENT = "unspecified"
 
 # Unit offsets (multiplied with (width, height)) for the different object alignments
@@ -108,6 +110,10 @@ var _object_refs: String = "nodepath"		# object properties: "nodepath", "geometr
 var _nodes_by_object_id: Dictionary = {}	# Tiled object id -> the node created for it (this import)
 var _pending_object_refs: Array = []		# object properties waiting for every node to exist (resolve_object_refs)
 var _property_info_cache: Dictionary = {}	# class + script -> {property name: property info} (get_assignable_properties)
+var _class_scenes: Dictionary = {}			# lower case Tiled class -> scene path
+var _read_godot_scene: bool = true			# a custom class's 'godot_scene' member maps it to a scene
+var _assign_node_properties: bool = true	# custom properties set a node property of the same name
+var _object_nodes: Array = []				# [node, object dictionary] of every object node (import hooks)
 var _ct: CustomTypes = null
 var _base_dictionary: Dictionary
 
@@ -245,6 +251,23 @@ func set_object_refs(value: String):
 		_object_refs = "nodepath"
 
 
+# Tiled class (case-insensitive) -> scene path: objects and tiles of that class become instances of it
+func set_class_scenes(value: Dictionary):
+	_class_scenes.clear()
+	for key in value:
+		_class_scenes[str(key).to_lower()] = str(value[key])
+
+
+# A custom class (project file) with a 'godot_scene' file member maps its objects to that scene
+func set_read_godot_scene_from_custom_types(value: bool):
+	_read_godot_scene = value
+
+
+# Custom properties naming a property of the created node are assigned to it (else metadata)
+func set_assign_node_properties(value: bool):
+	_assign_node_properties = value
+
+
 func get_tileset():
 	return _tileset
 
@@ -275,6 +298,7 @@ func reset_import_state() -> void:
 	_nodes_by_object_id.clear()
 	_pending_object_refs.clear()
 	_property_info_cache.clear()
+	_object_nodes.clear()
 
 
 func create(source_file: String):
@@ -399,7 +423,7 @@ func create(source_file: String):
 	if _base_node.get_child_count() != 1 or _always_wrap_root:
 		var base = _base_node
 		_base_node = null
-		_nodes_by_object_id.clear()
+		finish_import()
 		return base
 
 	# Single child: return it parentless and free the wrapper node
@@ -409,8 +433,8 @@ func create(source_file: String):
 	if _base_dictionary.has("properties"):
 		handle_properties(ret, _base_dictionary["properties"])
 		resolve_object_refs()
-	_nodes_by_object_id.clear()
 	ret.name = _base_name
+	finish_import()
 	_base_node.free()
 	_base_node = null
 	_background = null
@@ -1164,16 +1188,25 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 		godot_node_type_property_string = class_string
 	var godot_type = get_godot_type(godot_node_type_property_string)
 
-	if godot_type == _godot_type.UNKNOWN:
+	# A scene for the class (class_scenes, or a custom class's godot_scene member) comes after a
+	# godot_node_type property and before the class mapping (F1); template instances decide in
+	# their template's objects
+	var scene_path := ""
+	if not godot_node_type_prop_found and not obj.has("template"):
+		scene_path = get_class_scene(obj, class_string, "object")
+
+	if godot_type == _godot_type.UNKNOWN and scene_path == "":
 		if godot_node_type_prop_found:
 			print_rich("[color=" + WARNING_COLOR +"] -- Unknown " + GODOT_NODE_TYPE_PROPERTY + " '" + godot_node_type_property_string + "'. -> Using '" + _unknown_class_fallback + "'[/color]")
 			CommonUtils.warning_count += 1
 		elif not _reported_unknown_classes.has(class_string):
 			# Once per class name and import, whatever add_class_as_metadata says
 			_reported_unknown_classes[class_string] = true
-			print_rich("[color=" + WARNING_COLOR +"] -- Class '" + class_string + "' is not a Godot node type -> using '" + _unknown_class_fallback + "'. Set '" + GODOT_NODE_TYPE_PROPERTY + "' or the option 'unknown_class_fallback' (see Reference).[/color]")
+			print_rich("[color=" + WARNING_COLOR +"] -- Class '" + class_string + "' is not a Godot node type -> using '" + _unknown_class_fallback + "'. Set '" + GODOT_NODE_TYPE_PROPERTY + "', map the class to a scene ('class_scenes') or set the option 'unknown_class_fallback' (see Reference).[/color]")
 			CommonUtils.warning_count += 1
 		godot_type = _unknown_class_type
+	elif godot_type == _godot_type.UNKNOWN:
+		godot_type = _godot_type.EMPTY
 
 
 	if obj.has("template"):
@@ -1249,6 +1282,11 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 		# Everything the instance defines went into the template's object(s) above
 		return
 
+	# A scene for the object's class (F1)
+	if scene_path != "" and not obj.has("text") and not obj.has("gid"):
+		instantiate_scene(scene_path, obj, layer_node, transpose_coords(obj_x, obj_y), Vector2.ONE, class_string)
+		return
+
 	# v1.2: New class 'instance'
 	if godot_type == _godot_type.INSTANCE and not obj.has("template") and not obj.has("text") and not obj.has("gid"):
 		var res_path = get_property(obj, "res_path", "file")
@@ -1258,21 +1296,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 		else:
 			if obj.has("template_dir_path"):
 				res_path = join_file_path(obj.template_dir_path, res_path)
-			var scene = DataLoader.load_resource_from_file(res_path, _base_path)
-			# Error check
-			if scene == null: return
-			var instance = scene.instantiate()
-			layer_node.add_child(instance)
-			instance.owner = _base_node
-			instance.name = obj_name if obj_name != "" else res_path.get_file().get_basename()
-			instance.position = transpose_coords(obj_x, obj_y)
-			instance.rotation_degrees = obj_rot
-			instance.visible = obj_visible
-			if _add_class_as_metadata and class_string != "":
-				instance.set_meta("class", class_string)
-			register_object_node(obj_id, instance)
-			if obj.has("properties"):
-				handle_properties(instance, obj["properties"], obj.get("template_dir_path", ""))
+			instantiate_scene(res_path, obj, layer_node, transpose_coords(obj_x, obj_y), Vector2.ONE, class_string)
 		return
 
 	if obj.has("gid") and not obj.has("template"):
@@ -1362,52 +1386,39 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 		# Tile objects may already have been classified as instance in the tileset
 		var obj_is_instance = godot_type == _godot_type.INSTANCE and not obj.has("template") and not obj.has("text")
 		var tile_class = ""
+		var tile_has_node_type: bool = td.has_meta(GODOT_NODE_TYPE_PROPERTY)
 		if td.has_meta(CLASS_INTERNAL):
 			tile_class = td.get_meta(CLASS_INTERNAL)
 			class_string = tile_class
-		if td.has_meta(GODOT_NODE_TYPE_PROPERTY):
+		if tile_has_node_type:
 			tile_class = td.get_meta(GODOT_NODE_TYPE_PROPERTY)
+		# No scene for the object's own class: the tile's class may have one (F1)
+		if scene_path == "" and not godot_node_type_prop_found and not tile_has_node_type and tile_class != "" and not obj.has("template"):
+			scene_path = get_class_scene(obj, tile_class, "tile")
 
-		if tile_class.to_lower() == "instance" or obj_is_instance:
+		if tile_class.to_lower() == "instance" or obj_is_instance or scene_path != "":
 			var instance_props: Dictionary = get_properties(obj, TILE_INSTANCE_PROPERTY_KEYS)
-			var res_path = instance_props.get("res_path:file", "")
-			if td.has_meta("res_path"):
-				if res_path == "":
-					res_path = td.get_meta("res_path")
+			var res_path = scene_path
+			if res_path == "":
+				res_path = instance_props.get("res_path:file", "")
+				if td.has_meta("res_path"):
+					if res_path == "":
+						res_path = td.get_meta("res_path")
+				if res_path != "" and obj.has("template_dir_path"):
+					res_path = join_file_path(obj.template_dir_path, res_path)
 			if res_path == "":
 				printerr("Object of class 'instance': Mandatory file property 'res_path' not found or invalid. -> Skipped")
 				CommonUtils.error_count += 1
 			else:
-				if obj.has("template_dir_path"):
-					res_path = join_file_path(obj.template_dir_path, res_path)
-				var scene = DataLoader.load_resource_from_file(res_path, _base_path)
-				# Error check
-				if scene == null: return
-
 				var res_path_extension = res_path.get_file().get_extension().to_lower()
 				var res_alignment = instance_props.get("res_alignment:string", "")
-
-				obj_sprite.owner = null
-				layer_node.remove_child(obj_sprite)
-				obj_sprite.free()
-				var instance = scene.instantiate()
-				layer_node.add_child(instance)
-				instance.owner = _base_node
-				instance.name = obj_name if obj_name != "" else res_path.get_file().get_basename()
-				instance.position = transpose_coords(obj_x, obj_y)
+				var pos: Vector2 = transpose_coords(obj_x, obj_y)
 				if res_alignment != "":
-					instance.position += get_instance_offset(obj_width, obj_height, res_alignment, _current_object_alignment)
+					pos += get_instance_offset(obj_width, obj_height, res_alignment, _current_object_alignment)
 				elif res_path_extension == "tmx" or res_path_extension == "tmj":
-					instance.position += get_instance_offset(obj_width, obj_height, "topleft", _current_object_alignment)
-				instance.rotation_degrees = obj_rot
-				instance.visible = obj_visible
-				instance.scale = obj_sprite.scale
+					pos += get_instance_offset(obj_width, obj_height, "topleft", _current_object_alignment)
 				convert_metadata_to_obj_properties(td, obj)
-				if _add_class_as_metadata and class_string != "":
-					instance.set_meta("class", class_string)
-				register_object_node(obj_id, instance)
-				if obj.has("properties"):
-					handle_properties(instance, obj["properties"], obj.get("template_dir_path", ""))
+				instantiate_scene(res_path, obj, layer_node, pos, obj_sprite.scale, class_string, obj_sprite)
 			return
 
 		# An animated tile is shown animated
@@ -1440,7 +1451,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				layer_node.add_child(parent)
 				parent.owner = _base_node
 				# The body stands for the object (its sprite keeps the id metadata)
-				register_object_node(obj_id, parent, false)
+				register_object_node(obj_id, parent, false, obj)
 				parent.name = obj_sprite.name
 				parent.position = obj_sprite.position
 				parent.rotation_degrees = obj_sprite.rotation_degrees
@@ -1457,7 +1468,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 
 		if _add_class_as_metadata and class_string != "":
 			obj_sprite.set_meta("class", class_string)
-		register_object_node(obj_id, obj_sprite)
+		register_object_node(obj_id, obj_sprite, true, obj)
 		if obj.has("properties"):
 			handle_properties(obj_sprite, obj["properties"], obj.get("template_dir_path", ""))
 
@@ -1497,7 +1508,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 		obj_text.add_theme_font_override("font", font)
 		obj_text.add_theme_font_size_override("font_size", txt.get("pixelsize", 16))
 		obj_text.add_theme_color_override("font_color", CommonUtils.tiled_color(str(txt.get("color", "#000000")), Color.BLACK))
-		register_object_node(obj_id, obj_text)
+		register_object_node(obj_id, obj_text, true, obj)
 		if obj.has("properties"):
 			handle_properties(obj_text, obj["properties"], obj.get("template_dir_path", ""))
 
@@ -1520,7 +1531,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 			marker.visible = obj_visible
 			if _add_class_as_metadata and class_string != "":
 				marker.set_meta("class", class_string)
-			register_object_node(obj_id, marker)
+			register_object_node(obj_id, marker, true, obj)
 			if obj.has("properties"):
 				handle_properties(marker, obj["properties"], obj.get("template_dir_path", ""))
 		elif obj.has("polygon"):
@@ -1538,7 +1549,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				polygon_shape.rotation_degrees = obj_rot
 				if _add_class_as_metadata and class_string != "":
 					co.set_meta("class", class_string)
-				register_object_node(obj_id, co)
+				register_object_node(obj_id, co, true, obj)
 				if obj.has("properties"):
 					handle_properties(co, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.NAVIGATION:
@@ -1563,7 +1574,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 
 				if _add_class_as_metadata and class_string != "":
 					nav_region.set_meta("class", class_string)
-				register_object_node(obj_id, nav_region)
+				register_object_node(obj_id, nav_region, true, obj)
 				if obj.has("properties"):
 					handle_properties(nav_region, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.OCCLUDER:
@@ -1579,7 +1590,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				occ_poly.polygon = polygon_from_array(obj["polygon"])
 				if _add_class_as_metadata and class_string != "":
 					light_occ.set_meta("class", class_string)
-				register_object_node(obj_id, light_occ)
+				register_object_node(obj_id, light_occ, true, obj)
 				if obj.has("properties"):
 					handle_properties(light_occ, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.POLYGON:
@@ -1593,7 +1604,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				polygon.polygon = polygon_from_array(obj["polygon"])
 				if _add_class_as_metadata and class_string != "":
 					polygon.set_meta("class", class_string)
-				register_object_node(obj_id, polygon)
+				register_object_node(obj_id, polygon, true, obj)
 				if obj.has("properties"):
 					handle_properties(polygon, obj["properties"], obj.get("template_dir_path", ""))	
 		elif obj.has("polyline"):
@@ -1609,7 +1620,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				line.points = polygon_from_array(obj["polyline"])
 				if _add_class_as_metadata and class_string != "":
 					line.set_meta("class", class_string)
-				register_object_node(obj_id, line)
+				register_object_node(obj_id, line, true, obj)
 				if obj.has("properties"):
 					handle_properties(line, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.PATH:
@@ -1626,7 +1637,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				path.curve = curve
 				if _add_class_as_metadata and class_string != "":
 					path.set_meta("class", class_string)
-				register_object_node(obj_id, path)
+				register_object_node(obj_id, path, true, obj)
 				if obj.has("properties"):
 					handle_properties(path, obj["properties"], obj.get("template_dir_path", ""))
 			else:
@@ -1648,7 +1659,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 					collision_shape.name = "Segment Shape"
 				if _add_class_as_metadata and class_string != "":
 					co.set_meta("class", class_string)
-				register_object_node(obj_id, co)
+				register_object_node(obj_id, co, true, obj)
 				if obj.has("properties"):
 					handle_properties(co, obj["properties"], obj.get("template_dir_path", ""))
 		else:
@@ -1704,7 +1715,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				collision_shape.visible = obj_visible
 				if _add_class_as_metadata and class_string != "":
 					co.set_meta("class", class_string)
-				register_object_node(obj_id, co)
+				register_object_node(obj_id, co, true, obj)
 				if obj.has("properties"):
 					handle_properties(co, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.NAVIGATION:
@@ -1736,7 +1747,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 
 					if _add_class_as_metadata and class_string != "":
 						nav_region.set_meta("class", class_string)
-					register_object_node(obj_id, nav_region)
+					register_object_node(obj_id, nav_region, true, obj)
 					if obj.has("properties"):
 						handle_properties(nav_region, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.OCCLUDER:
@@ -1759,7 +1770,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 					occ_poly.polygon = polygon_from_rectangle(obj_width, obj_height)
 					if _add_class_as_metadata and class_string != "":
 						light_occ.set_meta("class", class_string)
-					register_object_node(obj_id, light_occ)
+					register_object_node(obj_id, light_occ, true, obj)
 					if obj.has("properties"):
 						handle_properties(light_occ, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.POLYGON:
@@ -1780,9 +1791,69 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 					polygon.polygon = polygon_from_rectangle(obj_width, obj_height)
 					if _add_class_as_metadata and class_string != "":
 						polygon.set_meta("class", class_string)
-					register_object_node(obj_id, polygon)
+					register_object_node(obj_id, polygon, true, obj)
 					if obj.has("properties"):
 						handle_properties(polygon, obj["properties"], obj.get("template_dir_path", ""))	
+
+
+# The scene path for objects of a Tiled class (F1), resolved, or "": class_scenes (a relative path
+# is relative to the map), else the class's 'godot_scene' file member in the project file (scope
+# "object", or "tile" for a tile's class) if read_godot_scene_from_custom_types: the object's own
+# godot_scene property when it overrides the member (relative to its file, the map or template),
+# else the member's value (relative to the project file).
+func get_class_scene(obj: Dictionary, class_string: String, scope: String) -> String:
+	if class_string == "": return ""
+	var mapped = _class_scenes.get(class_string.to_lower())
+	if mapped != null and str(mapped) != "":
+		return join_file_path(_base_path, str(mapped))
+	if not _read_godot_scene or _ct == null: return ""
+	var member = _ct.get_class_member(class_string, scope, GODOT_SCENE_PROPERTY)
+	if member == null and scope == "tile":
+		member = _ct.get_class_member(class_string, "object", GODOT_SCENE_PROPERTY)
+	if member == null: return ""
+	for prop in obj.get("properties", []):
+		if str(prop.get("name", "")) == GODOT_SCENE_PROPERTY and str(prop.get("type", "")) == "file" and not is_same(prop, member):
+			var own := str(prop.get("value", ""))
+			if own == "": return ""
+			return join_file_path(obj.get("template_dir_path", _base_path), own)
+	var value := str(member.get("value", ""))
+	if value == "": return ""
+	return join_file_path(_ct.get_project_dir(), value)
+
+
+# Instantiates the scene res_path for an object (class 'instance' with res_path, or a scene for its
+# class): added to layer_node at pos with the object's name (else the scene file's), rotation,
+# visibility and scale (a tile object's size), then class metadata, the object's registration and
+# its properties. Returns the instance, or null when the scene cannot be loaded. replaces: a node
+# already created for the object (a tile object's sprite), freed once the scene is loaded.
+func instantiate_scene(res_path: String, obj: Dictionary, layer_node: Node, pos: Vector2, scale: Vector2, class_string: String, replaces: Node = null) -> Node:
+	var scene = DataLoader.load_resource_from_file(res_path, _base_path)
+	if scene == null: return null
+	if not scene is PackedScene:
+		printerr("ERROR: '" + res_path + "' is not a scene. -> Skipped")
+		CommonUtils.error_count += 1
+		return null
+	if replaces != null:
+		replaces.owner = null
+		layer_node.remove_child(replaces)
+		replaces.free()
+	var instance: Node = scene.instantiate()
+	layer_node.add_child(instance)
+	instance.owner = _base_node
+	var obj_name := str(obj.get("name", ""))
+	instance.name = obj_name if obj_name != "" else res_path.get_file().get_basename()
+	if instance is Node2D or instance is Control:
+		instance.position = pos
+		instance.rotation_degrees = float(obj.get("rotation", 0.0))
+		instance.scale = scale
+	if instance is CanvasItem:
+		instance.visible = obj.get("visible", true)
+	if _add_class_as_metadata and class_string != "":
+		instance.set_meta("class", class_string)
+	register_object_node(obj.get("id", 0), instance, true, obj)
+	if obj.has("properties"):
+		handle_properties(instance, obj["properties"], obj.get("template_dir_path", ""))
+	return instance
 
 
 # Replaces a tile object's Sprite2D (already in layer_node) by an AnimatedSprite2D playing the tile's
@@ -1843,7 +1914,7 @@ func create_plain_node(obj: Dictionary, layer_node: Node, position: Vector2, cla
 	node.set_meta("size", Vector2(obj_width, obj_height))
 	if _add_class_as_metadata and class_string != "":
 		node.set_meta("class", class_string)
-	register_object_node(obj_id, node)
+	register_object_node(obj_id, node, true, obj)
 	if obj.has("properties"):
 		handle_properties(node, obj["properties"], obj.get("template_dir_path", ""))
 
@@ -2284,13 +2355,82 @@ func get_object_polygon(obj_id: int):
 # The node created for a Tiled object: remembered for object references (F2) and given the
 # metadata "id" with add_id_as_metadata (set_id_meta false: a tile object's body, whose sprite
 # carries the id). The first node registered for an id stands for the object.
-func register_object_node(obj_id, node: Node, set_id_meta: bool = true) -> void:
+func register_object_node(obj_id, node: Node, set_id_meta: bool = true, obj: Dictionary = {}) -> void:
+	if not obj.is_empty():
+		_object_nodes.append([node, obj])
 	var id := int(obj_id)
 	if id == 0: return
 	if not _nodes_by_object_id.has(id):
 		_nodes_by_object_id[id] = node
 	if set_id_meta and _add_id_as_metadata:
 		node.set_meta("id", id)
+
+
+# The end of an import: every object node that has a method _tiled_import gets it called (F1),
+# once the tree is complete and object references are resolved; then the per-import node maps go.
+func finish_import() -> void:
+	var nodes := _object_nodes
+	_object_nodes = []
+	for entry in nodes:
+		var node = entry[0]
+		if is_instance_valid(node) and node.has_method(IMPORT_HOOK_METHOD):
+			node.call(IMPORT_HOOK_METHOD, get_import_info(node, entry[1]))
+	_nodes_by_object_id.clear()
+
+
+# What _tiled_import(info) receives: the object's id, name, class, its custom properties as the
+# importer typed them ({name: value}; an object property a NodePath from the node), its rect in
+# map pixels (Rect2(x, y, width, height), as Tiled saves it) and its shape in object coordinates
+# (Rect2 from (0, 0), or a PackedVector2Array for a polygon or polyline), shape_type one of
+# "rectangle", "ellipse", "capsule", "point", "polygon", "polyline", "tile", "text".
+func get_import_info(node: Node, obj: Dictionary) -> Dictionary:
+	var w := float(obj.get("width", 0.0))
+	var h := float(obj.get("height", 0.0))
+	var shape: Variant = Rect2(0.0, 0.0, w, h)
+	var shape_type := "rectangle"
+	if obj.has("gid"): shape_type = "tile"
+	elif obj.has("text"): shape_type = "text"
+	elif obj.has("point"): shape_type = "point"
+	elif obj.has("ellipse"): shape_type = "ellipse"
+	elif obj.has("capsule"): shape_type = "capsule"
+	elif obj.has("polygon"):
+		shape_type = "polygon"
+		shape = PackedVector2Array(polygon_from_array(obj["polygon"]))
+	elif obj.has("polyline"):
+		shape_type = "polyline"
+		shape = PackedVector2Array(polygon_from_array(obj["polyline"]))
+	var props := {}
+	for prop in obj.get("properties", []):
+		var pname := str(prop.get("name", ""))
+		if pname == "": continue
+		props[pname] = get_import_info_value(node, str(prop.get("type", "string")), prop.get("value", ""))
+	return {
+		"id": int(obj.get("id", 0)),
+		"name": str(obj.get("name", "")),
+		"class": get_class_string(obj, false),
+		"properties": props,
+		"rect": Rect2(float(obj.get("x", 0.0)), float(obj.get("y", 0.0)), w, h),
+		"shape": shape,
+		"shape_type": shape_type,
+	}
+
+
+func get_import_info_value(node: Node, type: String, value) -> Variant:
+	match type:
+		"object":
+			if _object_refs == "geometry":
+				var g = get_object_polygon(int(value))
+				return g if g != null else int(value)
+			var target = _nodes_by_object_id.get(int(value))
+			return node.get_path_to(target) if target != null and is_instance_valid(target) else NodePath()
+		"list":
+			var ret := []
+			for item in value:
+				ret.append(get_import_info_value(node, str(item.get("type", "string")), item.get("value", "")))
+			return ret
+		"class":
+			return value if value is Dictionary else {}
+	return CommonUtils.get_right_typed_value(type, str(value))
 
 
 # The second pass of object properties (object_refs "nodepath" / "both"): each becomes a NodePath
@@ -2328,7 +2468,7 @@ func get_object_ref_path(node: Node, name: String, target_id: int) -> NodePath:
 
 
 func assign_object_ref(node: Node, name: String, path: NodePath, target) -> void:
-	var info = get_assignable_properties(node).get(name)
+	var info = get_assignable_properties(node).get(name) if _assign_node_properties else null
 	if info != null:
 		if info["type"] == TYPE_NODE_PATH:
 			node.set(name, path)
@@ -2351,7 +2491,7 @@ func assign_list_ref(node: Node, name: String, list: Array) -> void:
 			only_paths = false
 			break
 	var value: Array = Array(list, TYPE_NODE_PATH, &"", null) if only_paths else list
-	var info = get_assignable_properties(node).get(name)
+	var info = get_assignable_properties(node).get(name) if _assign_node_properties else null
 	if info != null:
 		if info["type"] == TYPE_NIL:
 			node.set(name, value)
@@ -2477,6 +2617,15 @@ func handle_properties(target_node: Node, properties: Array, base_dir: String = 
 	var has_children = false
 	if target_node is StaticBody2D or target_node is Area2D or target_node is CharacterBody2D or target_node is RigidBody2D or target_node is AnimatableBody2D:
 		has_children = target_node.get_child_count() > 0 
+	# First pass: the script, so that its variables exist when the other properties are assigned (F1)
+	for property in properties:
+		var type: String = property.get("type", "string")
+		if str(property.get("name", "")).to_lower() == GODOT_SCRIPT_PROPERTY and (type == "file" or type == "string"):
+			var val := str(property.get("value", ""))
+			var path = val
+			if type == "file" and not val.is_absolute_path():
+				path = CommonUtils.cleanup_path(file_base.replace("res://", "") + "/" + val)
+			target_node.set_script(load(path))
 	for property in properties:
 		var name: String = property.get("name", "")
 		var type: String = property.get("type", "string")
@@ -2495,6 +2644,7 @@ func handle_properties(target_node: Node, properties: Array, base_dir: String = 
 			val = str(property.get("value", ""))
 		var lname := name.to_lower()
 		if name == "" or lname == GODOT_NODE_TYPE_PROPERTY or lname == "res_path": continue
+		if lname == GODOT_SCENE_PROPERTY and _read_godot_scene: continue
 		if name.begins_with("__") and has_children:
 			var child_prop_dict = {}
 			child_prop_dict["name"] = name.substr(2)
@@ -2512,12 +2662,9 @@ func handle_properties(target_node: Node, properties: Array, base_dir: String = 
 			for group in val.split(",", false):
 				target_node.add_to_group(group.strip_edges(), true)
 
-		# v1.6.6: script resource and godot_script property
+		# v1.6.6: script resource and godot_script property (set in the first pass above)
 		elif lname == GODOT_SCRIPT_PROPERTY and (type == "file" or type == "string"):
-			var path = val
-			if type == "file" and not val.is_absolute_path():
-				path = CommonUtils.cleanup_path(file_base.replace("res://", "") + "/" + val)
-			target_node.set_script(load(path))
+			pass
 
 		# CanvasItem properties
 		elif lname == "modulate" and (type == "string" or type == "color"):
@@ -2918,8 +3065,75 @@ func handle_properties(target_node: Node, properties: Array, base_dir: String = 
 					handle_list_property(shapes, property["value"])
 					target_node.set_meta(name + "_shape", shapes)
 			elif type == "list":
-				target_node.set_meta(name, list_val)
+				set_property_or_meta(target_node, name, type, list_val, file_base)
 			elif is_class_dict:
-				target_node.set_meta(name, class_val)
+				set_property_or_meta(target_node, name, type, class_val, file_base)
 			else:
-				target_node.set_meta(name, CommonUtils.get_right_typed_value(type, val))
+				set_property_or_meta(target_node, name, type, CommonUtils.get_right_typed_value(type, val), file_base)
+
+
+# A custom property that no special case handles: assigned to the node's property of that name when
+# there is one and the value fits its type (assign_node_properties, F1), else metadata as before.
+func set_property_or_meta(node: Node, name: String, type: String, value, file_base: String) -> void:
+	if _assign_node_properties:
+		var info = get_assignable_properties(node).get(name)
+		if info != null:
+			var converted = convert_for_property(info, type, value, file_base)
+			if converted.size() == 1:
+				node.set(name, converted[0])
+				return
+			print_rich("[color=" + WARNING_COLOR + "] -- Property '" + name + "' of '" + str(node.name) + "': a Tiled '" + type + "' value does not fit its type " + get_property_type_name(info) + ". -> Stored as metadata[/color]")
+			CommonUtils.warning_count += 1
+	node.set_meta(name, value)
+
+
+static func get_property_type_name(info: Dictionary) -> String:
+	if info["type"] == TYPE_OBJECT and str(info["class_name"]) != "":
+		return str(info["class_name"])
+	return type_string(info["type"])
+
+
+# value (a custom property's value as metadata holds it) converted to the type of the property
+# info: [converted] or [] when it does not fit. Tiled int also fits float and enum properties, a
+# string an enum by its name, StringName and NodePath; a file loads its resource for a Resource
+# property; a list fits an array (a typed one when every item does); an untyped var takes any value.
+func convert_for_property(info: Dictionary, type: String, value, file_base: String) -> Array:
+	var ptype: int = info["type"]
+	if ptype == TYPE_NIL:
+		return [value]
+	if type == "file" and ptype == TYPE_OBJECT:
+		var res = DataLoader.load_resource_from_file(str(value), file_base)
+		if res != null and is_of_class(res, str(info["class_name"]) if str(info["class_name"]) != "" else str(info["hint_string"])):
+			return [res]
+		return []
+	var vtype := typeof(value)
+	if ptype == TYPE_INT and info["hint"] == PROPERTY_HINT_ENUM and vtype == TYPE_STRING:
+		var enum_value = get_enum_value(str(info["hint_string"]), value)
+		return [enum_value] if enum_value != null else []
+	if ptype == TYPE_ARRAY and vtype == TYPE_ARRAY:
+		var typed = get_typed_array_for(info, value)
+		return [typed] if typed != null else []
+	if vtype == ptype:
+		return [value]
+	if ptype == TYPE_FLOAT and vtype == TYPE_INT:
+		return [float(value)]
+	if ptype == TYPE_STRING_NAME and vtype == TYPE_STRING:
+		return [StringName(value)]
+	if ptype == TYPE_NODE_PATH and vtype == TYPE_STRING:
+		return [NodePath(value)]
+	return []
+
+
+# The value of the enum constant name in an enum property's hint string ("A,B:5,C"), or null.
+# The editor shows a script enum's constants capitalized ("WALK_FAST" as "Walk Fast"), so names are
+# compared ignoring case, blanks and underscores.
+static func get_enum_value(hint_string: String, name: String):
+	var wanted := name.to_lower().replace("_", "").replace(" ", "")
+	var next := 0
+	for entry in hint_string.split(",", false):
+		var parts := entry.split(":")
+		var value := int(parts[1]) if parts.size() > 1 and parts[1].is_valid_int() else next
+		if parts[0].to_lower().replace("_", "").replace(" ", "") == wanted:
+			return value
+		next = value + 1
+	return null

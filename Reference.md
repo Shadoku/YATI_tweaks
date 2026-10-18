@@ -6,6 +6,7 @@
 - [Options](#options)
 - [Mapping from Tiled elements to Godot elements](#mapping-from-tiled-elements-to-godot-elements)
 - [Custom properties reference](#custom-properties-reference)
+- [Scene mapping and node properties](#scene-mapping-and-node-properties)
 - [Object references](#object-references)
 - [Specialities](#specialities)
 - [Newly supported Tiled features](#newly-supported-tiled-features)
@@ -177,6 +178,34 @@ What a property of type `object` (a reference to another object of the map) beco
   tile object or an id no object has.
 - `"both"`: the `NodePath` as in `"nodepath"`, and the geometry as in `"geometry"` as metadata `<name>_shape`.
 
+### class_scenes
+
+Type `Dictionary`, default: `{}`
+
+Tiled class name (compared case-insensitively) → scene path, e.g. `{"Enemy": "res://enemies/enemy.tscn"}`.
+Objects and tile objects of that class become instances of the scene, like class `instance` with a `res_path`,
+without a property on every object. A relative path is relative to the map. See
+[Scene mapping and node properties](#scene-mapping-and-node-properties).
+
+### read_godot_scene_from_custom_types
+
+Type `bool`, default: `true`
+
+With a [project file](#tiled-project-file): a custom class type with a member `godot_scene` (type `file`) maps its
+objects (scope `object`) and tiles (scope `tile`) to that scene, as `class_scenes` does. The member's value is
+relative to the project file; an object that overrides it saves its own value, relative to the map (or the
+template). The `godot_scene` property itself is not stored as metadata. Off: `godot_scene` is an ordinary property.
+
+### assign_node_properties
+
+Type `bool`, default: `true`
+
+A custom property that no special case of the [custom properties reference](#custom-properties-reference) handles
+and whose name is a property of the created node (an `@export var` or any `var` of its script, or an engine
+property such as `rotation`) is assigned to that property with `set()` instead of becoming metadata, converted to
+the property's type where that is safe; a value that does not fit stays metadata, with a warning. Off: every such
+property is metadata, as before 3.1. See [Scene mapping and node properties](#scene-mapping-and-node-properties).
+
 ### Tiled project file
 
 Not an option variable but the optional last parameter of the import methods:
@@ -285,7 +314,8 @@ Coll.(*): All tile collision objects (except point), ellipse is approximated by 
 ## Custom properties reference
 
 Setting these properties affect the Godot settings accordingly.  
-Custom properties which are not in this list or not fitting to the element are added as Meta Data.  
+Custom properties which are not in this list or not fitting to the element are added as Meta Data, unless the
+node has a property of that name ([assign_node_properties](#assign_node_properties)).  
 Their values are typed as in Tiled: `bool`, `int`, `float`, `string`, `file` (a path String), `color` (a `Color`;
 a String `#RRGGBBAA` before version 3.1), `object` (a `NodePath`, see [Object references](#object-references)), `class` (a Dictionary) and `list` (an Array).  
 If assigned to a tile and the property name is starting with the custom data prefix they are added to the Tile Custom Data.
@@ -506,6 +536,66 @@ This seems to be convenient as providing all of these properties would greatly i
 |                     | Screen Offset                      |                                                 | screen_offset_x                         | float        |                                                                                                                                     |
 |                     |                                    |                                                 | screen_offset_y                         | float        |                                                                                                                                     |
 
+## Scene mapping and node properties
+
+An object can become an instance of a Godot scene without a `res_path` on each object: map its class to a scene.
+For a Tiled object (or tile object) the importer decides in this order:
+
+1. A `godot_node_type` property: the node type it names (as before).
+2. [class_scenes](#class_scenes)`[class]` (case-insensitive): an instance of that scene.
+3. A `godot_scene` (file) member of the object's custom class in the project file, if
+   [read_godot_scene_from_custom_types](#read_godot_scene_from_custom_types) (the object's own `godot_scene`
+   value when it overrides the member): an instance of that scene. The project's class names are case-sensitive,
+   as in Tiled.
+4. Class `instance` with a `res_path` property: an instance of that scene (as before).
+5. The class mapping of the [mapping table](#mapping-from-tiled-elements-to-godot-elements).
+6. [unknown_class_fallback](#unknown_class_fallback) for any other class.
+
+For a tile object the object's own class is looked up first, then its tile's class (a `godot_scene` member of the
+tile's class in scope `tile`, else `object`). A template instance is decided by its template's object, with the
+instance's class if it sets one. Text objects stay Labels.
+
+An instance keeps the object's name (else the scene file's name), position, rotation and visibility; a tile object's
+instance also its size as `scale` and the `res_alignment` property. It gets the class as metadata and the object's
+custom properties like any node.
+
+**Node properties.** With [assign_node_properties](#assign_node_properties) (the default) a custom property whose
+name is a property of the node is assigned to it: `hp` (int) of an object of class `Enemy` lands in the
+scene's `@export var hp: int`, not in metadata. Property names are compared exactly (Godot's are case-sensitive);
+the node's `name` and `script` are never set this way (use the object's name and `godot_script`). Conversions:
+
+| Tiled type | Accepted for a property of type |
+|------------|---------------------------------|
+| `bool`, `string`, `float`, `color` | the same type (`bool`, `String`, `float`, `Color`) |
+| `int` | `int`, `float`, an enum (the value) |
+| `string` | `String`, `StringName`, `NodePath`, an enum (a constant's name, e.g. `ANGRY`; case, blanks and `_` ignored) |
+| `file` | a Resource type (the file is loaded; it must be of that class), `String` (the path as saved) |
+| `class` | `Dictionary` (`{member: value}`) |
+| `list` | `Array`; a typed array (`Array[int]`, `Array[NodePath]`, ...) when every item fits |
+| `object` | `NodePath`, a Node type, see [Object references](#object-references) |
+
+An untyped `var` takes the value as metadata would hold it. A value that does not fit stays metadata, with a warning.
+
+**Two passes.** `godot_script` is attached before any other property of the node is handled, so the script's
+variables exist when they are assigned, whatever the order of the properties in Tiled.
+
+**The `_tiled_import` hook.** When the map is built (all layers, object references resolved), every node created for
+an object that has a method `_tiled_import(info: Dictionary)` (its scene's script, or one set by `godot_script`) gets
+it called once, before the root is returned:
+
+```gdscript
+func _tiled_import(info: Dictionary) -> void:
+	# info.id: int, info.name: String, info.class: String
+	# info.properties: {name: value} - every custom property as the importer typed it
+	#     (an object property a NodePath from this node, a list an Array, a class a Dictionary)
+	# info.rect: Rect2(x, y, width, height) in map pixels, as Tiled saves it
+	# info.shape: Rect2 from (0, 0), or a PackedVector2Array (polygon, polyline) in object coordinates
+	# info.shape_type: "rectangle", "ellipse", "capsule", "point", "polygon", "polyline", "tile" or "text"
+	max_hp = info.properties.get("hp", max_hp)
+```
+
+The node is not in the scene tree yet (`_ready` has not run); the hook sees the imported tree only.
+
 ## Object references
 
 A custom property of type `object` names another object of the map by its id. With
@@ -568,6 +658,8 @@ Supported by this runtime fork in addition to upstream YATI 2.2.x:
 | Image layer `repeatx` / `repeaty` on a plain (non-parallax) image layer | `TextureRect` with `STRETCH_TILE` and texture repeat, extended over the map area on the repeated axis |
 | Tile animations of any frame sequence (frames not starting with the tile, ping-pong, other rows, image collections) | A strip atlas per animated tile ([animation_mode](#animation_mode)) |
 | Tile objects of animated tiles | `AnimatedSprite2D` |
+| A class mapped to a scene (`class_scenes`, a `godot_scene` member of a custom class) | Instances of the scene ([Scene mapping and node properties](#scene-mapping-and-node-properties)) |
+| Custom properties named like a node property (e.g. a script's `@export var`) | Assigned to the property ([assign_node_properties](#assign_node_properties)) |
 | Object references (`object` properties) | A `NodePath` to the target's node, or the node for a `Node`-typed property of that name ([Object references](#object-references)) |
 | Object references (`object` properties) to objects inside group layers | Resolved like references to top-level objects |
 | Deprecated XML tile layer data (`<tile gid="..."/>` children, no encoding) | Imported like CSV data |

@@ -27,10 +27,13 @@ const CommonUtils := preload("CommonUtils.gd")
 const DictionaryBuilder := preload("DictionaryBuilder.gd")
 
 var _custom_types = null
+# The directory of the project file (what its file-typed member values are relative to)
+var _project_dir: String = ""
 # Index "name|scope" -> Array of member dictionaries (built once after loading)
 var _class_members_by_name_and_scope: Dictionary = {}
 
 func load_custom_types(project_file: String):
+	_project_dir = project_file.get_base_dir()
 	var proj_file_content = DataLoader.get_tiled_file_content(project_file, "")
 	if proj_file_content == null:
 		printerr("ERROR: Tiled project file '" + project_file + "' not found.")
@@ -61,6 +64,23 @@ func _build_index() -> void:
 				_class_members_by_name_and_scope[key].append_array(pt_members)
 			else:
 				_class_members_by_name_and_scope[key] = pt_members.duplicate()
+
+
+# The directory of the loaded project file.
+func get_project_dir() -> String:
+	return _project_dir
+
+
+# The member dictionary ({"name", "type", "value", ...}) named member_name of the custom class
+# type_name for scope ("object", "tile", "layer", "map", ...), or null. A file member's value is
+# relative to the project file (get_project_dir()).
+func get_class_member(type_name: String, scope: String, member_name: String):
+	var members = _class_members_by_name_and_scope.get(type_name + "|" + scope)
+	if members == null: return null
+	for mem in members:
+		if str(mem.get("name", "")) == member_name:
+			return mem
+	return null
 
 
 func unload_custom_types():

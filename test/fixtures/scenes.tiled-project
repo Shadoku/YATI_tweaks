@@ -1,0 +1,35 @@
+{
+    "automappingRulesFile": "",
+    "commands": [],
+    "compatibilityVersion": 1100,
+    "extensionsPath": "extensions",
+    "folders": [
+        "."
+    ],
+    "properties": [],
+    "propertyTypes": [
+        {
+            "color": "#ffa0a0a4",
+            "drawFill": true,
+            "id": 1,
+            "members": [
+                {
+                    "name": "godot_scene",
+                    "type": "file",
+                    "value": "enemy.tscn"
+                },
+                {
+                    "name": "hp",
+                    "type": "int",
+                    "value": 1
+                }
+            ],
+            "name": "Enemy",
+            "type": "class",
+            "useAs": [
+                "object",
+                "tile"
+            ]
+        }
+    ]
+}
