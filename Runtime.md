@@ -60,6 +60,7 @@ they apply to every following call on that instance. See the [Reference](Referen
 | `map_wangset_to_terrain` | bool | `false` | Use the old wangset mapping (wangset -> terrain instead of terrain set) |
 | `custom_data_prefix` | String | `"data_"` | Tile properties with this name prefix become TileSet custom data layers |
 | `save_tileset_to` | String | `""` | If set, the generated TileSet is saved to this resource path |
+| `unknown_class_fallback` | String | `"staticbody"` | What an object whose class is no Godot node type becomes: `"staticbody"`, another class of the mapping table (e.g. `"area"`) or `"node2d"` (a Node2D with the shape as metadata) |
 
 ```gdscript
 var importer = preload("res://runtime/Importer.gd").new()

@@ -97,6 +97,9 @@ var _dont_use_alternative_tiles = false
 var _custom_data_prefix: String = ""
 var _tileset_save_path: String = ""
 var _object_groups
+var _unknown_class_fallback: String = "staticbody"
+var _unknown_class_type = _godot_type.BODY
+var _reported_unknown_classes: Dictionary = {}	# class names already warned about in this import
 var _ct: CustomTypes = null
 var _base_dictionary: Dictionary
 
@@ -128,6 +131,7 @@ enum _godot_type {
 	POLYGON,
 	INSTANCE,
 	PARALLAX,
+	NODE2D,
 	UNKNOWN
 }
 
@@ -187,6 +191,21 @@ func set_save_tileset_to(path: String):
 	_tileset_save_path = path
 
 
+# What objects of an unknown class become: a GODOT_TYPE_MAP key (except instance/parallax) or "node2d"
+func set_unknown_class_fallback(value: String):
+	_unknown_class_fallback = value.to_lower()
+	if _unknown_class_fallback == "node2d":
+		_unknown_class_type = _godot_type.NODE2D
+		return
+	var t = get_godot_type(_unknown_class_fallback)
+	if t == _godot_type.UNKNOWN or t == _godot_type.INSTANCE or t == _godot_type.PARALLAX:
+		print_rich("[color=" + WARNING_COLOR + "] -- Option unknown_class_fallback '" + value + "' is not supported. -> Using 'staticbody'[/color]")
+		CommonUtils.warning_count += 1
+		_unknown_class_fallback = "staticbody"
+		t = _godot_type.BODY
+	_unknown_class_type = t
+
+
 func get_tileset():
 	return _tileset
 
@@ -212,6 +231,7 @@ func reset_import_state() -> void:
 	_known_tiles.clear()
 	_template_cache.clear()
 	_objects_by_id = null
+	_reported_unknown_classes.clear()
 
 
 func create(source_file: String):
@@ -1027,13 +1047,15 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 	var godot_type = get_godot_type(godot_node_type_property_string)
 
 	if godot_type == _godot_type.UNKNOWN:
-		if not _add_class_as_metadata and class_string != "" and not godot_node_type_prop_found:
-			print_rich("[color=" + WARNING_COLOR +"] -- Unknown class '" + class_string + "'. -> Assuming Default[/color]")
+		if godot_node_type_prop_found:
+			print_rich("[color=" + WARNING_COLOR +"] -- Unknown " + GODOT_NODE_TYPE_PROPERTY + " '" + godot_node_type_property_string + "'. -> Using '" + _unknown_class_fallback + "'[/color]")
 			CommonUtils.warning_count += 1
-		elif godot_node_type_prop_found and godot_node_type_property_string != "":	
-			print_rich("[color=" + WARNING_COLOR +"] -- Unknown " + GODOT_NODE_TYPE_PROPERTY + " '" + godot_node_type_property_string + "'. -> Assuming Default[/color]")
+		elif not _reported_unknown_classes.has(class_string):
+			# Once per class name and import, whatever add_class_as_metadata says
+			_reported_unknown_classes[class_string] = true
+			print_rich("[color=" + WARNING_COLOR +"] -- Class '" + class_string + "' is not a Godot node type -> using '" + _unknown_class_fallback + "'. Set '" + GODOT_NODE_TYPE_PROPERTY + "' or the option 'unknown_class_fallback' (see Reference).[/color]")
 			CommonUtils.warning_count += 1
-		godot_type = _godot_type.BODY
+		godot_type = _unknown_class_type
 
 
 	if obj.has("template"):
@@ -1134,6 +1156,9 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 
 	if obj.has("gid") and not obj.has("template"):
 		# gid refers to a tile in a tile set and object is created as sprite
+		if godot_type == _godot_type.NODE2D:
+			# Unknown class with fallback "node2d": a plain Sprite2D (the tile's class may still decide)
+			godot_type = _godot_type.EMPTY
 		var int_id: int = obj["gid"]
 		var flippedH = (int_id & FLIPPED_HORIZONTALLY_FLAG) > 0
 		var flippedV = (int_id & FLIPPED_VERTICALLY_FLAG) > 0
@@ -1351,7 +1376,9 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 
 		var object_base_coords = transpose_coords(obj_x, obj_y)
 
-		if obj.has("point"):
+		if godot_type == _godot_type.NODE2D and not obj.has("point"):
+			create_plain_node(obj, layer_node, object_base_coords, class_string)
+		elif obj.has("point"):
 			var marker = Marker2D.new()
 			layer_node.add_child(marker)
 			marker.owner = _base_node
@@ -1636,6 +1663,36 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 						polygon.set_meta("id", obj_id)		
 					if obj.has("properties"):
 						handle_properties(polygon, obj["properties"])	
+
+
+# A shape object of an unknown class with unknown_class_fallback "node2d": a Node2D at the object's
+# position and rotation, the shape as metadata "shape" in object coordinates (Rect2 for a rectangle,
+# and the bounds of an ellipse or capsule; PackedVector2Array for a polygon or polyline) and "size".
+func create_plain_node(obj: Dictionary, layer_node: Node, position: Vector2, class_string: String) -> void:
+	var obj_id = obj.get("id", 0)
+	var obj_name = str(obj.get("name", ""))
+	var obj_width: float = obj.get("width", 0.0)
+	var obj_height: float = obj.get("height", 0.0)
+	var node := Node2D.new()
+	layer_node.add_child(node)
+	node.owner = _base_node
+	node.name = obj_name if obj_name != "" else class_string if class_string != "" else "Node2D"
+	node.position = position
+	node.rotation_degrees = obj.get("rotation", 0.0)
+	node.visible = obj.get("visible", true)
+	if obj.has("polygon"):
+		node.set_meta("shape", PackedVector2Array(polygon_from_array(obj["polygon"])))
+	elif obj.has("polyline"):
+		node.set_meta("shape", PackedVector2Array(polygon_from_array(obj["polyline"])))
+	else:
+		node.set_meta("shape", Rect2(0.0, 0.0, obj_width, obj_height))
+	node.set_meta("size", Vector2(obj_width, obj_height))
+	if _add_class_as_metadata and class_string != "":
+		node.set_meta("class", class_string)
+	if _add_id_as_metadata and obj_id != 0:
+		node.set_meta("id", obj_id)
+	if obj.has("properties"):
+		handle_properties(node, obj["properties"])
 
 
 # Creates the CollisionObject2D for a (non tile) shape object and adds it to layer_node.

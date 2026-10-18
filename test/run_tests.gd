@@ -1420,6 +1420,50 @@ func test_bug_template_overrides() -> bool:
 	return done()
 
 
+func test_new_unknown_class_fallback() -> bool:
+	# B8: an object whose class is no Godot node type became a StaticBody2D (a solid wall for a
+	# 'Door'), silently unless add_class_as_metadata was off. The option unknown_class_fallback
+	# chooses the node ("node2d": a plain Node2D with the shape as metadata), and every unknown
+	# class is reported once per import.
+	var imp := _new_importer()
+	if not _require_option(imp, "unknown_class_fallback"): return done()
+	imp.set("unknown_class_fallback", "node2d")
+	var n := _import_with(imp, "unknown_class.tmx")
+	if n == null: return done()
+	eq(imp.get("last_warning_count"), 2, "warnings (Door and Lever, once each)")
+	var front := need(n, "FrontDoor")
+	if front:
+		eq(front.get_class(), "Node2D", "FrontDoor class")
+		eq((front as Node2D).position, Vector2(16, 32), "FrontDoor position")
+		eq((front as Node2D).rotation_degrees, 90.0, "FrontDoor rotation")
+		meta(front, "shape", Rect2(0, 0, 32, 16))
+		meta(front, "size", Vector2(32, 16))
+		meta(front, "class", "Door")
+		meta(front, "locked", true)
+		eq(front.get_child_count(), 0, "FrontDoor children")
+	var back := need(n, "BackDoor")
+	if back: eq(back.get_class(), "Node2D", "BackDoor class")
+	var frame := need(n, "DoorFrame")
+	if frame:
+		eq(frame.get_class(), "Node2D", "DoorFrame class")
+		meta(frame, "shape", PackedVector2Array([Vector2(0, 0), Vector2(16, 0), Vector2(16, 16)]))
+	var lever := need(n, "Lever")
+	if lever:
+		eq(lever.get_class(), "Node2D", "Lever class")
+		meta(lever, "shape", Rect2(0, 0, 8, 8))
+	need(n, "Wall (SB)", "StaticBody2D") # no class: a StaticBody2D as before
+	# The default keeps the StaticBody2D, and warns all the same
+	var imp2 := _new_importer()
+	var d := _import_with(imp2, "unknown_class.tmx")
+	if d:
+		need(d, "FrontDoor (SB)", "StaticBody2D")
+		eq(imp2.get("last_warning_count"), 2, "warnings with the default fallback")
+	# Any Godot type name works as fallback
+	var a := _import("unknown_class.tmx", {"unknown_class_fallback": "area"})
+	if a: need(a, "BackDoor (Area)", "Area2D")
+	return done()
+
+
 # ---------------------------------------------------------------------------
 # Zip (keep last: the pre-change runtime leaks zip mode, see _reset_zip_mode)
 

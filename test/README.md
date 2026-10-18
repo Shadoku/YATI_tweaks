@@ -132,3 +132,4 @@ godot --headless -s test/run_tests.gd -- --runtime=res://baseline_runtime
 | `colors.tmx` | B3/B4: `#AARRGGBB` colours: background, tints on tile/object/group/image layers, text colour; colour-typed `modulate`, `self_modulate`, `debug_color`, Polygon2D `color`, Line2D `default_color`, metadata; a string-typed `modulate`; an embedded tileset with a colour-typed tile `modulate`, custom data and metadata |
 | `layer_class.tmx` | B7: tile, object, group and image layers with and without a class |
 | `templates.tmx` + `probe_tpl.tx`, `probe_text.tx`, `probe_rect.tx` | B1/B2: template instances that override size, rotation, visibility (tile object and `area` rectangle), their own gid (flipped) and text |
+| `unknown_class.tmx` | B8: objects of unknown classes (two `Door` rectangles with a property, a `Door` polygon, a `Lever` ellipse) and one without a class |

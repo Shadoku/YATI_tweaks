@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `test/bench_materialize.gd`: measures the engine's own cost of a map's tile layers (`tile_map_data`
   assignment, packed-scene instantiation, the frame after a layer enters the tree, `set_cell` /
   `erase_cell` of 16x16 chunks into a live layer, a layer per chunk).
+- B8: importer option `unknown_class_fallback` (default `"staticbody"`, as before): what an object of a
+  class that is no Godot node type becomes; `"node2d"` gives a plain Node2D with the shape as metadata
+  `shape` (`Rect2` or `PackedVector2Array`) and `size`, any class name of the mapping table that node.
 
 ### Changed
 - `test/run_tests.gd` checks that a runtime has `DataLoader.gd` / `CommonUtils.gd` before loading them,
@@ -37,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking** (B7): a tile layer without a class no longer has metadata `class` (it was always
   `"tilelayer"`); object, group and image layers with a class now get it as tile layers do
   (with `add_class_as_metadata`, the default).
+- B8: an object of an unknown class is reported with a warning once per class name and import,
+  whatever `add_class_as_metadata` says (it was silent with the option on, the default, so a `Door`
+  became a solid StaticBody2D unnoticed); the warning names the fallback used.
 
 ### Fixed
 - B5 (`docs/runtime-improvement-plan.md`): the Area2D gravity properties were misspelt in

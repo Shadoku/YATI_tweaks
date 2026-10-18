@@ -44,6 +44,9 @@ var map_wangset_to_terrain: bool = false
 var custom_data_prefix: String = "data_"
 # If not empty the created TileSet is saved to this resource path.
 var save_tileset_to: String = ""
+# What an object of a class that is no Godot node type becomes: "staticbody", any other class
+# name of the Reference's mapping table (e.g. "area"), or "node2d" (a Node2D with the shape as metadata).
+var unknown_class_fallback: String = "staticbody"
 
 # Results of the last import (any of the import methods)
 var last_error_count: int = 0
@@ -116,6 +119,7 @@ func _create(source_file: String, project_file: String, zip_file: String):
 	tilemap_creator.set_map_wangset_to_terrain(map_wangset_to_terrain)
 	tilemap_creator.set_custom_data_prefix(custom_data_prefix)
 	tilemap_creator.set_save_tileset_to(save_tileset_to)
+	tilemap_creator.set_unknown_class_fallback(unknown_class_fallback)
 
 	if project_file != "":
 		var ct = CustomTypes.new()
