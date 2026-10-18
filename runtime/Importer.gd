@@ -57,6 +57,11 @@ var always_wrap_root: bool = false
 # What an object of a class that is no Godot node type becomes: "staticbody", any other class
 # name of the Reference's mapping table (e.g. "area"), or "node2d" (a Node2D with the shape as metadata).
 var unknown_class_fallback: String = "staticbody"
+# What an object property (a reference to another object) becomes: "nodepath" (a NodePath from the
+# node to the target object's node, or the node itself for a Node-typed property of that name),
+# "geometry" (the target's points, as before 3.1) or "both" (the NodePath, and the geometry as
+# metadata "<name>_shape").
+var object_refs: String = "nodepath"
 
 # Results of the last import (any of the import methods)
 var last_error_count: int = 0
@@ -133,6 +138,7 @@ func _create(source_file: String, project_file: String, zip_file: String):
 	tilemap_creator.set_always_wrap_root(always_wrap_root)
 	tilemap_creator.set_animation_mode(animation_mode)
 	tilemap_creator.set_unknown_class_fallback(unknown_class_fallback)
+	tilemap_creator.set_object_refs(object_refs)
 
 	if project_file != "":
 		var ct = CustomTypes.new()

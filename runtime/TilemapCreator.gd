@@ -104,6 +104,10 @@ var _parallax_scale := Vector2.ONE			# parallax2d mode: product of the enclosing
 var _unknown_class_fallback: String = "staticbody"
 var _unknown_class_type = _godot_type.BODY
 var _reported_unknown_classes: Dictionary = {}	# class names already warned about in this import
+var _object_refs: String = "nodepath"		# object properties: "nodepath", "geometry" or "both"
+var _nodes_by_object_id: Dictionary = {}	# Tiled object id -> the node created for it (this import)
+var _pending_object_refs: Array = []		# object properties waiting for every node to exist (resolve_object_refs)
+var _property_info_cache: Dictionary = {}	# class + script -> {property name: property info} (get_assignable_properties)
 var _ct: CustomTypes = null
 var _base_dictionary: Dictionary
 
@@ -230,6 +234,17 @@ func set_unknown_class_fallback(value: String):
 	_unknown_class_type = t
 
 
+# What an object property becomes: "nodepath" (a NodePath to the target object's node, resolved
+# after all layers), "geometry" (the target's points, as in 3.0) or "both" (the NodePath, and the
+# geometry as metadata "<name>_shape")
+func set_object_refs(value: String):
+	_object_refs = value.to_lower()
+	if _object_refs != "nodepath" and _object_refs != "geometry" and _object_refs != "both":
+		print_rich("[color=" + WARNING_COLOR + "] -- Option object_refs '" + value + "' is not supported. -> Using 'nodepath'[/color]")
+		CommonUtils.warning_count += 1
+		_object_refs = "nodepath"
+
+
 func get_tileset():
 	return _tileset
 
@@ -257,6 +272,9 @@ func reset_import_state() -> void:
 	_template_cache.clear()
 	_objects_by_id = null
 	_reported_unknown_classes.clear()
+	_nodes_by_object_id.clear()
+	_pending_object_refs.clear()
+	_property_info_cache.clear()
 
 
 func create(source_file: String):
@@ -359,6 +377,9 @@ func create(source_file: String):
 	if _base_dictionary.has("properties"):
 		handle_properties(_base_node, _base_dictionary["properties"])
 
+	# Every object's node exists now: object properties become NodePaths (F2)
+	resolve_object_refs()
+
 	if _parallax_background != null and _parallax_background.get_child_count() == 0:
 		_base_node.remove_child(_parallax_background)
 		# Nothing is inside a scene tree yet, so free immediately
@@ -378,6 +399,7 @@ func create(source_file: String):
 	if _base_node.get_child_count() != 1 or _always_wrap_root:
 		var base = _base_node
 		_base_node = null
+		_nodes_by_object_id.clear()
 		return base
 
 	# Single child: return it parentless and free the wrapper node
@@ -386,6 +408,8 @@ func create(source_file: String):
 	recursively_change_owner(ret, ret)
 	if _base_dictionary.has("properties"):
 		handle_properties(ret, _base_dictionary["properties"])
+		resolve_object_refs()
+	_nodes_by_object_id.clear()
 	ret.name = _base_name
 	_base_node.free()
 	_base_node = null
@@ -1246,8 +1270,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 			instance.visible = obj_visible
 			if _add_class_as_metadata and class_string != "":
 				instance.set_meta("class", class_string)
-			if _add_id_as_metadata and obj_id != 0:
-				instance.set_meta("id", obj_id)
+			register_object_node(obj_id, instance)
 			if obj.has("properties"):
 				handle_properties(instance, obj["properties"], obj.get("template_dir_path", ""))
 		return
@@ -1382,8 +1405,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				convert_metadata_to_obj_properties(td, obj)
 				if _add_class_as_metadata and class_string != "":
 					instance.set_meta("class", class_string)
-				if _add_id_as_metadata and obj_id != 0:
-					instance.set_meta("id", obj_id)
+				register_object_node(obj_id, instance)
 				if obj.has("properties"):
 					handle_properties(instance, obj["properties"], obj.get("template_dir_path", ""))
 			return
@@ -1417,6 +1439,8 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				layer_node.remove_child(obj_sprite)
 				layer_node.add_child(parent)
 				parent.owner = _base_node
+				# The body stands for the object (its sprite keeps the id metadata)
+				register_object_node(obj_id, parent, false)
 				parent.name = obj_sprite.name
 				parent.position = obj_sprite.position
 				parent.rotation_degrees = obj_sprite.rotation_degrees
@@ -1433,8 +1457,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 
 		if _add_class_as_metadata and class_string != "":
 			obj_sprite.set_meta("class", class_string)
-		if _add_id_as_metadata and obj_id != 0:
-			obj_sprite.set_meta("id", obj_id)
+		register_object_node(obj_id, obj_sprite)
 		if obj.has("properties"):
 			handle_properties(obj_sprite, obj["properties"], obj.get("template_dir_path", ""))
 
@@ -1474,6 +1497,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 		obj_text.add_theme_font_override("font", font)
 		obj_text.add_theme_font_size_override("font_size", txt.get("pixelsize", 16))
 		obj_text.add_theme_color_override("font_color", CommonUtils.tiled_color(str(txt.get("color", "#000000")), Color.BLACK))
+		register_object_node(obj_id, obj_text)
 		if obj.has("properties"):
 			handle_properties(obj_text, obj["properties"], obj.get("template_dir_path", ""))
 
@@ -1496,8 +1520,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 			marker.visible = obj_visible
 			if _add_class_as_metadata and class_string != "":
 				marker.set_meta("class", class_string)
-			if _add_id_as_metadata and obj_id != 0:
-				marker.set_meta("id", obj_id)		
+			register_object_node(obj_id, marker)
 			if obj.has("properties"):
 				handle_properties(marker, obj["properties"], obj.get("template_dir_path", ""))
 		elif obj.has("polygon"):
@@ -1515,8 +1538,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				polygon_shape.rotation_degrees = obj_rot
 				if _add_class_as_metadata and class_string != "":
 					co.set_meta("class", class_string)
-				if _add_id_as_metadata and obj_id != 0:
-					co.set_meta("id", obj_id)
+				register_object_node(obj_id, co)
 				if obj.has("properties"):
 					handle_properties(co, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.NAVIGATION:
@@ -1541,8 +1563,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 
 				if _add_class_as_metadata and class_string != "":
 					nav_region.set_meta("class", class_string)
-				if _add_id_as_metadata and obj_id != 0:
-					nav_region.set_meta("id", obj_id)
+				register_object_node(obj_id, nav_region)
 				if obj.has("properties"):
 					handle_properties(nav_region, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.OCCLUDER:
@@ -1558,8 +1579,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				occ_poly.polygon = polygon_from_array(obj["polygon"])
 				if _add_class_as_metadata and class_string != "":
 					light_occ.set_meta("class", class_string)
-				if _add_id_as_metadata and obj_id != 0:
-					light_occ.set_meta("id", obj_id)
+				register_object_node(obj_id, light_occ)
 				if obj.has("properties"):
 					handle_properties(light_occ, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.POLYGON:
@@ -1573,8 +1593,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				polygon.polygon = polygon_from_array(obj["polygon"])
 				if _add_class_as_metadata and class_string != "":
 					polygon.set_meta("class", class_string)
-				if _add_id_as_metadata and obj_id != 0:
-					polygon.set_meta("id", obj_id)
+				register_object_node(obj_id, polygon)
 				if obj.has("properties"):
 					handle_properties(polygon, obj["properties"], obj.get("template_dir_path", ""))	
 		elif obj.has("polyline"):
@@ -1590,8 +1609,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				line.points = polygon_from_array(obj["polyline"])
 				if _add_class_as_metadata and class_string != "":
 					line.set_meta("class", class_string)
-				if _add_id_as_metadata and obj_id != 0:
-					line.set_meta("id", obj_id)
+				register_object_node(obj_id, line)
 				if obj.has("properties"):
 					handle_properties(line, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.PATH:
@@ -1608,8 +1626,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				path.curve = curve
 				if _add_class_as_metadata and class_string != "":
 					path.set_meta("class", class_string)
-				if _add_id_as_metadata and obj_id != 0:
-					path.set_meta("id", obj_id)
+				register_object_node(obj_id, path)
 				if obj.has("properties"):
 					handle_properties(path, obj["properties"], obj.get("template_dir_path", ""))
 			else:
@@ -1631,8 +1648,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 					collision_shape.name = "Segment Shape"
 				if _add_class_as_metadata and class_string != "":
 					co.set_meta("class", class_string)
-				if _add_id_as_metadata and obj_id != 0:
-					co.set_meta("id", obj_id)
+				register_object_node(obj_id, co)
 				if obj.has("properties"):
 					handle_properties(co, obj["properties"], obj.get("template_dir_path", ""))
 		else:
@@ -1688,8 +1704,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				collision_shape.visible = obj_visible
 				if _add_class_as_metadata and class_string != "":
 					co.set_meta("class", class_string)
-				if _add_id_as_metadata and obj_id != 0:
-					co.set_meta("id", obj_id)
+				register_object_node(obj_id, co)
 				if obj.has("properties"):
 					handle_properties(co, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.NAVIGATION:
@@ -1721,8 +1736,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 
 					if _add_class_as_metadata and class_string != "":
 						nav_region.set_meta("class", class_string)
-					if _add_id_as_metadata and obj_id != 0:
-						nav_region.set_meta("id", obj_id)		
+					register_object_node(obj_id, nav_region)
 					if obj.has("properties"):
 						handle_properties(nav_region, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.OCCLUDER:
@@ -1745,8 +1759,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 					occ_poly.polygon = polygon_from_rectangle(obj_width, obj_height)
 					if _add_class_as_metadata and class_string != "":
 						light_occ.set_meta("class", class_string)
-					if _add_id_as_metadata and obj_id != 0:
-						light_occ.set_meta("id", obj_id)
+					register_object_node(obj_id, light_occ)
 					if obj.has("properties"):
 						handle_properties(light_occ, obj["properties"], obj.get("template_dir_path", ""))
 			elif godot_type == _godot_type.POLYGON:
@@ -1767,8 +1780,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 					polygon.polygon = polygon_from_rectangle(obj_width, obj_height)
 					if _add_class_as_metadata and class_string != "":
 						polygon.set_meta("class", class_string)
-					if _add_id_as_metadata and obj_id != 0:
-						polygon.set_meta("id", obj_id)		
+					register_object_node(obj_id, polygon)
 					if obj.has("properties"):
 						handle_properties(polygon, obj["properties"], obj.get("template_dir_path", ""))	
 
@@ -1831,8 +1843,7 @@ func create_plain_node(obj: Dictionary, layer_node: Node, position: Vector2, cla
 	node.set_meta("size", Vector2(obj_width, obj_height))
 	if _add_class_as_metadata and class_string != "":
 		node.set_meta("class", class_string)
-	if _add_id_as_metadata and obj_id != 0:
-		node.set_meta("id", obj_id)
+	register_object_node(obj_id, node)
 	if obj.has("properties"):
 		handle_properties(node, obj["properties"], obj.get("template_dir_path", ""))
 
@@ -2267,16 +2278,179 @@ func get_object_polygon(obj_id: int):
 	return ret
 
 
-func handle_list_property(current_array: Array, current_value: Array):
+# refs: null for the target's geometry in place of an object item (object_refs "geometry"), else
+# an Array that gets [array, index, object id] per object item, its placeholder replaced by
+# resolve_object_refs()
+# The node created for a Tiled object: remembered for object references (F2) and given the
+# metadata "id" with add_id_as_metadata (set_id_meta false: a tile object's body, whose sprite
+# carries the id). The first node registered for an id stands for the object.
+func register_object_node(obj_id, node: Node, set_id_meta: bool = true) -> void:
+	var id := int(obj_id)
+	if id == 0: return
+	if not _nodes_by_object_id.has(id):
+		_nodes_by_object_id[id] = node
+	if set_id_meta and _add_id_as_metadata:
+		node.set_meta("id", id)
+
+
+# The second pass of object properties (object_refs "nodepath" / "both"): each becomes a NodePath
+# from its node to the target object's node. The tree is detached (not in a SceneTree) but
+# complete, so get_path_to() works. A property of the node of the same name takes it (a NodePath
+# the path, a Node the node, a typed array the list), else it is metadata.
+func resolve_object_refs() -> void:
+	var pending := _pending_object_refs
+	_pending_object_refs = []
+	for ref in pending:
+		if not is_instance_valid(ref["node"]): continue
+		var node: Node = ref["node"]
+		var name: String = ref["name"]
+		if ref.has("list"):
+			var list: Array = ref["list"]
+			for r in ref["refs"]:
+				r[0][r[1]] = get_object_ref_path(node, name, r[2])
+			assign_list_ref(node, name, list)
+		else:
+			var target_id: int = ref["id"]
+			var path := get_object_ref_path(node, name, target_id)
+			assign_object_ref(node, name, path, _nodes_by_object_id.get(target_id))
+
+
+# The NodePath from node to the node of the object target_id (an empty NodePath, with a warning,
+# for an unset reference or an id no imported object has)
+func get_object_ref_path(node: Node, name: String, target_id: int) -> NodePath:
+	var target = _nodes_by_object_id.get(target_id) if target_id != 0 else null
+	if target == null or not is_instance_valid(target):
+		var what := "is not set" if target_id == 0 else "names no imported object (id " + str(target_id) + ")"
+		print_rich("[color=" + WARNING_COLOR + "] -- Object property '" + name + "' of '" + str(node.name) + "' " + what + ". -> Empty NodePath[/color]")
+		CommonUtils.warning_count += 1
+		return NodePath()
+	return node.get_path_to(target)
+
+
+func assign_object_ref(node: Node, name: String, path: NodePath, target) -> void:
+	var info = get_assignable_properties(node).get(name)
+	if info != null:
+		if info["type"] == TYPE_NODE_PATH:
+			node.set(name, path)
+			return
+		if info["type"] == TYPE_OBJECT and not path.is_empty() and target is Node and is_of_class(target, str(info["class_name"])):
+			node.set(name, target)
+			return
+		if info["type"] == TYPE_NIL:
+			node.set(name, path)
+			return
+	node.set_meta(name, path)
+
+
+# A list property whose object items were resolved: an Array[NodePath] when it holds only
+# NodePaths; into a property of the node when its type takes it (Array[NodePath], Array[Node...])
+func assign_list_ref(node: Node, name: String, list: Array) -> void:
+	var only_paths := true
+	for item in list:
+		if typeof(item) != TYPE_NODE_PATH:
+			only_paths = false
+			break
+	var value: Array = Array(list, TYPE_NODE_PATH, &"", null) if only_paths else list
+	var info = get_assignable_properties(node).get(name)
+	if info != null:
+		if info["type"] == TYPE_NIL:
+			node.set(name, value)
+			return
+		if info["type"] == TYPE_ARRAY:
+			var typed = get_typed_array_for(info, list, node)
+			if typed != null:
+				node.set(name, typed)
+				return
+	node.set_meta(name, value)
+
+
+# list as the array type of an array property (info), or null when an item does not fit.
+# NodePath items fit a NodePath array, and an array of Nodes as the nodes they point at (from node).
+static func get_typed_array_for(info: Dictionary, list: Array, node: Node = null):
+	var hint_string: String = info["hint_string"]
+	var elem_type: int
+	var elem_class := ""
+	if info["hint"] == PROPERTY_HINT_TYPE_STRING and hint_string.contains(":"):
+		# A script's typed array: "<type>:" or "<type>/<hint>:<class>" (e.g. "22:", "24/34:Node2D")
+		elem_type = int(hint_string.get_slice(":", 0).get_slice("/", 0))
+		elem_class = hint_string.get_slice(":", 1)
+	elif info["hint"] == PROPERTY_HINT_ARRAY_TYPE and hint_string != "":
+		# An engine class's typed array: the type or class name
+		elem_type = TYPE_OBJECT
+		elem_class = hint_string
+		for t in range(TYPE_MAX):
+			if type_string(t) == hint_string:
+				elem_type = t
+				elem_class = ""
+				break
+	else:
+		return list
+	var items: Array = []
+	for item in list:
+		if elem_type == TYPE_OBJECT and typeof(item) == TYPE_NODE_PATH and node != null:
+			item = node.get_node_or_null(item)
+			if item == null: return null
+		if elem_type == TYPE_FLOAT and typeof(item) == TYPE_INT:
+			item = float(item)
+		if elem_type == TYPE_STRING_NAME and typeof(item) == TYPE_STRING:
+			item = StringName(item)
+		if elem_type == TYPE_NODE_PATH and typeof(item) == TYPE_STRING:
+			item = NodePath(item)
+		if typeof(item) != elem_type: return null
+		if elem_type == TYPE_OBJECT and not is_of_class(item, elem_class): return null
+		items.append(item)
+	if elem_type == TYPE_OBJECT:
+		if ClassDB.class_exists(elem_class):
+			return Array(items, TYPE_OBJECT, StringName(elem_class), null)
+		return null
+	return Array(items, elem_type, &"", null)
+
+
+# Whether obj is of class cls: an engine class, or a script's class_name along its base scripts
+static func is_of_class(obj: Object, cls: String) -> bool:
+	if cls == "" or obj.is_class(cls): return true
+	var script = obj.get_script()
+	while script != null:
+		if script.get_global_name() == StringName(cls): return true
+		script = script.get_base_script()
+	return false
+
+
+# The properties of a node that a custom property of the same name may set: the ones that are
+# stored or shown in the editor, and script variables (not categories and groups, not 'script';
+# 'name' and the like are no such property). Cached per class and script: nodes of one kind
+# share the list.
+func get_assignable_properties(node: Object) -> Dictionary:
+	var script = node.get_script()
+	var key := node.get_class() + "|" + (str(script.get_instance_id()) if script != null else "")
+	var cached = _property_info_cache.get(key)
+	if cached != null:
+		return cached
+	var ret := {}
+	for p in node.get_property_list():
+		var usage: int = p["usage"]
+		if usage & (PROPERTY_USAGE_CATEGORY | PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SUBGROUP): continue
+		if usage & (PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_SCRIPT_VARIABLE) == 0: continue
+		var pname: String = p["name"]
+		if pname == "script" or pname.begins_with("metadata/"): continue
+		ret[pname] = p
+	_property_info_cache[key] = ret
+	return ret
+
+
+func handle_list_property(current_array: Array, current_value: Array, refs = null):
 	for item in current_value:
 		var item_type: String = item.get("type", "string")
 		var item_val = item["value"]
 		if item_type == "list":
 			var list_val = []
 			current_array.append(list_val)
-			handle_list_property(list_val, item_val)
+			handle_list_property(list_val, item_val, refs)
+		elif item_type == "object" and refs != null:
+			refs.append([current_array, current_array.size(), int(item_val)])
+			current_array.append(NodePath())
 		elif item_type == "object":
-			var obj = get_object_polygon(item_val)
+			var obj = get_object_polygon(int(item_val))
 			if obj != null:
 				current_array.append(obj)
 			else:
@@ -2307,13 +2481,16 @@ func handle_properties(target_node: Node, properties: Array, base_dir: String = 
 		var name: String = property.get("name", "")
 		var type: String = property.get("type", "string")
 		var list_val = ""
+		var list_refs = null
 		var val: String = ""
 		# Class typed property: value is a Dictionary {member_name: member_value} (see contract C4)
 		var class_val = property.get("value", {}) if type == "class" else null
 		var is_class_dict: bool = class_val is Dictionary
 		if type == "list":
 			list_val = []
-			handle_list_property(list_val, property["value"])
+			if _object_refs != "geometry":
+				list_refs = []
+			handle_list_property(list_val, property["value"], list_refs)
 		elif not is_class_dict:
 			val = str(property.get("value", ""))
 		var lname := name.to_lower()
@@ -2721,12 +2898,25 @@ func handle_properties(target_node: Node, properties: Array, base_dir: String = 
 
 		# Other properties are added as Metadata
 		else:
-			if type == "object":
+			if type == "object" and _object_refs != "geometry":
+				# A NodePath once every node exists (resolve_object_refs)
+				_pending_object_refs.append({"node": target_node, "name": name, "id": int(val)})
+				if _object_refs == "both":
+					var shape = get_object_polygon(int(val))
+					if shape != null:
+						target_node.set_meta(name + "_shape", shape)
+			elif type == "object":
 				var obj = get_object_polygon(int(val))
 				if obj != null:
 					target_node.set_meta(name, obj)
 				else:
 					target_node.set_meta(name, CommonUtils.get_right_typed_value(type, val))
+			elif type == "list" and list_refs != null and not list_refs.is_empty():
+				_pending_object_refs.append({"node": target_node, "name": name, "list": list_val, "refs": list_refs})
+				if _object_refs == "both":
+					var shapes = []
+					handle_list_property(shapes, property["value"])
+					target_node.set_meta(name + "_shape", shapes)
 			elif type == "list":
 				target_node.set_meta(name, list_val)
 			elif is_class_dict:

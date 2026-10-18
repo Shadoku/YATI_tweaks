@@ -6,6 +6,7 @@
 - [Options](#options)
 - [Mapping from Tiled elements to Godot elements](#mapping-from-tiled-elements-to-godot-elements)
 - [Custom properties reference](#custom-properties-reference)
+- [Object references](#object-references)
 - [Specialities](#specialities)
 - [Newly supported Tiled features](#newly-supported-tiled-features)
 - [Tiled features not supported](#tiled-features-not-supported)
@@ -162,6 +163,20 @@ What a Tiled object becomes whose class (or `godot_node_type`) is not one of the
 `"instance"` and `"parallax"` are not accepted (a warning, then `"staticbody"`).
 Each unknown class is reported once per import with a warning, whatever `add_class_as_metadata` says.
 
+### object_refs
+
+Type `String`, default: `"nodepath"`
+
+What a property of type `object` (a reference to another object of the map) becomes:
+
+- `"nodepath"` (the default): a `NodePath` from the node holding the property to the node created for the
+  target object, or the target node itself for a Node-typed property of that name; see
+  [Object references](#object-references).
+- `"geometry"`: the target object's geometry in map coordinates, as before 3.1: a `PackedVector2Array` for a
+  polygon, polyline or (rotated) rectangle, a `Vector2` for a point, the id as a String for an ellipse, capsule,
+  tile object or an id no object has.
+- `"both"`: the `NodePath` as in `"nodepath"`, and the geometry as in `"geometry"` as metadata `<name>_shape`.
+
 ### Tiled project file
 
 Not an option variable but the optional last parameter of the import methods:
@@ -272,7 +287,7 @@ Coll.(*): All tile collision objects (except point), ellipse is approximated by 
 Setting these properties affect the Godot settings accordingly.  
 Custom properties which are not in this list or not fitting to the element are added as Meta Data.  
 Their values are typed as in Tiled: `bool`, `int`, `float`, `string`, `file` (a path String), `color` (a `Color`;
-a String `#RRGGBBAA` before version 3.1), `object` (see below), `class` (a Dictionary) and `list` (an Array).  
+a String `#RRGGBBAA` before version 3.1), `object` (a `NodePath`, see [Object references](#object-references)), `class` (a Dictionary) and `list` (an Array).  
 If assigned to a tile and the property name is starting with the custom data prefix they are added to the Tile Custom Data.
 
 > **Tile** custom properties: The property name and type will refer to a layer in the Godot TileSets's Custom Data Layer array,   
@@ -491,6 +506,38 @@ This seems to be convenient as providing all of these properties would greatly i
 |                     | Screen Offset                      |                                                 | screen_offset_x                         | float        |                                                                                                                                     |
 |                     |                                    |                                                 | screen_offset_y                         | float        |                                                                                                                                     |
 
+## Object references
+
+A custom property of type `object` names another object of the map by its id. With
+[object_refs](#object_refs) `"nodepath"` (the default) or `"both"` it is resolved in a second pass, once every
+layer is built, to the node created for that object:
+
+- **Which node:** the node the object became: the collision object (StaticBody2D, Area2D, ...) of a shape
+  object, not its CollisionShape2D; for a tile object the body when its tile has collision shapes, else its
+  Sprite2D (or AnimatedSprite2D); an instantiated scene's root; the Marker2D, Label, Polygon2D, Line2D, Path2D,
+  NavigationRegion2D or LightOccluder2D otherwise. Objects inside group layers and template instances work the
+  same way.
+- **What is set:** a `NodePath` from the node holding the property to the target node (`get_node(path)` finds it
+  while both are in the imported tree, also after it is added to a scene). If the node has a property of the
+  same name, it gets the value instead of the metadata: a `NodePath` property the path, a `Node`-typed property
+  (e.g. `@export var target: Node2D`) the node itself, an untyped `var` the path. Otherwise the path is metadata
+  of that name.
+- **Lists:** a property of type `list` whose items are objects becomes an `Array[NodePath]`; a list mixing
+  objects with other items an untyped Array with a `NodePath` for each object item. A property of the same
+  name typed `Array[NodePath]` or `Array[Node]` (or a Node class) gets it as that array.
+- **Unset or dangling:** an object property that is not set (id 0) or names an id no imported object has (a
+  deleted object, one on a layer with `no_import`) gives an empty `NodePath()` and a warning.
+- The map's own object properties resolve from the root node; on a single-layer map without
+  `always_wrap_root` from the layer that is returned.
+
+**References to objects of other maps.** Tiled's `object` properties only reach objects of the same map. For
+a warp or door system name the other map by a convention: a custom class type (in the project file) with exactly
+two members, `map` (type `file`) and `object` (type `int` or `object`). Such a class-typed property arrives as the
+Dictionary `{"map": "<path as saved, relative to the map file>", "object": <id>}` like any class value and is
+not resolved; the game resolves it when it needs to, e.g. by importing the other map (with `add_id_as_metadata`
+on) and looking for the node with that `id` metadata. Join the `map` member with the directory of the map that
+holds the property.
+
 ## Specialities
 
 - For some custom properties e.g. 'use_parent_material' there's a catch that this can be ambiguous.  
@@ -521,6 +568,7 @@ Supported by this runtime fork in addition to upstream YATI 2.2.x:
 | Image layer `repeatx` / `repeaty` on a plain (non-parallax) image layer | `TextureRect` with `STRETCH_TILE` and texture repeat, extended over the map area on the repeated axis |
 | Tile animations of any frame sequence (frames not starting with the tile, ping-pong, other rows, image collections) | A strip atlas per animated tile ([animation_mode](#animation_mode)) |
 | Tile objects of animated tiles | `AnimatedSprite2D` |
+| Object references (`object` properties) | A `NodePath` to the target's node, or the node for a `Node`-typed property of that name ([Object references](#object-references)) |
 | Object references (`object` properties) to objects inside group layers | Resolved like references to top-level objects |
 | Deprecated XML tile layer data (`<tile gid="..."/>` children, no encoding) | Imported like CSV data |
 | Tileset class | Metadata `class` on the generated TileSet |

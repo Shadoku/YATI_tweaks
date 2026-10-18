@@ -1159,7 +1159,8 @@ func test_object_property_types() -> bool:
 
 
 func test_object_reference_top_level() -> bool:
-	var p := need(_objects(), "Props (Area)", "Area2D")
+	# object_refs "geometry": the target's points (F2 made "nodepath" the default)
+	var p := need(_import("objects.tmx", {"object_refs": "geometry"}, "custom.tiled-project"), "Props (Area)", "Area2D")
 	if p == null: return done()
 	meta(p, "p_obj_poly", PackedVector2Array([Vector2(160, 160), Vector2(192, 160), Vector2(192, 192)]))
 	meta(p, "p_obj_point", Vector2(200, 100))
@@ -1167,8 +1168,8 @@ func test_object_reference_top_level() -> bool:
 
 
 func test_new_object_reference_in_group() -> bool:
-	# T6: object inside a group layer.
-	var p := need(_objects(), "Props (Area)", "Area2D")
+	# T6: object inside a group layer (object_refs "geometry", see above).
+	var p := need(_import("objects.tmx", {"object_refs": "geometry"}, "custom.tiled-project"), "Props (Area)", "Area2D")
 	if p: meta(p, "p_obj_group", PackedVector2Array([Vector2(100, 100), Vector2(110, 100), Vector2(110, 110), Vector2(100, 110)]))
 	return done()
 
@@ -1726,6 +1727,125 @@ func test_clip_artifacts_xml_and_json() -> bool:
 			eq(c.scale, Vector2(1, 1), f + ": Clipped scale")
 		var u := need(n, "Unclipped", "Sprite2D") as Sprite2D
 		if u: eq(u.region_rect, Rect2(16, 0, 16, 16), f + ": Unclipped region")
+	return done()
+
+
+# ---------------------------------------------------------------------------
+# Runtime improvement plan, part B (docs/runtime-improvement-plan.md, F1-F3, F5)
+
+## The node a NodePath stored on `from` points at (null when it does not resolve).
+func _ref(from: Node, path: Variant) -> Node:
+	if from == null or typeof(path) != TYPE_NODE_PATH or (path as NodePath).is_empty(): return null
+	return from.get_node_or_null(path)
+
+
+func _check_ref(from: Node, path: Variant, target_name: String, msg: String) -> void:
+	if not check(typeof(path) == TYPE_NODE_PATH, "%s is %s (%s), expected NodePath" % [msg, type_string(typeof(path)), str(path)]): return
+	var t := _ref(from, path)
+	if check(t != null, "%s: %s does not resolve" % [msg, str(path)]):
+		eq(String(t.name), target_name, msg + " target")
+
+
+func test_new_object_ref_nodepath() -> bool:
+	# F2: an object property became the target's geometry. With object_refs = "nodepath" (the
+	# default) it is a NodePath from the node to the target's node, resolved after every layer is
+	# built; lists of objects become Array[NodePath]; an unset (0) or dangling id an empty
+	# NodePath with a warning.
+	var imp := _new_importer()
+	if not _require_option(imp, "object_refs"): return done()
+	eq(imp.get("object_refs"), "nodepath", "default object_refs")
+	var n := _import_with(imp, "object_refs.tmx")
+	if n == null: return done()
+	eq(imp.get("last_warning_count"), 2, "warnings (unset and dangling reference)")
+	eq(imp.get("last_error_count"), 0, "errors")
+	var door := need(n, "Door (Area)", "Area2D")
+	if door:
+		if door.has_meta("target"): _check_ref(door, door.get_meta("target"), "Spawn", "Door target")
+		else: fail("Door: meta 'target' missing")
+		meta(door, "unset", NodePath())
+		meta(door, "missing", NodePath())
+		var targets: Variant = door.get_meta("targets", null)
+		if check(targets is Array, "Door targets is %s, expected Array" % type_string(typeof(targets))):
+			var a: Array = targets
+			check(a.is_typed() and a.get_typed_builtin() == TYPE_NODE_PATH, "Door targets is not an Array[NodePath]")
+			if eq(a.size(), 2, "Door targets size"):
+				_check_ref(door, a[0], "Spawn", "Door targets[0]")
+				_check_ref(door, a[1], "Lever", "Door targets[1]")
+	var mixed := need(n, "Mixed", "Marker2D")
+	if mixed:
+		var stuff: Variant = mixed.get_meta("stuff", null)
+		if check(stuff is Array and (stuff as Array).size() == 2, "Mixed stuff: " + str(stuff)):
+			check(not (stuff as Array).is_typed(), "a list with other items is typed")
+			_check_ref(mixed, stuff[0], "Lever", "Mixed stuff[0]")
+			eq(stuff[1], 7, "Mixed stuff[1]")
+	# The map's own properties resolve from the root
+	if n.has_meta("start"): _check_ref(n, n.get_meta("start"), "Spawn", "map start")
+	else: fail("root: meta 'start' missing")
+	return done()
+
+
+func test_new_object_ref_in_group_layer() -> bool:
+	# F2: references into and out of group layers; a shape object's reference names its body.
+	var n := _import("object_refs.tmx")
+	if n == null: return done()
+	var lever := need(n, "Lever", "Polygon2D")
+	if lever:
+		if lever.has_meta("opens"):
+			_check_ref(lever, lever.get_meta("opens"), "Door (Area)", "Lever opens")
+			is_type(_ref(lever, lever.get_meta("opens")), "Area2D", "Lever opens target")
+		else: fail("Lever: meta 'opens' missing")
+	var crate := need(n, "Crate (SB)", "StaticBody2D")
+	if crate:
+		if crate.has_meta("sibling"): _check_ref(crate, crate.get_meta("sibling"), "Lever", "Crate sibling")
+		else: fail("Crate: meta 'sibling' missing")
+	return done()
+
+
+func test_new_object_ref_export() -> bool:
+	# F2: a node with a property of the reference's name gets it there: a NodePath export the
+	# path, a Node export the node, an Array[NodePath] export the list; no metadata.
+	var n := _import("object_refs.tmx")
+	if n == null: return done()
+	var sw := need(n, "Switch")
+	if sw == null: return done()
+	if not check(sw.get_script() != null, "Switch has no script (ref_target.tscn)"): return done()
+	_check_ref(sw, sw.get("target"), "Spawn", "Switch.target")
+	var tn: Variant = sw.get("target_node")
+	if check(tn is Node, "Switch.target_node is %s" % str(tn)):
+		eq(String((tn as Node).name), "Lever", "Switch.target_node")
+	var wp: Variant = sw.get("waypoints")
+	if check(wp is Array and (wp as Array).size() == 2, "Switch.waypoints: " + str(wp)):
+		_check_ref(sw, wp[0], "Spawn", "Switch.waypoints[0]")
+		_check_ref(sw, wp[1], "Lever", "Switch.waypoints[1]")
+	for k in ["target", "target_node", "waypoints"]:
+		check(not sw.has_meta(k), "Switch: '" + k + "' also stored as metadata")
+	return done()
+
+
+func test_new_object_ref_geometry_mode() -> bool:
+	# F2: object_refs = "geometry" keeps the 3.0 result (the target's points); "both" gives the
+	# NodePath and the geometry as metadata '<name>_shape'.
+	var lever_poly := PackedVector2Array([Vector2(48, 96), Vector2(64, 96), Vector2(64, 112)])
+	var imp := _new_importer({"object_refs": "geometry"})
+	if not _require_option(imp, "object_refs"): return done()
+	var g := _import_with(imp, "object_refs.tmx")
+	if g:
+		eq(imp.get("last_warning_count"), 0, "geometry mode warnings")
+		var door := need(g, "Door (Area)")
+		if door:
+			meta(door, "target", Vector2(80, 48))
+			meta(door, "targets", [Vector2(80, 48), lever_poly])
+			check(not door.has_meta("target_shape"), "geometry mode wrote target_shape")
+	var b := _import("object_refs.tmx", {"object_refs": "both"})
+	if b:
+		var door := need(b, "Door (Area)")
+		if door:
+			if door.has_meta("target"): _check_ref(door, door.get_meta("target"), "Spawn", "both: Door target")
+			meta(door, "target_shape", Vector2(80, 48))
+			meta(door, "targets_shape", [Vector2(80, 48), lever_poly])
+			var t: Variant = door.get_meta("targets", null)
+			if check(t is Array and (t as Array).size() == 2, "both: Door targets " + str(t)):
+				_check_ref(door, t[1], "Lever", "both: Door targets[1]")
 	return done()
 
 

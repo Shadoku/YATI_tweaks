@@ -55,8 +55,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - B10a: importer option `always_wrap_root` (default `false`): a map with a single layer returns a
   `Node2D` root holding the map's properties, the layer as its child, instead of the layer itself with the
   map's properties applied over its own. Recommended; planned as the default of 4.0.
+- F2: importer option `object_refs` (default `"nodepath"`): an object property becomes a `NodePath` from its node
+  to the node created for the target object, resolved after every layer is built (`TilemapCreator.register_object_node`
+  records each object's node, `resolve_object_refs` is the second pass); a property of the same name on the node
+  takes it (a `NodePath` export the path, a `Node` export the node); a list of objects becomes an
+  `Array[NodePath]`; an unset or dangling reference an empty NodePath with a warning. `"geometry"` keeps the target's
+  points (3.0), `"both"` writes the NodePath and the points as metadata `<name>_shape`. The Reference documents
+  a `MapRef { map, object }` class convention for references into other maps.
 
 ### Changed
+- F2: with the new default `object_refs = "nodepath"` an object property is a `NodePath` instead of the
+  target's geometry (`PackedVector2Array` / `Vector2`); set `object_refs = "geometry"` for the 3.0 values. A text
+  object's Label now gets metadata `id` with `add_id_as_metadata`, as every other object's node does.
 - `test/run_tests.gd` checks that a runtime has `DataLoader.gd` / `CommonUtils.gd` before loading them,
   so the native facade (only an `Importer.gd`) runs the suite without a load error per test.
 - **Breaking** (B4): colour-typed properties that become metadata (on nodes, tiles, the TileSet, in
