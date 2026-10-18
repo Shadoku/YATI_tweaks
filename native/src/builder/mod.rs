@@ -4,16 +4,18 @@
 //! materials, parallax nodes, the single-child parentless return), with the tile layers filled
 //! through one `tile_map_data` assignment each.
 
+mod assign;
 mod cells;
 mod nodeprops;
 mod objects;
+mod refs;
 
 use crate::diag::Diag;
 use crate::dynobj::{get_vec, set};
 use crate::gd::{get_basename, get_file, tiled_color};
 use crate::map::TiledMap;
 use crate::options::{options_of, Options, TiledImportOptions};
-use crate::props::{get_property, godot_node_type_property, gprops, GProp};
+use crate::props::{get_property, godot_node_type_property, gprops, Enums, GProp};
 use crate::tileset::{Built, TiledTileSets};
 use godot::classes::canvas_item::TextureFilter;
 use godot::classes::canvas_item_material::BlendMode;
@@ -118,6 +120,22 @@ pub(crate) struct Build<'m> {
     objects_by_id: Option<HashMap<i64, &'m Object>>,
     atlas_index_cache: HashMap<u32, i32>,
     cell_cache: HashMap<u32, Option<[i16; 4]>>,
+    /// `object_refs`, validated: `nodepath`, `geometry` or `both` (F2).
+    object_refs: String,
+    /// The project file's enums, for mask properties given as value names (F5).
+    enums: Enums,
+    /// Object id -> the node that stands for it (the first registered; F2).
+    nodes_by_id: HashMap<i64, Gd<Node>>,
+    /// Object properties waiting for every node to exist (`resolve_object_refs`).
+    pending_refs: Vec<refs::PendingRef>,
+    /// Object nodes with a script, and their objects: `_tiled_import` candidates (F1).
+    hooks: Vec<(Gd<Node>, Obj)>,
+    /// Scripts attached by `godot_script` properties so far (a node gets a script only so,
+    /// or from its scene).
+    scripts_set: u64,
+    /// `get_assignable_properties`' cache of scripted nodes: class -> script id -> properties
+    /// by name.
+    prop_info: HashMap<String, HashMap<i64, Rc<assign::PropInfos>>>,
 }
 
 impl<'m> Build<'m> {
@@ -147,6 +165,14 @@ impl<'m> Build<'m> {
                 t
             }
         };
+        let mut object_refs = opts.object_refs.to_lowercase();
+        if object_refs != "nodepath" && object_refs != "geometry" && object_refs != "both" {
+            diag.warn(format!(
+                " -- Option object_refs '{}' is not supported. -> Using 'nodepath'",
+                opts.object_refs
+            ));
+            object_refs = "nodepath".into();
+        }
         let base_path = map.base_dir();
         let base_name = get_basename(get_file(map.path())).to_string();
         let base_node = Node2D::new_alloc();
@@ -195,6 +221,13 @@ impl<'m> Build<'m> {
             objects_by_id: None,
             atlas_index_cache: HashMap::new(),
             cell_cache: HashMap::new(),
+            object_refs,
+            enums: Enums::of(map.project()),
+            nodes_by_id: HashMap::new(),
+            pending_refs: Vec::new(),
+            hooks: Vec::new(),
+            scripts_set: 0,
+            prop_info: HashMap::new(),
             opts,
         }
     }
@@ -289,6 +322,8 @@ impl<'m> Build<'m> {
             let mut n: Gd<Node> = base.clone().upcast();
             self.handle_properties(&mut n, p, "");
         }
+        // Every object's node exists now: object properties become NodePaths (F2)
+        self.resolve_object_refs();
 
         if let Some(pbg) = self.parallax_background.take() {
             if pbg.get_child_count() == 0 {
@@ -297,22 +332,55 @@ impl<'m> Build<'m> {
             }
         }
 
-        if base.get_child_count() != 1 || self.opts.always_wrap_root {
-            return (Some(base.upcast()), self.diag);
-        }
-        // A single child: returned parentless, the wrapper freed
-        let Some(mut ret) = base.get_child(0) else {
-            return (Some(base.upcast()), self.diag);
+        let single = (base.get_child_count() == 1 && !self.opts.always_wrap_root)
+            .then(|| base.get_child(0))
+            .flatten();
+        let Some(mut ret) = single else {
+            let mut root: Gd<Node> = base.upcast();
+            self.finish_import(&mut root);
+            return (Some(root), self.diag);
         };
+        // A single child: returned parentless, the wrapper freed
         base.remove_child(&ret);
         let r = ret.clone();
         change_owner_recursively(&mut ret, &r);
         if let Some(p) = &map_props {
             self.handle_properties(&mut ret, p, "");
+            self.resolve_object_refs();
         }
         ret.set_name(self.base_name.as_str());
+        self.finish_import(&mut ret);
         base.free();
         (Some(ret), self.diag)
+    }
+
+    /// `finish_import`: the root gets the map's bounds as metadata (F3); every object node
+    /// that has a method `_tiled_import` gets it called (F1), once the tree is complete and
+    /// object references are resolved; then the per-import node maps go.
+    fn finish_import(&mut self, root: &mut Gd<Node>) {
+        let map = self.map;
+        let (tx, ty, tw, th) = map.tile_rect();
+        let (x, y, w, h) = map.pixel_rect((tx, ty, tw, th));
+        root.set_meta(
+            "map_rect",
+            &Rect2::new(
+                Vector2::new(x as f32, y as f32),
+                Vector2::new(w as f32, h as f32),
+            )
+            .to_variant(),
+        );
+        root.set_meta(
+            "map_size_tiles",
+            &Vector2i::new(tw as i32, th as i32).to_variant(),
+        );
+        root.set_meta(
+            "tile_size",
+            &Vector2i::new(self.tile_w as i32, self.tile_h as i32).to_variant(),
+        );
+        root.set_meta("orientation", &self.orientation.to_variant());
+        self.call_import_hooks();
+        self.nodes_by_id.clear();
+        self.prop_info.clear();
     }
 
     fn layer_props(&self, l: &Layer) -> Option<Vec<GProp>> {

@@ -11,8 +11,8 @@ use crate::tileset::Built;
 use godot::classes::text_server::AutowrapMode;
 use godot::classes::{
     AnimatableBody2D, AnimatedSprite2D, Area2D, AtlasTexture, CanvasItem, CapsuleShape2D,
-    CharacterBody2D, CollisionObject2D, CollisionPolygon2D, CollisionShape2D, Curve2D, Label,
-    LightOccluder2D, Line2D, Marker2D, Node, Node2D, OccluderPolygon2D, PackedScene, Path2D,
+    CharacterBody2D, CollisionObject2D, CollisionPolygon2D, CollisionShape2D, Control, Curve2D,
+    Label, LightOccluder2D, Line2D, Marker2D, Node, Node2D, OccluderPolygon2D, PackedScene, Path2D,
     Polygon2D, RectangleShape2D, RigidBody2D, SegmentShape2D, Shape2D, Sprite2D, SpriteFrames,
     StaticBody2D, SystemFont, TileData, TileSetAtlasSource,
 };
@@ -99,7 +99,7 @@ impl Build<'_> {
         Vector2::new(x as f32, y as f32)
     }
 
-    fn polygon_from(&self, pts: &[Point]) -> PackedVector2Array {
+    pub(super) fn polygon_from(&self, pts: &[Point]) -> PackedVector2Array {
         pts.iter().map(|p| self.transpose(p.x, p.y, true)).collect()
     }
 
@@ -127,13 +127,22 @@ impl Build<'_> {
         p
     }
 
-    fn meta_class_id(&self, n: &mut Gd<Node>, class: &str, id: i64) {
+    /// The end of an object's node: class metadata, the node registered for the object (with
+    /// its id metadata), the object's properties, and the node a `_tiled_import` candidate.
+    fn finish_object(&mut self, n: &mut Gd<Node>, obj: &Obj, class: &str, id: i64) {
         if self.opts.add_class_as_metadata && !class.is_empty() {
             n.set_meta(&self.meta_class, &class.to_variant());
         }
-        if self.opts.add_id_as_metadata && id != 0 {
-            n.set_meta(&self.meta_id, &id.to_variant());
-        }
+        self.register(id, n, true);
+        self.object_props(n, obj, false);
+    }
+
+    /// An object node's properties; then the node is a `_tiled_import` candidate (`scene`: it
+    /// is a scene's root).
+    fn object_props(&mut self, n: &mut Gd<Node>, obj: &Obj, scene: bool) {
+        let scripts = self.scripts_set;
+        self.apply_props(n, obj);
+        self.hook_candidate(n, obj, scene, scripts);
     }
 
     fn apply_props(&mut self, n: &mut Gd<Node>, obj: &Obj) {
@@ -141,6 +150,121 @@ impl Build<'_> {
             let dir = obj.template_dir.clone().unwrap_or_default();
             self.handle_properties(n, p, &dir);
         }
+    }
+
+    /// Whether any class can map to a scene in this import (`class_scenes`, or `godot_scene`
+    /// members of the project's classes).
+    fn maps_classes_to_scenes(&self) -> bool {
+        !self.opts.class_scenes.is_empty()
+            || (self.opts.read_godot_scene_from_custom_types && self.map.project().is_some())
+    }
+
+    /// `get_class_scene`: the scene path for objects of a Tiled class (F1), resolved, or "":
+    /// `class_scenes` (a relative path is relative to the map), else the class's `godot_scene`
+    /// file member in the project file (scope `object`, or `tile` for a tile's class) if
+    /// `read_godot_scene_from_custom_types`: the object's own `godot_scene` property when it
+    /// overrides the member (relative to its file, the map or template), else the member's value
+    /// (relative to the project file).
+    fn class_scene(&self, obj: &Obj, class: &str, scope: &str) -> String {
+        if class.is_empty() {
+            return String::new();
+        }
+        if let Some(mapped) = self.opts.class_scene(class).filter(|m| !m.is_empty()) {
+            return join_file_path(&self.base_path, mapped);
+        }
+        if !self.opts.read_godot_scene_from_custom_types {
+            return String::new();
+        }
+        let Some(project) = self.map.project() else {
+            return String::new();
+        };
+        let find = |scope: &str| {
+            project
+                .members(class, scope)
+                .and_then(|m| m.iter().find(|p| p.name.as_deref() == Some("godot_scene")))
+        };
+        let member = find(scope).or_else(|| (scope == "tile").then(|| find("object")).flatten());
+        let Some(member) = member else {
+            return String::new();
+        };
+        for p in obj.props.iter().flatten() {
+            if p.name == "godot_scene" && p.kind == "file" && !p.from_project {
+                let own = p.val();
+                if own.is_empty() {
+                    return String::new();
+                }
+                let dir = obj.template_dir.as_deref().unwrap_or(&self.base_path);
+                return join_file_path(dir, &own);
+            }
+        }
+        let value = GProp::from_property(member, true).val();
+        if value.is_empty() {
+            return String::new();
+        }
+        join_file_path(&project.dir(), &value)
+    }
+
+    /// `instantiate_scene`: the scene `res_path` for an object (class `instance` with
+    /// `res_path`, or a scene for its class), added to `layer_node` at `pos` with the object's
+    /// name (else the scene file's), rotation, visibility and `scale` (a tile object's size),
+    /// then class metadata, the object's registration and its properties. `replaces`: a node
+    /// already made for the object (a tile object's sprite), freed once the scene is loaded.
+    #[allow(clippy::too_many_arguments)]
+    fn instantiate_scene(
+        &mut self,
+        res_path: &str,
+        obj: &Obj,
+        layer_node: &mut Gd<Node>,
+        pos: Vector2,
+        scale: Vector2,
+        class: &str,
+        replaces: Option<Gd<Node>>,
+    ) {
+        let base = self.base_path.clone();
+        let Some(res) = load_resource(res_path, &base, &mut self.diag) else {
+            return;
+        };
+        let Ok(scene) = res.try_cast::<PackedScene>() else {
+            self.diag
+                .error(format!("ERROR: '{res_path}' is not a scene. -> Skipped"));
+            return;
+        };
+        if let Some(mut r) = replaces {
+            r.set_owner(Gd::<Node>::null_arg());
+            layer_node.remove_child(&r);
+            r.free();
+        }
+        let Some(mut inst) = scene.instantiate() else {
+            return;
+        };
+        layer_node.add_child(&inst);
+        self.own(&mut inst);
+        let o = &obj.o;
+        let name = o.name.clone().unwrap_or_default();
+        let n = if name.is_empty() {
+            get_basename(get_file(res_path)).to_string()
+        } else {
+            name
+        };
+        inst.set_name(n.as_str());
+        let rot = f(o.rotation, 0.0) as f32;
+        if let Ok(mut n2) = inst.clone().try_cast::<Node2D>() {
+            n2.set_position(pos);
+            n2.set_rotation_degrees(rot);
+            n2.set_scale(scale);
+        } else if let Ok(mut c) = inst.clone().try_cast::<Control>() {
+            c.set_position(pos);
+            c.set_rotation_degrees(rot);
+            c.set_scale(scale);
+        }
+        if let Ok(mut ci) = inst.clone().try_cast::<CanvasItem>() {
+            ci.set_visible(o.visible.unwrap_or(true));
+        }
+        if self.opts.add_class_as_metadata && !class.is_empty() {
+            inst.set_meta(&self.meta_class, &class.to_variant());
+        }
+        self.register(o.id.unwrap_or(0), &inst, true);
+        self.object_props(&mut inst, obj, true);
     }
 
     /// `handle_object`: the object, its opacity applied to whatever got created for it.
@@ -232,7 +356,15 @@ impl Build<'_> {
             class.clone()
         };
         let mut gtype = GType::of(&type_string);
-        if gtype == GType::Unknown {
+        // A scene for the class (class_scenes, or a custom class's godot_scene member) comes
+        // after a godot_node_type property and before the class mapping (F1); template
+        // instances decide in their template's objects
+        let maps_scenes = self.maps_classes_to_scenes();
+        let mut scene_path = String::new();
+        if maps_scenes && !found && o.template.is_none() {
+            scene_path = self.class_scene(&obj, &class, "object");
+        }
+        if gtype == GType::Unknown && scene_path.is_empty() {
             if found {
                 self.diag.warn(format!(
                     " -- Unknown godot_node_type '{type_string}'. -> Using '{}'",
@@ -240,11 +372,13 @@ impl Build<'_> {
                 ));
             } else if self.reported_unknown.insert(class.clone()) {
                 self.diag.warn(format!(
-                    " -- Class '{class}' is not a Godot node type -> using '{}'. Set 'godot_node_type' or the option 'unknown_class_fallback' (see Reference).",
+                    " -- Class '{class}' is not a Godot node type -> using '{}'. Set 'godot_node_type', map the class to a scene ('class_scenes') or set the option 'unknown_class_fallback' (see Reference).",
                     self.unknown_fallback
                 ));
             }
             gtype = self.unknown_type;
+        } else if gtype == GType::Unknown {
+            gtype = GType::Empty;
         }
 
         if let Some(reference) = o.template.clone() {
@@ -259,6 +393,20 @@ impl Build<'_> {
         }
 
         let mut layer_node = layer_node.clone();
+        // A scene for the object's class (F1)
+        if !scene_path.is_empty() && o.text.is_none() && o.gid.is_none() {
+            let pos = self.transpose(x, y, false);
+            self.instantiate_scene(
+                &scene_path,
+                &obj,
+                &mut layer_node,
+                pos,
+                Vector2::ONE,
+                &class,
+                None,
+            );
+            return;
+        }
         if gtype == GType::Instance && o.text.is_none() && o.gid.is_none() {
             let res_path = get_property(obj.props.as_deref(), "res_path", "file");
             if res_path.is_empty() {
@@ -271,30 +419,16 @@ impl Build<'_> {
                 Some(d) => join_file_path(d, &res_path),
                 None => res_path,
             };
-            let base = self.base_path.clone();
-            let Some(scene) = load_resource(&res_path, &base, &mut self.diag) else {
-                return;
-            };
-            let Some(mut inst) = scene
-                .try_cast::<PackedScene>()
-                .ok()
-                .and_then(|s| s.instantiate())
-            else {
-                return;
-            };
-            layer_node.add_child(&inst);
-            self.own(&mut inst);
-            let n = if name.is_empty() {
-                get_basename(get_file(&res_path)).to_string()
-            } else {
-                name.clone()
-            };
-            inst.set_name(n.as_str());
-            inst.set("position", &self.transpose(x, y, false).to_variant());
-            inst.set("rotation_degrees", &(rot as f32).to_variant());
-            inst.set("visible", &visible.to_variant());
-            self.meta_class_id(&mut inst, &class, id);
-            self.apply_props(&mut inst, &obj);
+            let pos = self.transpose(x, y, false);
+            self.instantiate_scene(
+                &res_path,
+                &obj,
+                &mut layer_node,
+                pos,
+                Vector2::ONE,
+                &class,
+                None,
+            );
             return;
         }
 
@@ -439,22 +573,40 @@ impl Build<'_> {
 
             let obj_is_instance = gtype == GType::Instance && o.text.is_none();
             let mut tile_class = String::new();
+            let tile_has_node_type = td.has_meta("godot_node_type");
             if td.has_meta("class") {
                 tile_class = td.get_meta("class").stringify().to_string();
                 class = tile_class.clone();
             }
-            if td.has_meta("godot_node_type") {
+            if tile_has_node_type {
                 tile_class = td.get_meta("godot_node_type").stringify().to_string();
             }
+            // No scene for the object's own class: the tile's class may have one (F1)
+            if scene_path.is_empty()
+                && maps_scenes
+                && !found
+                && !tile_has_node_type
+                && !tile_class.is_empty()
+                && o.template.is_none()
+            {
+                scene_path = self.class_scene(&obj, &tile_class, "tile");
+            }
 
-            if tile_class.to_lowercase() == "instance" || obj_is_instance {
+            if tile_class.to_lowercase() == "instance" || obj_is_instance || !scene_path.is_empty()
+            {
                 let found = get_properties(
                     obj.props.as_deref(),
                     &["res_path:file", "res_alignment:string"],
                 );
-                let mut res_path = lookup(&found, "res_path:file").to_string();
-                if td.has_meta("res_path") && res_path.is_empty() {
-                    res_path = td.get_meta("res_path").stringify().to_string();
+                let mut res_path = scene_path.clone();
+                if res_path.is_empty() {
+                    res_path = lookup(&found, "res_path:file").to_string();
+                    if td.has_meta("res_path") && res_path.is_empty() {
+                        res_path = td.get_meta("res_path").stringify().to_string();
+                    }
+                    if let (false, Some(d)) = (res_path.is_empty(), &obj.template_dir) {
+                        res_path = join_file_path(d, &res_path);
+                    }
                 }
                 if res_path.is_empty() {
                     self.diag.error(
@@ -462,48 +614,25 @@ impl Build<'_> {
                     );
                     return;
                 }
-                if let Some(d) = &obj.template_dir {
-                    res_path = join_file_path(d, &res_path);
-                }
-                let base = self.base_path.clone();
-                let Some(scene) = load_resource(&res_path, &base, &mut self.diag) else {
-                    return;
-                };
                 let ext = crate::gd::get_extension(get_file(&res_path)).to_lowercase();
                 let res_alignment = lookup(&found, "res_alignment:string").to_string();
-                // (The runtime reads the freed sprite's scale here; it is kept before freeing.)
-                let scale = sprite.get_scale();
-                sprite.set_owner(Gd::<Node>::null_arg());
-                layer_node.remove_child(&sprite);
-                sprite.free();
-                let Some(mut inst) = scene
-                    .try_cast::<PackedScene>()
-                    .ok()
-                    .and_then(|s| s.instantiate())
-                else {
-                    return;
-                };
-                layer_node.add_child(&inst);
-                self.own(&mut inst);
-                let n = if name.is_empty() {
-                    get_basename(get_file(&res_path)).to_string()
-                } else {
-                    name.clone()
-                };
-                inst.set_name(n.as_str());
                 let mut pos = self.transpose(x, y, false);
                 if !res_alignment.is_empty() {
                     pos += instance_offset(width as f32, height as f32, &res_alignment, &alignment);
                 } else if ext == "tmx" || ext == "tmj" {
                     pos += instance_offset(width as f32, height as f32, "topleft", &alignment);
                 }
-                inst.set("position", &pos.to_variant());
-                inst.set("rotation_degrees", &(rot as f32).to_variant());
-                inst.set("visible", &visible.to_variant());
-                inst.set("scale", &scale.to_variant());
                 self.convert_metadata(&td, &mut obj);
-                self.meta_class_id(&mut inst, &class, id);
-                self.apply_props(&mut inst, &obj);
+                let scale = sprite.get_scale();
+                self.instantiate_scene(
+                    &res_path,
+                    &obj,
+                    &mut layer_node,
+                    pos,
+                    scale,
+                    &class,
+                    Some(sprite.upcast()),
+                );
                 return;
             }
 
@@ -568,15 +697,16 @@ impl Build<'_> {
                             &ts_orientation,
                         );
                     }
+                    // The body stands for the object (its sprite keeps the id metadata)
                     let mut p: Gd<Node> = parent.upcast();
-                    self.apply_props(&mut p, &obj);
+                    self.register(id, &p, false);
+                    self.object_props(&mut p, &obj, false);
                 }
             }
             node.set("flip_h", &flip_h.to_variant());
             node.set("flip_v", &flip_v.to_variant());
             let mut n: Gd<Node> = node.upcast();
-            self.meta_class_id(&mut n, &class, id);
-            self.apply_props(&mut n, &obj);
+            self.finish_object(&mut n, &obj, &class, id);
         } else if let Some(text) = &o.text {
             let mut label = Label::new_alloc();
             layer_node.add_child(&label);
@@ -633,7 +763,8 @@ impl Build<'_> {
             let color = text.color.clone().unwrap_or_else(|| "#000000".into());
             label.add_theme_color_override("font_color", tiled_color(&color, Color::BLACK));
             let mut n: Gd<Node> = label.upcast();
-            self.apply_props(&mut n, &obj);
+            self.register(id, &n, true);
+            self.object_props(&mut n, &obj, false);
         } else {
             if gtype == GType::Empty {
                 gtype = GType::Body;
@@ -658,8 +789,7 @@ impl Build<'_> {
                     marker.set_visible(false);
                 }
                 let mut n: Gd<Node> = marker.upcast();
-                self.meta_class_id(&mut n, &class, id);
-                self.apply_props(&mut n, &obj);
+                self.finish_object(&mut n, &obj, &class, id);
             } else if let Some(points) = &o.polygon {
                 self.create_polygon_object(
                     &obj,
@@ -819,11 +949,7 @@ impl Build<'_> {
             if ["godot_script", "material", "physics_material_override"].contains(&lname.as_str()) {
                 kind = "file".into();
             }
-            let prop = GProp {
-                name: name.clone(),
-                kind,
-                value: Some(PV::Var(v)),
-            };
+            let prop = GProp::new(name.clone(), kind, Some(PV::Var(v)));
             match &mut obj.props {
                 Some(props) => {
                     if !props.iter().any(|p| p.name.to_lowercase() == lname) {
@@ -919,8 +1045,7 @@ impl Build<'_> {
         }
         node.set_meta("size", &Vector2::new(w, h).to_variant());
         let mut n: Gd<Node> = node.upcast();
-        self.meta_class_id(&mut n, class, id);
-        self.apply_props(&mut n, obj);
+        self.finish_object(&mut n, obj, class, id);
     }
 
     /// `create_collision_object`: the body of a shape object, added to the layer.
@@ -1091,8 +1216,7 @@ impl Build<'_> {
         } else {
             return;
         };
-        self.meta_class_id(&mut node, class, id);
-        self.apply_props(&mut node, obj);
+        self.finish_object(&mut node, obj, class, id);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1167,8 +1291,7 @@ impl Build<'_> {
             }
             co.upcast()
         };
-        self.meta_class_id(&mut node, class, id);
-        self.apply_props(&mut node, obj);
+        self.finish_object(&mut node, obj, class, id);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1277,8 +1400,7 @@ impl Build<'_> {
         } else {
             return;
         };
-        self.meta_class_id(&mut node, class, id);
-        self.apply_props(&mut node, obj);
+        self.finish_object(&mut node, obj, class, id);
     }
 
     /// `add_collision_shapes`: a tile's collision objects as shapes of a tile object's body.
