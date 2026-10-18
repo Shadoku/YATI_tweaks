@@ -30,6 +30,8 @@ jobs:
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@1.97.0 # pinned: clippy lints change between stable releases; bump with the development machines
+        with:
+          components: clippy, rustfmt
 
       - name: Cache cargo registry and native/target/
         uses: Swatinem/rust-cache@v2
