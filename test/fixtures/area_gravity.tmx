@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="4" height="4" tilewidth="16" tileheight="16" infinite="0" nextlayerid="2" nextobjectid="3">
+ <objectgroup id="1" name="Areas">
+  <object id="1" name="Field" class="area" x="0" y="0" width="32" height="32">
+   <properties>
+    <property name="gravity" type="float" value="300"/>
+    <property name="gravity_point" type="bool" value="true"/>
+    <property name="gravity_point_center_x" type="float" value="0.25"/>
+    <property name="gravity_point_center_y" type="float" value="-0.5"/>
+    <property name="gravity_point_unit_distance" type="float" value="12.5"/>
+    <property name="linear_damp" type="float" value="0.75"/>
+    <property name="angular_damp" type="float" value="2.5"/>
+    <property name="priority" type="int" value="3"/>
+   </properties>
+  </object>
+  <object id="2" name="Wind" class="area" x="32" y="0" width="32" height="32">
+   <properties>
+    <property name="gravity_direction_x" type="float" value="1"/>
+    <property name="gravity_direction_y" type="int" value="0"/>
+    <property name="gravity" type="int" value="50"/>
+    <property name="monitorable" type="bool" value="false"/>
+   </properties>
+  </object>
+ </objectgroup>
+</map>

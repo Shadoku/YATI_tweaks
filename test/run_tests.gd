@@ -1254,6 +1254,36 @@ func test_new_json_class_property_dictionary() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Runtime improvement plan, part A (docs/runtime-improvement-plan.md, B1-B10)
+
+func test_bug_area_gravity() -> bool:
+	# B5: the gravity properties of an Area2D were misspelt (gravitiy...): 'gravity' and
+	# 'gravity_point_unit_distance' aborted the property loop with a script error, the
+	# centre/direction components became metadata.
+	var a := need(_import("area_gravity.tmx"), "Field (Area)", "Area2D") as Area2D
+	if a == null: return done()
+	eq(a.gravity, 300.0, "gravity")
+	check(a.gravity_point, "gravity_point not set")
+	eq(a.gravity_point_center, Vector2(0.25, -0.5), "gravity_point_center")
+	eq(a.gravity_point_unit_distance, 12.5, "gravity_point_unit_distance")
+	eq(a.linear_damp, 0.75, "linear_damp")
+	eq(a.angular_damp, 2.5, "angular_damp")
+	eq(a.priority, 3, "priority (listed after gravity)")
+	for k in ["gravity_point_center_x", "gravity_point_center_y"]:
+		check(not a.has_meta(k), k + " stored as metadata")
+	# Godot keeps gravity_point_center and gravity_direction in one vector, so a second
+	# area (no gravity_point) checks the direction.
+	var w := need(a.get_parent(), "Wind (Area)", "Area2D") as Area2D
+	if w == null: return done()
+	eq(w.gravity_direction, Vector2(1, 0), "gravity_direction")
+	eq(w.gravity, 50.0, "gravity (int typed)")
+	check(not w.monitorable, "monitorable (listed after gravity) not applied")
+	for k in ["gravity_direction_x", "gravity_direction_y"]:
+		check(not w.has_meta(k), k + " stored as metadata")
+	return done()
+
+
+# ---------------------------------------------------------------------------
 # Zip (keep last: the pre-change runtime leaks zip mode, see _reset_zip_mode)
 
 func test_zip_import() -> bool:

@@ -128,3 +128,4 @@ godot --headless -s test/run_tests.gd -- --runtime=res://baseline_runtime
 | `bundle.zip` | `maps/zipmap.tmx` + tileset + image for `import_from_zip` (generated) |
 | `missing_tileset.tmx` | error path: tileset file not found |
 | `postproc.gd` | post-processor for `import_with_post_processing` |
+| `area_gravity.tmx` | B5: Area2D gravity, gravity point, damp properties (a point-gravity area and a directional one) |

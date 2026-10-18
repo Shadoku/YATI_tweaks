@@ -2234,18 +2234,18 @@ func handle_properties(target_node: Node, properties: Array):
 				target_node.gravity_space_override = int(val)
 		elif lname == "gravity_point" and type == "bool" and target_node is Area2D:
 			target_node.gravity_point = val.to_lower() == "true"
-		elif lname == "gravitiy_point_center_x" and (type == "float" or type == "int") and target_node is Area2D:
+		elif lname == "gravity_point_center_x" and (type == "float" or type == "int") and target_node is Area2D:
 			target_node.gravity_point_center = Vector2(float(val), target_node.gravity_point_center.y)
-		elif lname == "gravitiy_point_center_y" and (type == "float" or type == "int") and target_node is Area2D:
+		elif lname == "gravity_point_center_y" and (type == "float" or type == "int") and target_node is Area2D:
 			target_node.gravity_point_center = Vector2(target_node.gravity_point_center.x, float(val))
 		elif lname == "gravity_point_unit_distance" and (type == "float" or type == "int") and target_node is Area2D:
-			target_node.gravitiy_point_unit_distance = float(val)
-		elif lname == "gravitiy_direction_x" and (type == "float" or type == "int") and target_node is Area2D:
+			target_node.gravity_point_unit_distance = float(val)
+		elif lname == "gravity_direction_x" and (type == "float" or type == "int") and target_node is Area2D:
 			target_node.gravity_direction = Vector2(float(val), target_node.gravity_direction.y)
-		elif lname == "gravitiy_direction_y" and (type == "float" or type == "int") and target_node is Area2D:
+		elif lname == "gravity_direction_y" and (type == "float" or type == "int") and target_node is Area2D:
 			target_node.gravity_direction = Vector2(target_node.gravity_direction.x, float(val))
 		elif lname == "gravity" and (type == "float" or type == "int") and target_node is Area2D:
-			target_node.gravitiy = float(val)
+			target_node.gravity = float(val)
 		elif lname == "linear_damp_space_override" and type == "int" and target_node is Area2D:
 			if int(val) < 5:
 				target_node.linear_damp_space_override = int(val)

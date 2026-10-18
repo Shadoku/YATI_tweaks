@@ -31,6 +31,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `test/run_tests.gd` checks that a runtime has `DataLoader.gd` / `CommonUtils.gd` before loading them,
   so the native facade (only an `Importer.gd`) runs the suite without a load error per test.
 
+### Fixed
+- B5 (`docs/runtime-improvement-plan.md`): the Area2D gravity properties were misspelt in
+  `TilemapCreator.handle_properties` (`gravitiy...`): `gravity` and `gravity_point_unit_distance`
+  stopped the import of an object's remaining properties with a script error,
+  `gravity_point_center_x/y` and `gravity_direction_x/y` became metadata. The Reference listed
+  `gravity` as the custom property of Linear Damp and Angular Damp; it is `linear_damp` / `angular_damp`.
+
 ## [3.0.0] — runtime-only fork (2026-10-17)
 
 This repository now contains only the GDScript runtime importer (`runtime/`) of
@@ -259,6 +266,7 @@ E.g. loading from Zip file basically only needs one additional line somewhere ah
 ```py
 DataLoader.zip_file = "<path-to-zip>/xyz.zip"
 ```
+
 ## [2.1.4] - 2024-12-16
 
 ### Fixed
@@ -307,6 +315,7 @@ Properties with a name not starting with that prefix are now assigned only to th
 Save / Save all should now being sufficient.
 - Fixed problem with missing meta data on alternative tiles (merged PR #60, thank you zhtsu)
   
+
 ## [2.0.3 / 1.6.10] - 2024-09-30
 
 ### Fixed
