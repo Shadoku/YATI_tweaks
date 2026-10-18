@@ -1,0 +1,11 @@
+{
+  "objects": [
+    {
+      "class": "area",
+      "height": 16,
+      "name": "Zone",
+      "width": 16
+    }
+  ],
+  "type": "template"
+}

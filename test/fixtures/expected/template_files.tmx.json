@@ -1,0 +1,44 @@
+{
+  "height": 4,
+  "infinite": false,
+  "layers": [
+    {
+      "id": 1,
+      "name": "Doors",
+      "objects": [
+        {
+          "id": 1,
+          "name": "DoorA",
+          "template": "tpl/door.tx",
+          "x": 0,
+          "y": 0
+        },
+        {
+          "id": 2,
+          "name": "DoorB",
+          "properties": [
+            {
+              "name": "material",
+              "type": "file",
+              "value": "map_mat.tres"
+            }
+          ],
+          "template": "tpl/door.tx",
+          "x": 32,
+          "y": 0
+        }
+      ],
+      "type": "objectgroup"
+    }
+  ],
+  "nextlayerid": 2,
+  "nextobjectid": 3,
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "tiledversion": "1.12.0",
+  "tileheight": 16,
+  "tilewidth": 16,
+  "type": "map",
+  "version": "1.10",
+  "width": 4
+}

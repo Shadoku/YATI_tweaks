@@ -1,0 +1,85 @@
+{
+  "height": 8,
+  "infinite": false,
+  "layers": [
+    {
+      "id": 1,
+      "name": "Instances",
+      "objects": [
+        {
+          "gid": 2147483651,
+          "id": 1,
+          "name": "Flipped",
+          "template": "probe_tpl.tx",
+          "x": 16,
+          "y": 32
+        },
+        {
+          "id": 2,
+          "name": "SignB",
+          "template": "probe_text.tx",
+          "text": {
+            "color": "#ffff0000",
+            "halign": "center",
+            "pixelsize": 12,
+            "text": "Instance text"
+          },
+          "x": 0,
+          "y": 64
+        },
+        {
+          "height": 32,
+          "id": 4,
+          "name": "Big",
+          "rotation": 45,
+          "template": "probe_tpl.tx",
+          "width": 32,
+          "x": 96,
+          "y": 64
+        },
+        {
+          "height": 24,
+          "id": 5,
+          "name": "Wide",
+          "rotation": 30,
+          "template": "probe_rect.tx",
+          "visible": false,
+          "width": 40,
+          "x": 16,
+          "y": 96
+        },
+        {
+          "id": 6,
+          "name": "Same",
+          "template": "probe_rect.tx",
+          "x": 64,
+          "y": 96
+        },
+        {
+          "id": 3,
+          "name": "Plain",
+          "template": "probe_tpl.tx",
+          "x": 48,
+          "y": 32
+        }
+      ],
+      "type": "objectgroup"
+    }
+  ],
+  "nextlayerid": 2,
+  "nextobjectid": 7,
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "tiledversion": "1.12.0",
+  "tileheight": 16,
+  "tilesets": [
+    {
+      "firstgid": 1,
+      "source": "terrain.tsx"
+    }
+  ],
+  "tilewidth": 16,
+  "type": "map",
+  "version": "1.10",
+  "width": 8
+}

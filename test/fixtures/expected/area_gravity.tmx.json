@@ -1,0 +1,105 @@
+{
+  "height": 4,
+  "infinite": false,
+  "layers": [
+    {
+      "id": 1,
+      "name": "Areas",
+      "objects": [
+        {
+          "class": "area",
+          "height": 32,
+          "id": 1,
+          "name": "Field",
+          "properties": [
+            {
+              "name": "gravity",
+              "type": "float",
+              "value": 300
+            },
+            {
+              "name": "gravity_point",
+              "type": "bool",
+              "value": "true"
+            },
+            {
+              "name": "gravity_point_center_x",
+              "type": "float",
+              "value": 0.25
+            },
+            {
+              "name": "gravity_point_center_y",
+              "type": "float",
+              "value": -0.5
+            },
+            {
+              "name": "gravity_point_unit_distance",
+              "type": "float",
+              "value": 12.5
+            },
+            {
+              "name": "linear_damp",
+              "type": "float",
+              "value": 0.75
+            },
+            {
+              "name": "angular_damp",
+              "type": "float",
+              "value": 2.5
+            },
+            {
+              "name": "priority",
+              "type": "int",
+              "value": 3
+            }
+          ],
+          "width": 32,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "class": "area",
+          "height": 32,
+          "id": 2,
+          "name": "Wind",
+          "properties": [
+            {
+              "name": "gravity_direction_x",
+              "type": "float",
+              "value": 1
+            },
+            {
+              "name": "gravity_direction_y",
+              "type": "int",
+              "value": 0
+            },
+            {
+              "name": "gravity",
+              "type": "int",
+              "value": 50
+            },
+            {
+              "name": "monitorable",
+              "type": "bool",
+              "value": "false"
+            }
+          ],
+          "width": 32,
+          "x": 32,
+          "y": 0
+        }
+      ],
+      "type": "objectgroup"
+    }
+  ],
+  "nextlayerid": 2,
+  "nextobjectid": 3,
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "tiledversion": "1.12.0",
+  "tileheight": 16,
+  "tilewidth": 16,
+  "type": "map",
+  "version": "1.10",
+  "width": 4
+}

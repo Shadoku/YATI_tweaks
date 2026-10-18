@@ -1,0 +1,196 @@
+{
+  "height": 4,
+  "infinite": false,
+  "layers": [
+    {
+      "data": [
+        1,
+        9,
+        17,
+        33,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "encoding": "csv",
+      "height": 4,
+      "id": 1,
+      "name": "Tiles",
+      "type": "tilelayer",
+      "width": 4
+    },
+    {
+      "id": 2,
+      "name": "Objects",
+      "objects": [
+        {
+          "gid": 17,
+          "height": 16,
+          "id": 1,
+          "name": "Lava",
+          "width": 16,
+          "x": 0,
+          "y": 48
+        },
+        {
+          "class": "staticbody",
+          "gid": 17,
+          "height": 32,
+          "id": 2,
+          "name": "LavaWall",
+          "width": 32,
+          "x": 32,
+          "y": 48
+        }
+      ],
+      "type": "objectgroup"
+    }
+  ],
+  "nextlayerid": 3,
+  "nextobjectid": 3,
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "tiledversion": "1.12.0",
+  "tileheight": 16,
+  "tilesets": [
+    {
+      "columns": 8,
+      "firstgid": 1,
+      "image": "tiles.png",
+      "imageheight": 64,
+      "imagewidth": 128,
+      "name": "anim",
+      "tilecount": 32,
+      "tileheight": 16,
+      "tiles": [
+        {
+          "animation": [
+            {
+              "duration": 100,
+              "tileid": 1
+            },
+            {
+              "duration": 200,
+              "tileid": 2
+            }
+          ],
+          "id": 0
+        },
+        {
+          "animation": [
+            {
+              "duration": 100,
+              "tileid": 8
+            },
+            {
+              "duration": 100,
+              "tileid": 9
+            },
+            {
+              "duration": 100,
+              "tileid": 10
+            },
+            {
+              "duration": 100,
+              "tileid": 9
+            }
+          ],
+          "id": 8
+        },
+        {
+          "animation": [
+            {
+              "duration": 100,
+              "tileid": 16
+            },
+            {
+              "duration": 100,
+              "tileid": 17
+            },
+            {
+              "duration": 100,
+              "tileid": 18
+            }
+          ],
+          "id": 16,
+          "objectgroup": {
+            "draworder": "index",
+            "id": 2,
+            "objects": [
+              {
+                "height": 8,
+                "id": 1,
+                "name": "Hot",
+                "width": 16,
+                "x": 0,
+                "y": 8
+              }
+            ]
+          },
+          "properties": [
+            {
+              "name": "kind",
+              "value": "lava"
+            },
+            {
+              "name": "data_damage",
+              "type": "int",
+              "value": 5
+            }
+          ]
+        }
+      ],
+      "tilewidth": 16
+    },
+    {
+      "columns": 0,
+      "firstgid": 33,
+      "grid": {
+        "height": 1,
+        "orientation": "orthogonal",
+        "width": 1
+      },
+      "name": "pictures",
+      "tilecount": 2,
+      "tileheight": 16,
+      "tiles": [
+        {
+          "animation": [
+            {
+              "duration": 250,
+              "tileid": 0
+            },
+            {
+              "duration": 250,
+              "tileid": 1
+            }
+          ],
+          "id": 0,
+          "image": "small.png",
+          "imageheight": 16,
+          "imagewidth": 16
+        },
+        {
+          "id": 1,
+          "image": "obj.png",
+          "imageheight": 16,
+          "imagewidth": 16
+        }
+      ],
+      "tilewidth": 16
+    }
+  ],
+  "tilewidth": 16,
+  "type": "map",
+  "version": "1.10",
+  "width": 4
+}

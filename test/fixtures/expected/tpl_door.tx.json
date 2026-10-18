@@ -1,0 +1,28 @@
+{
+  "objects": [
+    {
+      "class": "staticbody",
+      "height": 16,
+      "name": "Door",
+      "properties": [
+        {
+          "name": "material",
+          "type": "file",
+          "value": "door_mat.tres"
+        },
+        {
+          "name": "physics_material_override",
+          "type": "file",
+          "value": "door_phys.tres"
+        },
+        {
+          "name": "godot_script",
+          "type": "file",
+          "value": "door.gd"
+        }
+      ],
+      "width": 16
+    }
+  ],
+  "type": "template"
+}

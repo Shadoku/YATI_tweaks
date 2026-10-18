@@ -1,0 +1,147 @@
+{
+  "backgroundcolor": "#336699",
+  "height": 4,
+  "infinite": false,
+  "layers": [
+    {
+      "data": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "encoding": "csv",
+      "height": 4,
+      "id": 1,
+      "name": "Ground",
+      "type": "tilelayer",
+      "width": 4
+    },
+    {
+      "id": 2,
+      "layers": [
+        {
+          "data": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "encoding": "csv",
+          "height": 4,
+          "id": 3,
+          "name": "Fg",
+          "parallaxx": 1.2,
+          "type": "tilelayer",
+          "width": 4
+        },
+        {
+          "id": 4,
+          "image": "bg.png",
+          "imageheight": 32,
+          "imagewidth": 64,
+          "name": "Sky",
+          "parallaxx": 0.5,
+          "repeatx": 1,
+          "type": "imagelayer"
+        }
+      ],
+      "name": "Back",
+      "offsetx": 100,
+      "opacity": 0.5,
+      "type": "group"
+    },
+    {
+      "id": 5,
+      "layers": [
+        {
+          "data": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "encoding": "csv",
+          "height": 4,
+          "id": 6,
+          "name": "FarTiles",
+          "parallaxx": 0.5,
+          "type": "tilelayer",
+          "width": 4
+        }
+      ],
+      "name": "Far",
+      "parallaxx": 0.5,
+      "type": "group"
+    },
+    {
+      "id": 7,
+      "name": "Clouds",
+      "objects": [
+        {
+          "id": 1,
+          "name": "Cloud",
+          "point": true,
+          "x": 8,
+          "y": 8
+        }
+      ],
+      "parallaxy": 0.5,
+      "type": "objectgroup"
+    }
+  ],
+  "nextlayerid": 9,
+  "nextobjectid": 2,
+  "orientation": "orthogonal",
+  "parallaxoriginx": 40,
+  "parallaxoriginy": 20,
+  "renderorder": "right-down",
+  "tiledversion": "1.12.0",
+  "tileheight": 16,
+  "tilesets": [
+    {
+      "firstgid": 1,
+      "source": "terrain.tsx"
+    }
+  ],
+  "tilewidth": 16,
+  "type": "map",
+  "version": "1.10",
+  "width": 4
+}

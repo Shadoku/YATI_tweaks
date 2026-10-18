@@ -14,10 +14,13 @@ dump() { # <file> <out name> [project] [--zip=...]
 for f in background.tmx classes.tmx encodings.tmx hexagonal.tmx infinite.tmx infinite.tmj \
 		isometric.tmx json_map.tmj json_twin.tmx layers.tmx legacy_xml.tmx missing_tileset.tmx \
 		objects.tmx staggered.tmx tilesets.tmx \
+		animations.tmx area_gravity.tmx clip.tmj clip.tmx colors.tmx layer_class.tmx \
+		parallax.tmx single_layer.tmx template_files.tmx templates.tmx unknown_class.tmx \
 		terrain.tsx iso.tsx json_tiles.tsj \
-		enemy.tx crate.tx json_enemy.tj; do
+		enemy.tx crate.tx json_enemy.tj probe_rect.tx probe_text.tx probe_tpl.tx; do
 	dump "test/fixtures/$f" "$f.json"
 done
+dump test/fixtures/tpl/door.tx tpl_door.tx.json
 dump test/fixtures/objects.tmx objects.tmx+custom.json test/fixtures/custom.tiled-project
 dump test/fixtures/classes.tmx classes.tmx+classes.json test/fixtures/classes.tiled-project
 dump test/fixtures/json_tiles.tsj json_tiles.tsj+classes.json test/fixtures/classes.tiled-project

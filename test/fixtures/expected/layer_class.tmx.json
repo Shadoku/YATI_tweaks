@@ -1,0 +1,72 @@
+{
+  "height": 2,
+  "infinite": false,
+  "layers": [
+    {
+      "data": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "encoding": "csv",
+      "height": 2,
+      "id": 1,
+      "name": "Plain",
+      "type": "tilelayer",
+      "width": 2
+    },
+    {
+      "class": "Ground",
+      "data": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "encoding": "csv",
+      "height": 2,
+      "id": 2,
+      "name": "Ground",
+      "type": "tilelayer",
+      "width": 2
+    },
+    {
+      "id": 3,
+      "name": "PlainObjects",
+      "type": "objectgroup"
+    },
+    {
+      "class": "Spawns",
+      "id": 4,
+      "name": "Spawns",
+      "type": "objectgroup"
+    },
+    {
+      "class": "Zone",
+      "id": 5,
+      "layers": [
+        {
+          "id": 6,
+          "image": "bg.png",
+          "imageheight": 32,
+          "imagewidth": 64,
+          "name": "Picture",
+          "type": "imagelayer"
+        }
+      ],
+      "name": "Zone",
+      "type": "group"
+    }
+  ],
+  "nextlayerid": 7,
+  "nextobjectid": 1,
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "tiledversion": "1.12.0",
+  "tileheight": 16,
+  "tilewidth": 16,
+  "type": "map",
+  "version": "1.10",
+  "width": 2
+}

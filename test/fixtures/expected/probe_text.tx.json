@@ -1,0 +1,15 @@
+{
+  "objects": [
+    {
+      "height": 20,
+      "name": "Sign",
+      "text": {
+        "halign": "center",
+        "pixelsize": 12,
+        "text": "Template text"
+      },
+      "width": 80
+    }
+  ],
+  "type": "template"
+}

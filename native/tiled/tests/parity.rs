@@ -31,6 +31,18 @@ fn every_map_matches_the_runtime_dictionary() {
         "objects.tmx",
         "staggered.tmx",
         "tilesets.tmx",
+        // The runtime improvement plan's part A fixtures
+        "animations.tmx",
+        "area_gravity.tmx",
+        "clip.tmj",
+        "clip.tmx",
+        "colors.tmx",
+        "layer_class.tmx",
+        "parallax.tmx",
+        "single_layer.tmx",
+        "template_files.tmx",
+        "templates.tmx",
+        "unknown_class.tmx",
     ] {
         map_parity(name, None, &format!("{name}.json"));
     }
@@ -79,9 +91,18 @@ fn loaded_tilesets_match_with_and_without_project() {
 
 #[test]
 fn every_template_matches() {
-    for name in ["enemy.tx", "crate.tx", "json_enemy.tj"] {
+    for name in [
+        "enemy.tx",
+        "crate.tx",
+        "json_enemy.tj",
+        "probe_rect.tx",
+        "probe_text.tx",
+        "probe_tpl.tx",
+        "tpl/door.tx",
+    ] {
         let t = Template::parse(&bytes(name), &fixture(name)).unwrap();
-        assert_parity(name, &t.to_value(), &expected(&format!("{name}.json")));
+        let dump = format!("{}.json", name.replace('/', "_"));
+        assert_parity(name, &t.to_value(), &expected(&dump));
     }
     // And as the loader found them.
     let map = load("classes.tmx", None);

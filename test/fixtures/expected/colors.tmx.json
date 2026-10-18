@@ -1,0 +1,224 @@
+{
+  "backgroundcolor": "#80ff0000",
+  "height": 4,
+  "infinite": false,
+  "layers": [
+    {
+      "data": [
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "encoding": "csv",
+      "height": 4,
+      "id": 1,
+      "name": "TintTiles",
+      "tintcolor": "#80ff0000",
+      "type": "tilelayer",
+      "width": 4
+    },
+    {
+      "id": 2,
+      "name": "TintObjects",
+      "objects": [
+        {
+          "height": 16,
+          "id": 1,
+          "name": "Caption",
+          "text": {
+            "color": "#80ff0000",
+            "text": "Hi"
+          },
+          "width": 64,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "class": "area",
+          "height": 16,
+          "id": 2,
+          "name": "Painted",
+          "properties": [
+            {
+              "name": "modulate",
+              "type": "color",
+              "value": "#ff00ff00"
+            },
+            {
+              "name": "self_modulate",
+              "type": "color",
+              "value": "#800000ff"
+            },
+            {
+              "name": "debug_color",
+              "type": "color",
+              "value": "#40ffffff"
+            },
+            {
+              "name": "tint",
+              "type": "color",
+              "value": "#80ff0000"
+            },
+            {
+              "name": "plain_modulate_string",
+              "value": "#ff000080"
+            }
+          ],
+          "width": 16,
+          "x": 0,
+          "y": 16
+        },
+        {
+          "class": "polygon",
+          "id": 3,
+          "name": "Poly",
+          "polygon": [
+            {
+              "x": 0.0,
+              "y": 0.0
+            },
+            {
+              "x": 8.0,
+              "y": 0.0
+            },
+            {
+              "x": 8.0,
+              "y": 8.0
+            }
+          ],
+          "properties": [
+            {
+              "name": "color",
+              "type": "color",
+              "value": "#800000ff"
+            }
+          ],
+          "x": 16,
+          "y": 16
+        },
+        {
+          "class": "line",
+          "id": 4,
+          "name": "Wire",
+          "polyline": [
+            {
+              "x": 0.0,
+              "y": 0.0
+            },
+            {
+              "x": 8.0,
+              "y": 8.0
+            }
+          ],
+          "properties": [
+            {
+              "name": "default_color",
+              "type": "color",
+              "value": "#ff00ff00"
+            }
+          ],
+          "x": 32,
+          "y": 16
+        },
+        {
+          "class": "area",
+          "height": 16,
+          "id": 5,
+          "name": "StringTint",
+          "properties": [
+            {
+              "name": "modulate",
+              "value": "#ff000080"
+            }
+          ],
+          "width": 16,
+          "x": 48,
+          "y": 16
+        }
+      ],
+      "tintcolor": "#80ff0000",
+      "type": "objectgroup"
+    },
+    {
+      "id": 3,
+      "layers": [
+        {
+          "id": 4,
+          "name": "Inner",
+          "type": "objectgroup"
+        }
+      ],
+      "name": "TintGroup",
+      "opacity": 0.5,
+      "tintcolor": "#80ff0000",
+      "type": "group"
+    },
+    {
+      "id": 5,
+      "image": "bg.png",
+      "imageheight": 32,
+      "imagewidth": 64,
+      "name": "TintImage",
+      "tintcolor": "#80ff0000",
+      "type": "imagelayer"
+    }
+  ],
+  "nextlayerid": 6,
+  "nextobjectid": 7,
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "tiledversion": "1.12.0",
+  "tileheight": 16,
+  "tilesets": [
+    {
+      "columns": 8,
+      "firstgid": 1,
+      "image": "tiles.png",
+      "imageheight": 64,
+      "imagewidth": 128,
+      "name": "colortiles",
+      "tilecount": 32,
+      "tileheight": 16,
+      "tiles": [
+        {
+          "id": 1,
+          "properties": [
+            {
+              "name": "modulate",
+              "type": "color",
+              "value": "#ff0000ff"
+            },
+            {
+              "name": "data_glow",
+              "type": "color",
+              "value": "#8000ff00"
+            },
+            {
+              "name": "hue",
+              "type": "color",
+              "value": "#ff336699"
+            }
+          ]
+        }
+      ],
+      "tilewidth": 16
+    }
+  ],
+  "tilewidth": 16,
+  "type": "map",
+  "version": "1.10",
+  "width": 4
+}

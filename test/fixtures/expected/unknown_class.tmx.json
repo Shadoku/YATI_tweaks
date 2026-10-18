@@ -1,0 +1,88 @@
+{
+  "height": 8,
+  "infinite": false,
+  "layers": [
+    {
+      "id": 1,
+      "name": "Things",
+      "objects": [
+        {
+          "class": "Door",
+          "height": 16,
+          "id": 1,
+          "name": "FrontDoor",
+          "properties": [
+            {
+              "name": "locked",
+              "type": "bool",
+              "value": "true"
+            }
+          ],
+          "rotation": 90,
+          "width": 32,
+          "x": 16,
+          "y": 32
+        },
+        {
+          "class": "Door",
+          "height": 24,
+          "id": 2,
+          "name": "BackDoor",
+          "width": 16,
+          "x": 64,
+          "y": 32
+        },
+        {
+          "class": "Door",
+          "id": 3,
+          "name": "DoorFrame",
+          "polygon": [
+            {
+              "x": 0.0,
+              "y": 0.0
+            },
+            {
+              "x": 16.0,
+              "y": 0.0
+            },
+            {
+              "x": 16.0,
+              "y": 16.0
+            }
+          ],
+          "x": 96,
+          "y": 32
+        },
+        {
+          "class": "Lever",
+          "ellipse": true,
+          "height": 8,
+          "id": 4,
+          "name": "Lever",
+          "width": 8,
+          "x": 16,
+          "y": 96
+        },
+        {
+          "height": 16,
+          "id": 5,
+          "name": "Wall",
+          "width": 16,
+          "x": 64,
+          "y": 96
+        }
+      ],
+      "type": "objectgroup"
+    }
+  ],
+  "nextlayerid": 2,
+  "nextobjectid": 6,
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "tiledversion": "1.12.0",
+  "tileheight": 16,
+  "tilewidth": 16,
+  "type": "map",
+  "version": "1.10",
+  "width": 8
+}

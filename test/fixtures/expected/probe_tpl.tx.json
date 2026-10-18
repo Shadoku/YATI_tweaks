@@ -1,0 +1,23 @@
+{
+  "objects": [
+    {
+      "gid": 3,
+      "height": 16,
+      "name": "Probe",
+      "properties": [
+        {
+          "name": "kind",
+          "value": "probe"
+        }
+      ],
+      "width": 16
+    }
+  ],
+  "tilesets": [
+    {
+      "firstgid": 1,
+      "source": "terrain.tsx"
+    }
+  ],
+  "type": "template"
+}
