@@ -1,0 +1,195 @@
+{
+  "height": 16,
+  "infinite": false,
+  "layers": [
+    {
+      "id": 1,
+      "name": "Things",
+      "objects": [
+        {
+          "class": "area",
+          "height": 32,
+          "id": 1,
+          "name": "Door",
+          "properties": [
+            {
+              "name": "missing",
+              "type": "object",
+              "value": 999
+            },
+            {
+              "name": "target",
+              "type": "object",
+              "value": 2
+            },
+            {
+              "name": "targets",
+              "type": "list",
+              "value": [
+                {
+                  "type": "object",
+                  "value": 2
+                },
+                {
+                  "type": "object",
+                  "value": 3
+                }
+              ]
+            },
+            {
+              "name": "unset",
+              "type": "object",
+              "value": 0
+            }
+          ],
+          "width": 16,
+          "x": 16,
+          "y": 16
+        },
+        {
+          "id": 2,
+          "name": "Spawn",
+          "point": true,
+          "x": 80,
+          "y": 48
+        },
+        {
+          "class": "instance",
+          "id": 4,
+          "name": "Switch",
+          "properties": [
+            {
+              "name": "res_path",
+              "type": "file",
+              "value": "ref_target.tscn"
+            },
+            {
+              "name": "target",
+              "type": "object",
+              "value": 2
+            },
+            {
+              "name": "target_node",
+              "type": "object",
+              "value": 3
+            },
+            {
+              "name": "waypoints",
+              "type": "list",
+              "value": [
+                {
+                  "type": "object",
+                  "value": 2
+                },
+                {
+                  "type": "object",
+                  "value": 3
+                }
+              ]
+            }
+          ],
+          "x": 120,
+          "y": 40
+        },
+        {
+          "id": 5,
+          "name": "Mixed",
+          "point": true,
+          "properties": [
+            {
+              "name": "stuff",
+              "type": "list",
+              "value": [
+                {
+                  "type": "object",
+                  "value": 3
+                },
+                {
+                  "type": "int",
+                  "value": 7
+                }
+              ]
+            }
+          ],
+          "x": 160,
+          "y": 16
+        }
+      ],
+      "type": "objectgroup"
+    },
+    {
+      "id": 2,
+      "layers": [
+        {
+          "id": 3,
+          "name": "Inner",
+          "objects": [
+            {
+              "class": "polygon",
+              "id": 3,
+              "name": "Lever",
+              "polygon": [
+                {
+                  "x": 0.0,
+                  "y": 0.0
+                },
+                {
+                  "x": 16.0,
+                  "y": 0.0
+                },
+                {
+                  "x": 16.0,
+                  "y": 16.0
+                }
+              ],
+              "properties": [
+                {
+                  "name": "opens",
+                  "type": "object",
+                  "value": 1
+                }
+              ],
+              "x": 48,
+              "y": 96
+            },
+            {
+              "height": 16,
+              "id": 6,
+              "name": "Crate",
+              "properties": [
+                {
+                  "name": "sibling",
+                  "type": "object",
+                  "value": 3
+                }
+              ],
+              "width": 16,
+              "x": 96,
+              "y": 96
+            }
+          ],
+          "type": "objectgroup"
+        }
+      ],
+      "name": "Group",
+      "type": "group"
+    }
+  ],
+  "nextlayerid": 5,
+  "nextobjectid": 10,
+  "orientation": "orthogonal",
+  "properties": [
+    {
+      "name": "start",
+      "type": "object",
+      "value": 2
+    }
+  ],
+  "renderorder": "right-down",
+  "tiledversion": "1.12.0",
+  "tileheight": 16,
+  "tilewidth": 16,
+  "type": "map",
+  "version": "1.10",
+  "width": 16
+}

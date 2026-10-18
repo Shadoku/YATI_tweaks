@@ -1,7 +1,7 @@
 extends SceneTree
 ## Two checks of stage 2 of docs/native-importer-plan.md that the test suite does not make:
 ##
-## - leaks: every fixture map imported and its tree freed, 20 times over; the engine's object
+## - leaks: every fixture map (and a world) imported and its tree freed, 20 times over; the engine's object
 ##   and node counts (Performance.OBJECT_COUNT, OBJECT_NODE_COUNT, OBJECT_ORPHAN_NODE_COUNT)
 ##   must be back at their values after the warm-up round. Exit code 1 if not. A few frames run
 ##   before each count: the servers release what freed nodes handed them (navigation regions'
@@ -21,8 +21,13 @@ const MAPS: Array[String] = [
 	"staggered.tmx", "hexagonal.tmx", "background.tmx", "legacy_xml.tmx", "json_map.tmj",
 	"animations.tmx", "area_gravity.tmx", "colors.tmx", "layer_class.tmx", "parallax.tmx",
 	"single_layer.tmx", "templates.tmx", "template_files.tmx", "unknown_class.tmx", "clip.tmx",
-	"clip.tmj", "missing_tileset.tmx",
+	"clip.tmj", "missing_tileset.tmx", "object_refs.tmx", "masks.tmx", "scenes.tmx",
 ]
+# The project file a map is imported with
+const PROJECTS := {
+	"objects.tmx": "custom.tiled-project", "masks.tmx": "masks.tiled-project",
+	"scenes.tmx": "scenes.tiled-project",
+}
 const ROUNDS := 20
 
 var runtime_dir := "res://addons/yati_native"
@@ -64,13 +69,23 @@ func counts() -> Array[int]:
 func import_all(script: GDScript) -> void:
 	for f in MAPS:
 		var imp: Object = script.new()
-		var project := FIX + "custom.tiled-project" if f == "objects.tmx" else ""
+		var project: String = FIX + PROJECTS[f] if PROJECTS.has(f) else ""
 		var n: Node = imp.call("import", FIX + f, project)
 		if n != null:
 			n.free()
 		var z: Node = imp.call("import_from_zip", FIX + "bundle.zip", "maps/zipmap.tmx", "")
 		if z != null:
 			z.free()
+	# Scenes for classes (with their _tiled_import hooks) and a world, if the importer has them
+	var imp: Object = script.new()
+	imp.set("class_scenes", {"Enemy": FIX + "enemy.tscn"})
+	var s: Node = imp.call("import", FIX + "scenes.tmx", "")
+	if s != null:
+		s.free()
+	if imp.has_method("import_world"):
+		var w: Node = imp.call("import_world", FIX + "world/test.world", "")
+		if w != null:
+			w.free()
 
 
 func check_leaks(script: GDScript) -> bool:
@@ -89,7 +104,8 @@ func check_leaks(script: GDScript) -> bool:
 	var ok := after == before
 	print("native_gate: leaks %s: objects %d -> %d, nodes %d -> %d, orphan nodes %d -> %d after %d rounds of %d maps" % [
 		"none" if ok else "FOUND", before[0], after[0], before[1], after[1], before[2], after[2],
-		ROUNDS, MAPS.size() + 1])
+		# Per round: MAPS, the zip's map after each, scenes.tmx with class_scenes, the world's 4 maps
+		ROUNDS, 2 * MAPS.size() + 1 + 4])
 	return ok
 
 
