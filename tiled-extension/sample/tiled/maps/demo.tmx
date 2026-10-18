@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The manual checklist's map (tiled-extension/README.md): Slime and Chest objects as the
+     sample's classes make them, and three mistakes the save-time validation reports: a class
+     that is no class of the project (Slme), an instance without res_path, and a collision mask
+     naming a layer project.godot does not have (Ghosts). -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="20" height="12" tilewidth="16" tileheight="16" infinite="0" nextlayerid="2" nextobjectid="6">
+ <objectgroup id="1" name="Things">
+  <object id="1" name="Blob" class="Slime" x="64" y="64" width="16" height="16">
+   <properties>
+    <property name="hp" type="int" value="5"/>
+    <property name="patrol" type="object" value="2"/>
+   </properties>
+  </object>
+  <object id="2" name="Waypoint" x="160" y="64">
+   <point/>
+  </object>
+  <object id="3" name="Typo" class="Slme" x="96" y="96" width="16" height="16"/>
+  <object id="4" name="Box" class="instance" x="128" y="128"/>
+  <object id="5" name="Wall" x="0" y="176" width="320" height="16">
+   <properties>
+    <property name="collision_layer" value="World,Ghosts"/>
+   </properties>
+  </object>
+ </objectgroup>
+</map>

@@ -930,6 +930,8 @@ export function createFakeTiled(options) {
 		used: rec.used,
 		project: fake._project,
 		mapView: mapView,
+		// The answers the dialogs give, in order (push more after creating the fake).
+		answers: { prompts: prompts, directories: directories, confirms: confirms },
 		// Opens a map or tileset file as the active asset (as the user would), without recording.
 		openFile(fileName) {
 			const a = fileName.endsWith(".tsx") ? new FakeTileset(fake, fileName) : new FakeMap(fake, fileName);
@@ -938,6 +940,8 @@ export function createFakeTiled(options) {
 			return a;
 		},
 		trigger(actionId) { out.actions[actionId].trigger(); },
+		// Closes every open asset (an Issue's activation then has to open its map).
+		closeAll() { openAssets.length = 0; activeAsset = null; },
 		emitAboutToBeSaved(asset) { fake._emit("assetAboutToBeSaved", fake._wrapAsset(asset)); },
 	};
 }

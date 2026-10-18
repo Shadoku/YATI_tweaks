@@ -1,0 +1,6 @@
+{
+    "name": "yati-godot-tests",
+    "private": true,
+    "description": "The yati-godot extension's tests: node --test tiled-extension/test (Node 22 resolves the folder to run.mjs, which loads every *.test.mjs; Node 20 finds them itself), or node --test tiled-extension/test/*.test.mjs.",
+    "main": "run.mjs"
+}
