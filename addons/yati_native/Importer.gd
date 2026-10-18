@@ -48,6 +48,19 @@ var map_wangset_to_terrain: bool = false
 var custom_data_prefix: String = "data_"
 # If not empty the created TileSet is saved to this resource path.
 var save_tileset_to: String = ""
+# How layers with a parallax factor are created: "parallax2d" (wrapped in a Parallax2D at their place
+# in the layer hierarchy) or "legacy" (moved into one ParallaxBackground as ParallaxLayers, as before 3.1).
+var parallax_mode: String = "parallax2d"
+# How tile animations are created: "strip" (each animation gets an atlas of its frames in their order,
+# so any frame sequence works) or "atlas" (Godot's animation inside the tileset's atlas, as before 3.1:
+# only for frames that follow the tile at equal steps in a row or column).
+var animation_mode: String = "strip"
+# Return a Node2D root also for a map with a single layer (the layer then is its child and keeps its
+# own properties). Off: such a map returns the layer itself, with the map's properties applied on top.
+var always_wrap_root: bool = false
+# What an object of a class that is no Godot node type becomes: "staticbody", any other class
+# name of the Reference's mapping table (e.g. "area"), or "node2d" (a Node2D with the shape as metadata).
+var unknown_class_fallback: String = "staticbody"
 
 # Results of the last import (any of the import methods)
 var last_error_count: int = 0
