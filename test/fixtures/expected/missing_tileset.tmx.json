@@ -1,0 +1,50 @@
+{
+  "height": 2,
+  "infinite": false,
+  "layers": [
+    {
+      "data": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "encoding": "csv",
+      "height": 2,
+      "id": 1,
+      "name": "Ground",
+      "type": "tilelayer",
+      "width": 2
+    },
+    {
+      "data": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "encoding": "csv",
+      "height": 2,
+      "id": 2,
+      "name": "Second",
+      "type": "tilelayer",
+      "width": 2
+    }
+  ],
+  "nextlayerid": 3,
+  "nextobjectid": 1,
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "tiledversion": "1.11.2",
+  "tileheight": 16,
+  "tilesets": [
+    {
+      "firstgid": 1,
+      "source": "does_not_exist.tsx"
+    }
+  ],
+  "tilewidth": 16,
+  "type": "map",
+  "version": "1.10",
+  "width": 2
+}

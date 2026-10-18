@@ -1,0 +1,28 @@
+{
+  "objects": [
+    {
+      "gid": 3,
+      "height": 16,
+      "name": "Enemy",
+      "properties": [
+        {
+          "name": "hp",
+          "type": "int",
+          "value": 10
+        },
+        {
+          "name": "faction",
+          "value": "orcs"
+        }
+      ],
+      "width": 16
+    }
+  ],
+  "tilesets": [
+    {
+      "firstgid": 1,
+      "source": "terrain.tsx"
+    }
+  ],
+  "type": "template"
+}

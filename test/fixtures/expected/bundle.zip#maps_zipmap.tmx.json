@@ -1,0 +1,62 @@
+{
+  "height": 4,
+  "infinite": false,
+  "layers": [
+    {
+      "data": [
+        1,
+        2,
+        1,
+        2,
+        2,
+        1,
+        2,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "encoding": "csv",
+      "height": 4,
+      "id": 1,
+      "name": "ZipLayer",
+      "type": "tilelayer",
+      "width": 4
+    },
+    {
+      "id": 2,
+      "name": "ZipObjects",
+      "objects": [
+        {
+          "id": 1,
+          "name": "ZipPoint",
+          "point": true,
+          "x": 8,
+          "y": 8
+        }
+      ],
+      "type": "objectgroup"
+    }
+  ],
+  "nextlayerid": 3,
+  "nextobjectid": 2,
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "tiledversion": "1.11.2",
+  "tileheight": 16,
+  "tilesets": [
+    {
+      "firstgid": 1,
+      "source": "zip_tiles.tsx"
+    }
+  ],
+  "tilewidth": 16,
+  "type": "map",
+  "version": "1.10",
+  "width": 4
+}

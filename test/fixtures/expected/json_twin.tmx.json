@@ -1,0 +1,133 @@
+{
+  "height": 4,
+  "infinite": false,
+  "layers": [
+    {
+      "data": [
+        1,
+        2,
+        3,
+        4,
+        9,
+        10,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1073741826,
+        0,
+        0,
+        1
+      ],
+      "encoding": "csv",
+      "height": 4,
+      "id": 1,
+      "name": "JTiles",
+      "opacity": 1,
+      "type": "tilelayer",
+      "visible": true,
+      "width": 4,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "draworder": "topdown",
+      "id": 2,
+      "name": "JObjects",
+      "objects": [
+        {
+          "height": 16,
+          "id": 1,
+          "name": "JRect",
+          "properties": [
+            {
+              "name": "p_int",
+              "type": "int",
+              "value": 42
+            },
+            {
+              "name": "p_str",
+              "type": "string",
+              "value": "json"
+            },
+            {
+              "name": "stats",
+              "propertytype": "Stats",
+              "type": "class",
+              "value": {
+                "hp": 5,
+                "label": "orc"
+              }
+            }
+          ],
+          "rotation": 0,
+          "type": "",
+          "visible": true,
+          "width": 16,
+          "x": 16,
+          "y": 16
+        },
+        {
+          "height": 0,
+          "id": 2,
+          "name": "JPoint",
+          "point": true,
+          "rotation": 0,
+          "visible": true,
+          "width": 0,
+          "x": 40,
+          "y": 48
+        }
+      ],
+      "opacity": 1,
+      "type": "objectgroup",
+      "visible": true,
+      "x": 0,
+      "y": 0
+    }
+  ],
+  "nextlayerid": 3,
+  "nextobjectid": 3,
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "tiledversion": "1.11.2",
+  "tileheight": 16,
+  "tilesets": [
+    {
+      "columns": 8,
+      "firstgid": 1,
+      "image": "tiles.png",
+      "imageheight": 64,
+      "imagewidth": 128,
+      "margin": 0,
+      "name": "jtiles",
+      "spacing": 0,
+      "tilecount": 32,
+      "tileheight": 16,
+      "tiles": [
+        {
+          "id": 0,
+          "properties": [
+            {
+              "name": "data_speed",
+              "type": "int",
+              "value": 5
+            },
+            {
+              "name": "kind",
+              "type": "string",
+              "value": "json-grass"
+            }
+          ]
+        }
+      ],
+      "tilewidth": 16
+    }
+  ],
+  "tilewidth": 16,
+  "type": "map",
+  "version": "1.10",
+  "width": 4
+}

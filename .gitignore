@@ -11,3 +11,6 @@ baseline_runtime/
 native/target/
 addons/yati_native/bin/*
 !addons/yati_native/bin/.gitkeep
+# Rust build output of the native crates
+native/tiled/target/
+native/tiled/Cargo.lock

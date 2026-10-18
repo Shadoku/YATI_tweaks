@@ -1,0 +1,525 @@
+{
+  "height": 20,
+  "infinite": false,
+  "layers": [
+    {
+      "id": 1,
+      "name": "Objects",
+      "objects": [
+        {
+          "height": 16,
+          "id": 1,
+          "name": "Rect",
+          "width": 32,
+          "x": 16,
+          "y": 16
+        },
+        {
+          "class": "area",
+          "height": 16,
+          "id": 2,
+          "name": "AreaRect",
+          "width": 16,
+          "x": 64,
+          "y": 16
+        },
+        {
+          "class": "staticbody",
+          "height": 16,
+          "id": 3,
+          "name": "StaticRect",
+          "width": 16,
+          "x": 96,
+          "y": 16
+        },
+        {
+          "class": "animatablebody",
+          "height": 16,
+          "id": 4,
+          "name": "AnimRect",
+          "width": 16,
+          "x": 128,
+          "y": 16
+        },
+        {
+          "class": "navigation",
+          "height": 32,
+          "id": 5,
+          "name": "NavRect",
+          "width": 32,
+          "x": 16,
+          "y": 48
+        },
+        {
+          "class": "occluder",
+          "height": 16,
+          "id": 6,
+          "name": "OccRect",
+          "width": 16,
+          "x": 64,
+          "y": 48
+        },
+        {
+          "class": "polygon",
+          "height": 16,
+          "id": 7,
+          "name": "PolyRect",
+          "width": 16,
+          "x": 96,
+          "y": 48
+        },
+        {
+          "class": "characterbody",
+          "height": 16,
+          "id": 8,
+          "name": "CharRect",
+          "width": 16,
+          "x": 128,
+          "y": 48
+        },
+        {
+          "class": "rigidbody",
+          "height": 16,
+          "id": 40,
+          "name": "RigidRect",
+          "width": 16,
+          "x": 160,
+          "y": 48
+        },
+        {
+          "ellipse": true,
+          "height": 16,
+          "id": 9,
+          "name": "Ellipse",
+          "width": 32,
+          "x": 96,
+          "y": 80
+        },
+        {
+          "capsule": true,
+          "height": 32,
+          "id": 10,
+          "name": "Capsule",
+          "width": 16,
+          "x": 144,
+          "y": 80
+        },
+        {
+          "id": 11,
+          "name": "Point",
+          "point": true,
+          "x": 200,
+          "y": 100
+        },
+        {
+          "id": 12,
+          "name": "Poly",
+          "polygon": [
+            {
+              "x": 0.0,
+              "y": 0.0
+            },
+            {
+              "x": 32.0,
+              "y": 0.0
+            },
+            {
+              "x": 32.0,
+              "y": 32.0
+            }
+          ],
+          "x": 160,
+          "y": 160
+        },
+        {
+          "id": 13,
+          "name": "Polyline",
+          "polyline": [
+            {
+              "x": 0.0,
+              "y": 0.0
+            },
+            {
+              "x": 20.0,
+              "y": 0.0
+            },
+            {
+              "x": 20.0,
+              "y": 20.0
+            }
+          ],
+          "x": 10,
+          "y": 200
+        },
+        {
+          "class": "line",
+          "id": 14,
+          "name": "Line",
+          "polyline": [
+            {
+              "x": 0.0,
+              "y": 0.0
+            },
+            {
+              "x": 10.0,
+              "y": 10.0
+            },
+            {
+              "x": 20.0,
+              "y": 0.0
+            }
+          ],
+          "x": 40,
+          "y": 200
+        },
+        {
+          "class": "path",
+          "id": 15,
+          "name": "Path",
+          "polyline": [
+            {
+              "x": 0.0,
+              "y": 0.0
+            },
+            {
+              "x": 10.0,
+              "y": 10.0
+            },
+            {
+              "x": 20.0,
+              "y": 0.0
+            }
+          ],
+          "x": 80,
+          "y": 200
+        },
+        {
+          "height": 20,
+          "id": 16,
+          "name": "Text",
+          "text": {
+            "bold": 1,
+            "fontfamily": "Sans",
+            "halign": "center",
+            "italic": 1,
+            "pixelsize": 12,
+            "text": "Hello YATI",
+            "wrap": true
+          },
+          "width": 100,
+          "x": 50,
+          "y": 120
+        },
+        {
+          "gid": 1,
+          "height": 16,
+          "id": 17,
+          "name": "TileObj",
+          "properties": [
+            {
+              "name": "own",
+              "value": "mine"
+            }
+          ],
+          "width": 16,
+          "x": 32,
+          "y": 288
+        },
+        {
+          "gid": 2147483650,
+          "height": 16,
+          "id": 18,
+          "name": "TileObjFlipped",
+          "width": 16,
+          "x": 64,
+          "y": 288
+        },
+        {
+          "class": "staticbody",
+          "gid": 9,
+          "height": 16,
+          "id": 19,
+          "name": "CollTileObj",
+          "width": 16,
+          "x": 96,
+          "y": 288
+        },
+        {
+          "class": "characterbody",
+          "gid": 9,
+          "height": 16,
+          "id": 20,
+          "name": "CharTile",
+          "width": 16,
+          "x": 128,
+          "y": 288
+        },
+        {
+          "class": "rigidbody",
+          "gid": 9,
+          "height": 16,
+          "id": 21,
+          "name": "RigidTile",
+          "width": 16,
+          "x": 160,
+          "y": 288
+        },
+        {
+          "class": "area",
+          "gid": 9,
+          "height": 16,
+          "id": 22,
+          "name": "AreaTile",
+          "width": 16,
+          "x": 192,
+          "y": 288
+        },
+        {
+          "gid": 11,
+          "height": 16,
+          "id": 41,
+          "name": "LootTile",
+          "properties": [
+            {
+              "name": "own",
+              "value": "mine"
+            }
+          ],
+          "width": 16,
+          "x": 224,
+          "y": 288
+        },
+        {
+          "height": 16,
+          "id": 23,
+          "name": "Faded",
+          "opacity": 0.5,
+          "width": 16,
+          "x": 200,
+          "y": 16
+        },
+        {
+          "height": 16,
+          "id": 29,
+          "name": "HiddenRect",
+          "visible": false,
+          "width": 16,
+          "x": 232,
+          "y": 16
+        },
+        {
+          "height": 16,
+          "id": 24,
+          "name": "Props",
+          "properties": [
+            {
+              "name": "godot_group",
+              "value": "enemies, bosses"
+            },
+            {
+              "name": "godot_node_type",
+              "value": "area"
+            },
+            {
+              "name": "p_bool",
+              "type": "bool",
+              "value": "true"
+            },
+            {
+              "name": "p_class",
+              "propertytype": "Stats",
+              "type": "class",
+              "value": {
+                "hp": 7,
+                "label": "boss"
+              }
+            },
+            {
+              "name": "p_color",
+              "type": "color",
+              "value": "#80ff0000"
+            },
+            {
+              "name": "p_file",
+              "type": "file",
+              "value": "data/info.txt"
+            },
+            {
+              "name": "p_float",
+              "type": "float",
+              "value": 2.5
+            },
+            {
+              "name": "p_int",
+              "type": "int",
+              "value": 42
+            },
+            {
+              "name": "p_obj_group",
+              "type": "object",
+              "value": 101
+            },
+            {
+              "name": "p_obj_point",
+              "type": "object",
+              "value": 11
+            },
+            {
+              "name": "p_obj_poly",
+              "type": "object",
+              "value": 12
+            },
+            {
+              "name": "p_string",
+              "value": "hello"
+            }
+          ],
+          "width": 16,
+          "x": 300,
+          "y": 20
+        },
+        {
+          "id": 25,
+          "name": "T1",
+          "template": "enemy.tx",
+          "x": 32,
+          "y": 240
+        },
+        {
+          "id": 26,
+          "name": "T2",
+          "properties": [
+            {
+              "name": "hp",
+              "type": "int",
+              "value": 99
+            }
+          ],
+          "template": "enemy.tx",
+          "x": 64,
+          "y": 240
+        },
+        {
+          "id": 27,
+          "template": "enemy.tx",
+          "x": 96,
+          "y": 240
+        },
+        {
+          "class": "Enemy",
+          "height": 16,
+          "id": 28,
+          "name": "EnemyRect",
+          "properties": [
+            {
+              "name": "hp",
+              "type": "int",
+              "value": 100.0
+            },
+            {
+              "name": "speed",
+              "type": "float",
+              "value": 1.5
+            }
+          ],
+          "width": 16,
+          "x": 300,
+          "y": 60
+        }
+      ],
+      "type": "objectgroup"
+    },
+    {
+      "draworder": "index",
+      "id": 2,
+      "name": "IndexObjects",
+      "objects": [
+        {
+          "id": 30,
+          "name": "IdxPoint",
+          "point": true,
+          "x": 10,
+          "y": 10
+        }
+      ],
+      "type": "objectgroup"
+    },
+    {
+      "id": 3,
+      "layers": [
+        {
+          "id": 4,
+          "name": "InnerObjects",
+          "objects": [
+            {
+              "class": "polygon",
+              "id": 101,
+              "name": "GroupPoly",
+              "polygon": [
+                {
+                  "x": 0.0,
+                  "y": 0.0
+                },
+                {
+                  "x": 10.0,
+                  "y": 0.0
+                },
+                {
+                  "x": 10.0,
+                  "y": 10.0
+                },
+                {
+                  "x": 0.0,
+                  "y": 10.0
+                }
+              ],
+              "x": 100,
+              "y": 100
+            }
+          ],
+          "type": "objectgroup"
+        }
+      ],
+      "name": "ObjGroup",
+      "type": "group"
+    },
+    {
+      "id": 5,
+      "name": "NoImportObjs",
+      "objects": [
+        {
+          "height": 16,
+          "id": 31,
+          "name": "ShouldNotExist",
+          "width": 16,
+          "x": 0,
+          "y": 0
+        }
+      ],
+      "properties": [
+        {
+          "name": "no_import",
+          "type": "bool",
+          "value": "true"
+        }
+      ],
+      "type": "objectgroup"
+    }
+  ],
+  "nextlayerid": 10,
+  "nextobjectid": 200,
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "tiledversion": "1.11.2",
+  "tileheight": 16,
+  "tilesets": [
+    {
+      "firstgid": 1,
+      "source": "terrain.tsx"
+    }
+  ],
+  "tilewidth": 16,
+  "type": "map",
+  "version": "1.10",
+  "width": 25
+}

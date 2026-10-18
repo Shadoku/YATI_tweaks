@@ -39,6 +39,16 @@ jobs:
       - name: Build the native importer
         run: bash tools/build_native.sh
 
+      # The pure-Rust core (native/tiled/, tiled_core): its unit, loader, payload and parity
+      # tests (the parity dumps are committed, so no Godot is needed), lints and formatting.
+      - name: Test the Rust core
+        working-directory: native
+        run: |
+          set -euo pipefail
+          cargo test --release -p tiled_core
+          cargo clippy --release -p tiled_core --all-targets -- -D warnings
+          cargo fmt -p tiled_core -- --check
+
       # Godot loads a GDExtension at startup only when .godot/extension_list.cfg names it
       # (and a fresh .godot/'s first import that discovers one mid-scan aborts at shutdown);
       # test/run_all.sh seeds the same file.

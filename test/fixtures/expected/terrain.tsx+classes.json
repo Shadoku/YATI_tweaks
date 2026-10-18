@@ -1,0 +1,243 @@
+{
+  "columns": 8,
+  "image": "tiles.png",
+  "imageheight": 64,
+  "imagewidth": 128,
+  "name": "terrain",
+  "properties": [
+    {
+      "name": "author",
+      "value": "yati-tests"
+    }
+  ],
+  "tilecount": 32,
+  "tiledversion": "1.11.2",
+  "tileheight": 16,
+  "tiles": [
+    {
+      "id": 0,
+      "properties": [
+        {
+          "name": "data_speed",
+          "type": "int",
+          "value": 3
+        },
+        {
+          "name": "data_slippery",
+          "type": "bool",
+          "value": "true"
+        },
+        {
+          "name": "kind",
+          "value": "grass"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "probability": 0.25
+    },
+    {
+      "animation": [
+        {
+          "duration": 100,
+          "tileid": 4
+        },
+        {
+          "duration": 100,
+          "tileid": 5
+        },
+        {
+          "duration": 100,
+          "tileid": 6
+        }
+      ],
+      "id": 4
+    },
+    {
+      "id": 8,
+      "objectgroup": {
+        "draworder": "index",
+        "id": 2,
+        "objects": [
+          {
+            "height": 8,
+            "id": 1,
+            "name": "CRect",
+            "width": 16,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "ellipse": true,
+            "height": 6,
+            "id": 2,
+            "name": "CEllipse",
+            "width": 8,
+            "x": 2,
+            "y": 8
+          },
+          {
+            "id": 3,
+            "name": "CPoly",
+            "polygon": [
+              {
+                "x": 0.0,
+                "y": 0.0
+              },
+              {
+                "x": 8.0,
+                "y": 0.0
+              },
+              {
+                "x": 8.0,
+                "y": 8.0
+              }
+            ],
+            "x": 8,
+            "y": 8
+          },
+          {
+            "id": 4,
+            "name": "COneWay",
+            "polygon": [
+              {
+                "x": 0.0,
+                "y": 0.0
+              },
+              {
+                "x": 16.0,
+                "y": 0.0
+              },
+              {
+                "x": 16.0,
+                "y": 4.0
+              }
+            ],
+            "properties": [
+              {
+                "name": "one_way",
+                "type": "bool",
+                "value": "true"
+              }
+            ],
+            "x": 0,
+            "y": 12
+          },
+          {
+            "height": 8,
+            "id": 5,
+            "name": "CLayer1",
+            "properties": [
+              {
+                "name": "physics_layer",
+                "type": "int",
+                "value": 1
+              }
+            ],
+            "width": 8,
+            "x": 4,
+            "y": 4
+          }
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "properties": [
+        {
+          "name": "loot",
+          "value": "gold"
+        },
+        {
+          "name": "weight",
+          "type": "float",
+          "value": 1.5
+        },
+        {
+          "name": "stack",
+          "type": "int",
+          "value": 4
+        }
+      ]
+    }
+  ],
+  "tilewidth": 16,
+  "type": "tileset",
+  "version": "1.10",
+  "wangsets": [
+    {
+      "colors": [
+        {
+          "color": "#00ff00",
+          "name": "Grass",
+          "probability": 1,
+          "tile": -1
+        },
+        {
+          "color": "#a05000",
+          "name": "Dirt",
+          "probability": 1,
+          "tile": -1
+        }
+      ],
+      "name": "Ground",
+      "tile": -1,
+      "type": "corner",
+      "wangtiles": [
+        {
+          "tileid": 16,
+          "wangid": [
+            0,
+            1,
+            0,
+            1,
+            0,
+            1,
+            0,
+            1
+          ]
+        },
+        {
+          "tileid": 17,
+          "wangid": [
+            0,
+            2,
+            0,
+            2,
+            0,
+            2,
+            0,
+            2
+          ]
+        },
+        {
+          "tileid": 18,
+          "wangid": [
+            0,
+            1,
+            0,
+            2,
+            0,
+            2,
+            0,
+            1
+          ]
+        },
+        {
+          "tileid": 19,
+          "wangid": [
+            0,
+            2,
+            0,
+            1,
+            0,
+            1,
+            0,
+            2
+          ]
+        }
+      ]
+    }
+  ]
+}

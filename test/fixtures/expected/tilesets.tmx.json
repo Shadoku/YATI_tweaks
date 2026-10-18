@@ -1,0 +1,157 @@
+{
+  "height": 4,
+  "infinite": false,
+  "layers": [
+    {
+      "data": [
+        1,
+        5,
+        9,
+        17,
+        33,
+        34,
+        41,
+        42,
+        4,
+        18,
+        19,
+        20,
+        35,
+        36,
+        43,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "encoding": "csv",
+      "height": 4,
+      "id": 1,
+      "name": "Main",
+      "type": "tilelayer",
+      "width": 8
+    },
+    {
+      "data": [
+        2,
+        2147483650,
+        1073741826,
+        536870914,
+        3221225474,
+        2684354562,
+        1610612738,
+        3758096386,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "encoding": "csv",
+      "height": 4,
+      "id": 2,
+      "name": "Flips",
+      "type": "tilelayer",
+      "width": 8
+    }
+  ],
+  "nextlayerid": 3,
+  "nextobjectid": 1,
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "tiledversion": "1.11.2",
+  "tileheight": 16,
+  "tilesets": [
+    {
+      "firstgid": 1,
+      "source": "terrain.tsx"
+    },
+    {
+      "columns": 4,
+      "firstgid": 33,
+      "image": "tiles_ms.png",
+      "imageheight": 37,
+      "imagewidth": 71,
+      "margin": 2,
+      "name": "spaced",
+      "spacing": 1,
+      "tilecount": 8,
+      "tileheight": 16,
+      "tileoffset": {
+        "x": 2,
+        "y": -3
+      },
+      "tilewidth": 16
+    },
+    {
+      "columns": 0,
+      "firstgid": 41,
+      "grid": {
+        "height": 1,
+        "orientation": "orthogonal",
+        "width": 1
+      },
+      "name": "collection",
+      "tilecount": 3,
+      "tileheight": 48,
+      "tiles": [
+        {
+          "id": 0,
+          "image": "small.png",
+          "imageheight": 16,
+          "imagewidth": 16
+        },
+        {
+          "id": 1,
+          "image": "big.png",
+          "imageheight": 48,
+          "imagewidth": 32
+        },
+        {
+          "id": 2,
+          "image": "obj.png",
+          "imageheight": 16,
+          "imagewidth": 16,
+          "type": "area"
+        }
+      ],
+      "tilewidth": 32
+    }
+  ],
+  "tilewidth": 16,
+  "type": "map",
+  "version": "1.10",
+  "width": 8
+}

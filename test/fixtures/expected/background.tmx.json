@@ -1,0 +1,49 @@
+{
+  "backgroundcolor": "#336699",
+  "height": 4,
+  "infinite": false,
+  "layers": [
+    {
+      "data": [
+        1,
+        2,
+        3,
+        4,
+        1,
+        2,
+        3,
+        4,
+        1,
+        2,
+        3,
+        4,
+        1,
+        2,
+        3,
+        4
+      ],
+      "encoding": "csv",
+      "height": 4,
+      "id": 1,
+      "name": "Ground",
+      "type": "tilelayer",
+      "width": 4
+    }
+  ],
+  "nextlayerid": 2,
+  "nextobjectid": 1,
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "tiledversion": "1.11.2",
+  "tileheight": 16,
+  "tilesets": [
+    {
+      "firstgid": 1,
+      "source": "terrain.tsx"
+    }
+  ],
+  "tilewidth": 16,
+  "type": "map",
+  "version": "1.10",
+  "width": 4
+}

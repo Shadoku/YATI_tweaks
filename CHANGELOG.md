@@ -23,6 +23,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from a fresh clone.
 - `docs/native-importer-plan.md`: the exploration and plan for a native (Rust GDExtension) importer
   that needs no preloading and streams infinite maps, with the measurements behind it.
+- `native/tiled/` (`tiled_core`, stage 1 of the native importer plan): a pure-Rust crate, no Godot
+  dependency, with the Tiled data model (structs mirroring the JSON format), TMX/TSX/TX and
+  TMJ/TSJ/TJ parsers into that one model, payload decoding in every encoding (csv, base64, zlib,
+  gzip, zstd, legacy `<tile gid>`) kept lazy, gid resolution as `resolve_cell` does it, Godot
+  `tile_map_data` blobs (per layer, per chunk, merged, one thread per layer), a loader with a
+  file-request protocol (external tilesets, templates and their tilesets, the project file, zip
+  archives), the template and custom-type merges, and `Map::to_value()`: the dictionary
+  `DictionaryBuilder.gd` builds, equal to the GDScript runtime's for every fixture.
+- `test/dump_dictionary.gd`: prints the runtime's dictionary of a Tiled file as JSON (optionally with a
+  project's custom types merged, or from a zip); `test/gen_expected.sh` writes
+  `test/fixtures/expected/*.json` with it for the native parity tests.
+- Fixtures for the native parity tests: `classes.tmx` + `classes.tiled-project` + `crate.tx`,
+  `infinite.tmj` + `json_tiles.tsj` + `json_enemy.tj`, `json_twin.tmx`.
 - `test/bench_materialize.gd`: measures the engine's own cost of a map's tile layers (`tile_map_data`
   assignment, packed-scene instantiation, the frame after a layer enters the tree, `set_cell` /
   `erase_cell` of 16x16 chunks into a live layer, a layer per chunk).

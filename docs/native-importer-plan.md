@@ -390,6 +390,57 @@ numbers measured. Stages 1 and 2 are the bulk; 3 and 4 are what the two goals ne
     a wrong checksum. Not verified here: the Windows and macOS builds and their load tests, the
     release and bot-commit steps (they run on GitHub).
 
+  the pure-Rust prototype kept outside the repository (its numbers are 1.2's). No stage started.
+- 2026-10-18, **stage 1 done** (`native/tiled/`, crate `tiled_core`, pure Rust, no Godot; a
+  workspace member and path dependency of the GDExtension crate once merged):
+  - The model (`src/model/`: structs mirroring the Tiled JSON format, serde for TMJ/TSJ/TJ and
+    the `.tiled-project`), the XML parser (`src/parse/xml.rs`, quick-xml, a recursive descent
+    that mirrors `DictionaryFromXml.gd`), payloads (`src/data.rs`: csv, base64, zlib, gzip,
+    zstd behind a default feature, legacy `<tile gid>`; kept undecoded until `decode()`), gid
+    resolution as `resolve_cell` does it and `tile_map_data` blobs (`src/cells.rs`: per layer,
+    per chunk, merged, one thread per layer), the loader with the file-request protocol
+    (`src/load.rs`: `needs()`/`supply()`/`missing()`/`step()`, external tilesets, templates and
+    their tilesets, the project file, zip archives read directly, messages in the runtime's
+    wording), the template merge (`Map::instantiate`) and the custom-type merge, and
+    `Map::to_value()` (`src/value.rs`).
+  - **Parity**: `test/dump_dictionary.gd` dumps `DictionaryBuilder.get_dictionary()` of a file
+    (`test/gen_expected.sh` → `test/fixtures/expected/*.json`, 27 dumps); `tests/parity.rs`
+    loads every fixture map (15), tileset (3) and template (3) through the loader, with and
+    without a project file, and the zip's members, and compares `to_value()`: equal on all of
+    them (keys, ints exact, floats approximately). The benchmark map, its tileset and template
+    too (an ignored test, the map being generated). New fixtures for it: `classes.tmx` +
+    `classes.tiled-project` + `crate.tx` (nested classes and lists, list properties, multi-line
+    strings, nested groups with templates, every custom-type scope, zstd), `infinite.tmj` +
+    `json_tiles.tsj` + `json_enemy.tj` (infinite JSON map with chunks, JSON tileset and template),
+    `json_twin.tmx` (`json_map.tmj` as TMX: both formats give equal models). 35 Rust tests.
+  - **Benchmark** (`cargo run --release --example bench`, the benchmark map, files in memory,
+    20 runs, this machine): the loader 4.2 to 4.5 ms (median 4.8 to 5.6); loader + the six
+    blobs sequentially 18.8 to 19.2 ms (median 19.8 to 22.2); with one thread per layer 9.2 to
+    9.5 ms (median 10.4 to 11.3). Gate (under 15 ms threaded) met. Inflating a layer (zlib-rs,
+    410 KB) is 1.4 to 1.7 ms of each layer's 2.1 ms; libdeflate measured twice as fast on the same
+    payload, an option should the budget tighten (a C dependency, as zstd is).
+  - **Accepted differences from `DictionaryBuilder`** (none occurs in a file Tiled writes; each
+    is documented in `native/tiled/README.md`): text inside an `<item>` or an unknown element
+    (the runtime stores it under a `data` key) is dropped; an embedded `<image><data>` is skipped
+    (the runtime's dictionary of it is garbled); of several `<transformations>` in one tileset
+    the last is kept; a JSON `null` in a typed field is dropped and a non-integral number in an
+    integer JSON field is a parse error.
+  - **Decisions the plan left open**: the format is told by content first, the extension
+    second (the runtime goes by extension; the result is the same for every Tiled file); the
+    model keeps how a number was written (`Num`), so the XML dictionary's int-or-float typing is
+    exact; custom types are merged into the model at load time wherever the runtime merges them
+    while building (map, every layer, every object of an object layer, tilesets, tiles, tile
+    collision objects; also for layers marked `no_import` and for tilesets only templates use,
+    which the runtime skips), templates only when instantiated, as the runtime does; a missing
+    template is one error per instance, as in the runtime; references resolve relative to the
+    referencing file only (the runtime also tries the bare name relative to the working
+    directory first); a project file missing is fatal outside a zip and an error inside one, as
+    in `Importer.gd`; atlas geometry comes from `imagewidth`/`imageheight`/`margin`/`spacing`
+    with Godot's grid formula, `CellResolver::set_texture_size` for the real texture; source ids
+    are assigned as `TileSet.add_source` assigns them (`godot_atlas_id` honoured); JSON
+    templates (`.tj`) instantiate (the runtime's `create_object` reads only the TMX
+    `objects` key and creates nothing for them).
+
 ## 7. Behaviour changes from the runtime improvement plan
 
 `docs/runtime-improvement-plan.md` (brought in 2026-10-18) reviews the GDScript runtime and

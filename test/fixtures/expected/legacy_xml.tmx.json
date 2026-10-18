@@ -1,0 +1,58 @@
+{
+  "height": 2,
+  "infinite": false,
+  "layers": [
+    {
+      "data": [
+        1,
+        2,
+        0,
+        4,
+        9,
+        0,
+        0,
+        2
+      ],
+      "encoding": "csv",
+      "height": 2,
+      "id": 1,
+      "name": "LegacyXml",
+      "type": "tilelayer",
+      "width": 4
+    },
+    {
+      "data": [
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      "encoding": "csv",
+      "height": 2,
+      "id": 2,
+      "name": "AfterLegacy",
+      "type": "tilelayer",
+      "width": 4
+    }
+  ],
+  "nextlayerid": 3,
+  "nextobjectid": 1,
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "tiledversion": "1.11.2",
+  "tileheight": 16,
+  "tilesets": [
+    {
+      "firstgid": 1,
+      "source": "terrain.tsx"
+    }
+  ],
+  "tilewidth": 16,
+  "type": "map",
+  "version": "1.10",
+  "width": 4
+}

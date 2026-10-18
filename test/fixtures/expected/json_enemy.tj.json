@@ -1,0 +1,28 @@
+{
+  "object": {
+    "gid": 3.0,
+    "height": 16.0,
+    "name": "JEnemy",
+    "properties": [
+      {
+        "name": "hp",
+        "type": "int",
+        "value": 10.0
+      },
+      {
+        "name": "faction",
+        "type": "string",
+        "value": "orcs"
+      }
+    ],
+    "rotation": 0.0,
+    "type": "enemy",
+    "visible": true,
+    "width": 16.0
+  },
+  "tileset": {
+    "firstgid": 1.0,
+    "source": "json_tiles.tsj"
+  },
+  "type": "template"
+}

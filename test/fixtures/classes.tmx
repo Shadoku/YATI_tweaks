@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.2" class="Room" orientation="orthogonal" renderorder="right-down" width="4" height="4" tilewidth="16" tileheight="16" infinite="0" parallaxoriginx="8" parallaxoriginy="4.5" nextlayerid="9" nextobjectid="20">
+ <editorsettings>
+  <export target="classes.tmj" format="json"/>
+ </editorsettings>
+ <properties>
+  <property name="level" type="int" value="3"/>
+  <property name="notes">first line
+second line &amp; more</property>
+  <property name="numeric_string" value="0012"/>
+  <property name="drops" type="list">
+   <item type="int" value="1"/>
+   <item type="string" value="gem"/>
+   <item type="float" value="2.5"/>
+   <item type="class" propertytype="Stats">
+    <properties>
+     <property name="hp" type="int" value="9"/>
+    </properties>
+   </item>
+   <item type="list">
+    <item type="bool" value="true"/>
+   </item>
+  </property>
+  <property name="loot" type="class" propertytype="Loot">
+   <properties>
+    <property name="count" type="int" value="2"/>
+    <property name="item" value="sword"/>
+    <property name="stats" type="class" propertytype="Stats">
+     <properties>
+      <property name="hp" type="int" value="40"/>
+      <property name="label">multi
+line</property>
+     </properties>
+    </property>
+    <property name="tags" type="list">
+     <item type="string" value="sharp"/>
+     <item type="float" value="2"/>
+     <item type="class" propertytype="Stats">
+      <properties>
+       <property name="hp" type="int" value="1"/>
+      </properties>
+     </item>
+    </property>
+    <property name="weight" type="float" value="3"/>
+    <property name="owner" type="object" value="12"/>
+    <property name="cursed" type="bool" value="false"/>
+   </properties>
+  </property>
+  <property name="empty_class" type="class" propertytype="Stats"/>
+  <property name="faction" propertytype="Faction" value="orcs"/>
+  <property name="spawn" type="object" value="0"/>
+ </properties>
+ <tileset firstgid="1" name="embedded" class="Terrain" tilewidth="16" tileheight="16" tilecount="32" columns="8" objectalignment="bottom" tilerendersize="grid" fillmode="preserve-aspect-fit">
+  <transformations hflip="1" vflip="0" rotate="1" preferuntransformed="0"/>
+  <image source="tiles.png" trans="ff00ff" width="128" height="64"/>
+  <tile id="2" type="Terrain" probability="0.5">
+   <properties>
+    <property name="cost" type="float" value="4"/>
+   </properties>
+   <objectgroup draworder="index" id="3">
+    <object id="1" type="Crate" x="0" y="0" width="16" height="16"/>
+   </objectgroup>
+  </tile>
+  <wangsets>
+   <wangset name="Paths" type="edge" tile="2">
+    <properties>
+     <property name="kind" value="road"/>
+    </properties>
+    <wangcolor name="Road" color="#808080" tile="3" probability="0.75">
+     <properties>
+      <property name="speed" type="float" value="1.25"/>
+     </properties>
+    </wangcolor>
+    <wangtile tileid="3" wangid="1,0,1,0,1,0,1,0"/>
+   </wangset>
+  </wangsets>
+ </tileset>
+ <layer id="1" name="Ground" class="Floor" width="4" height="4" locked="1">
+  <properties>
+   <property name="friction" type="float" value="0.25"/>
+  </properties>
+  <data encoding="csv">
+1,2,3,4,
+5,6,7,8,
+9,10,11,12,
+13,14,15,16
+</data>
+ </layer>
+ <group id="2" name="Outer" class="Floor" offsetx="4" offsety="2" parallaxx="0.5" tintcolor="#80ff8000">
+  <group id="3" name="Inner">
+   <objectgroup id="4" name="Crates" color="#ff0000" opacity="0.75" visible="0" offsetx="1.5">
+    <object id="10" template="crate.tx" x="16" y="32"/>
+    <object id="11" template="crate.tx" name="BigCrate" x="48" y="32" opacity="0.5">
+     <properties>
+      <property name="hp" type="int" value="50"/>
+      <property name="extra" value="yes"/>
+     </properties>
+    </object>
+    <object id="12" name="Box" type="Crate" x="8" y="8" width="8" height="8" rotation="45"/>
+    <object id="13" name="Sign" x="0" y="48" width="64" height="16">
+     <text fontfamily="Serif" pixelsize="10" wrap="1" color="#ff102030" underline="1" strikeout="1" kerning="0" valign="bottom">Line one
+Line two</text>
+    </object>
+    <object id="14" name="Pill" x="40" y="8" width="16" height="8" rotation="-12.5">
+     <capsule/>
+    </object>
+   </objectgroup>
+  </group>
+  <imagelayer id="5" name="Sky" class="Floor" offsetx="0" offsety="-8" repeatx="1" repeaty="0">
+   <image source="bg.png" width="64" height="32"/>
+  </imagelayer>
+ </group>
+ <layer id="6" name="Zstd" width="4" height="4" mode="screen">
+  <data encoding="base64" compression="zstd">
+   KLUv/SBAAQIAAQAAAAIAAAADAAAABAAAAAkAAAAKAAAACwAAAAwAAAAAAAAAAAAAABEAAAASAAAAGQAAABoAAAAbAAAAAgAAgA==
+  </data>
+ </layer>
+</map>
