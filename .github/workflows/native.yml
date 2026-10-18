@@ -97,7 +97,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.97.0 # pinned: clippy lints change between stable releases; bump with the development machines
         with:
           targets: ${{ matrix.name == 'macos-universal' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
