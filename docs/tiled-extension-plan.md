@@ -181,3 +181,39 @@ through the `.tiled-project` file, the maps and (for the check) the Godot binary
 ## 5. Status
 
 - 2026-10-18: planned; stages 1 and 2 launched in parallel.
+- 2026-10-18, stage 2 done (commits `12935d7`, `68349e1`; branch `claude/tiled-extension-importers`):
+  - **Vector2 / Vector2i** (`12935d7`): `convert_for_property` and `get_typed_array_for` of both
+    importers (`runtime/TilemapCreator.gd`'s `class_to_vector`, `native/src/builder/assign.rs`'s
+    `class_to_vector`) turn a class value of exactly the members `x` and `y`, both numbers, into a
+    `Vector2`, and into a `Vector2i` when both are integral (`3.0` fits, `1.5` stays metadata with
+    the usual warning); lists of them fit `Array[Vector2]` / `Array[Vector2i]`; as metadata the
+    Dictionary stays. Fixture: `scenes.tmx`'s object `Scout` (id 8), `scenes.tiled-project`'s class
+    types `Vector2` (float members) and `Vector2i` (int members), `enemy.gd`'s `home`, `cell`,
+    `route: Array[Vector2]`; `test_new_vector_class_property` (also the misfits, from a map it writes
+    to `test/out/`). Parity dumps of `scenes.tmx` regenerated; `cargo test` (parity included),
+    clippy `-D warnings`, `fmt --check` clean.
+  - **`check_map.gd`** (`68349e1`): one script, the same file in `runtime/` and
+    `addons/yati_native/` (it loads the `Importer.gd` next to it), output and exit codes as in
+    section 3. How each importer gets its messages: both now have `Importer.last_messages`
+    (`[{kind, text}]`, one per counted error or warning, text without colour tags). The GDScript
+    runtime cannot intercept its prints, so `CommonUtils` keeps a per-import `messages` list
+    (`reset()`, `report_error()`, `report_warning()`, `count_error()`), which replaced the separate
+    print and counter lines at every counting site (printed output unchanged); the native facade
+    builds the list from `TiledMap.get_errors()`, `get_warnings()` and
+    `TiledBuilder.get_messages()` (`E:` / `W:`). A message's object: a quoted name after "of" or
+    "object" that a node with `id` metadata has, else a `Class '<c>'` message's object of lowest id
+    with that `class` metadata, else any quoted node name, else `-`. The script trims a leading
+    `-- `, `ERROR: ` or `WARNING: ` from the text. Options are the facade's `OPTION_NAMES` (the
+    runtime's script variables but `last_*`: the same 16), so `share_tilesets` and
+    `async_tiles_per_frame` are not accepted. `test/test_check_map.sh` (in `test/run_all.sh`, so
+    in CI) runs both scripts on 9 cases and expects the same lines from both.
+  - Gates: `test/run_tests.gd` `SUMMARY: 105 passed, 0 failed (new_: 0, bug_: 0, other: 0) of
+    105` for `res://runtime` and `res://addons/yati_native`; `test/run_all.sh` exits 0 for both
+    runtimes (`SUMMARY: check_map 18 passed, 0 failed`, test_async 71, test_stream 86);
+    `tools/native_gate.gd` unchanged and passing (no leaks over 20 rounds of 57 maps, small map
+    0.53 ms warm). Every fixture map's `last_messages` matches its counts in both importers.
+  - Not identical: the result line's `<ms>`; a map whose parse reports errors and warnings may
+    order them differently (the native `TiledMap` keeps them in two lists, errors first); and
+    `infinite.tmj`, where the importers already differed before this stage (the runtime warns
+    about the object property `ref`, 11 nodes; the native importer about class `enemy`, 13 nodes;
+    no test covers it), so the two scripts print different lines for it.
