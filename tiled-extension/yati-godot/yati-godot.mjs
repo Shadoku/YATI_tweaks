@@ -334,7 +334,7 @@ function checkMap(api) {
 		return;
 	if (!api.File.exists(joinPath(s.godotProject, CHECK_SCRIPT_LOCAL))) {
 		t.alert("The Godot project has no " + CHECK_SCRIPT_LOCAL + " (the native YATI importer's check script, " +
-			"YATI 3.2 or newer). Copy addons/yati_native/ into the game to use Check map in Godot.", TITLE);
+			"in releases after YATI 3.1.0). Copy a current addons/yati_native/ into the game to use Check map in Godot.", TITLE);
 		return;
 	}
 	if (map.modified) {

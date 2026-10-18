@@ -91,6 +91,16 @@ none. `tools/install_native.sh` downloads the release named in `.yati-native-ver
 branch's rolling build, `native-<branch>`). The pure-Rust core (`native/tiled/`, crate
 `tiled_core`) is versioned with the library.
 
+## Tiled extension
+
+`tiled-extension/yati-godot/` is a Tiled 1.12 scripting extension for maps that YATI imports. It
+brings a Godot project's layer names (as flags enums), node types and scenes (one class per scene,
+with a member per export) into the Tiled project. It validates maps on save, and *YATI: Check map
+in Godot* runs the native importer on the map from Tiled. Copy the folder into Tiled's extensions
+folder or the project's `extensions/`. It was written and tested under Node against a fake of
+Tiled's documented API; no Tiled ran yet. Its [README](tiled-extension/README.md) has the manual
+checklist to try first, and [docs/tiled-extension-plan.md](docs/tiled-extension-plan.md) the plan.
+
 ## Credits
 
 All the importer logic originates from [YATI](https://github.com/Kiamo2/YATI) by Roland Helmerichs.

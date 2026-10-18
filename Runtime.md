@@ -289,3 +289,26 @@ the options that shape a TileSet) and handed to the next map with that combinati
 | A numeric object or layer name (`name="007"`) | `"7"` | `"007"` |
 
 The full list, each with its reason, is in the [Reference](Reference.md#differences-between-the-gdscript-and-the-native-importer).
+
+## Tiled extension
+
+The Tiled side of these importers is a scripting extension for Tiled 1.12,
+`tiled-extension/yati-godot/` ([its README](tiled-extension/README.md)). It keeps a Tiled project in
+step with the game:
+
+- *YATI: Sync Godot project…* makes the layer enums `GodotPhysicsLayers`, `GodotNavigationLayers`
+  and `GodotRenderLayers` from `project.godot`'s layer names. They are flags stored as int, with a
+  value's index = its bit, which is what the importers read for `collision_layer` and the other
+  masks. It also makes `GodotNodeType` for `godot_node_type` and the `MapRef` class
+  ([Reference](Reference.md#object-references)).
+- *YATI: Import scenes as classes…* makes one class per scene with a script: a `godot_scene`
+  member (read with `read_godot_scene_from_custom_types`) and one member per `@export`, typed so
+  that `assign_node_properties` can assign it.
+- Saving a map reports the mistakes an import would warn about (unknown classes, `instance`
+  without `res_path`, missing files, unset object references, mask names no layer enum has).
+- *YATI: Check map in Godot* runs `addons/yati_native/check_map.gd` on the map headless with the
+  project's options (`yati_import_options`) and lists each message as an Issue that selects its
+  object.
+
+The extension needs no change to the importers beyond the check script and the `Vector2`
+conversion of class values of stage 2 of [the plan](docs/tiled-extension-plan.md).

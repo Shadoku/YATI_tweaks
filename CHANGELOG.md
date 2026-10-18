@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `docs/tiled-extension-plan.md`: the plan for the Tiled extension (part C of the runtime improvement
   plan): what Tiled 1.12's API allows, what the importers already read, the decisions and stages.
+- `tiled-extension/yati-godot/`, a Tiled 1.12 scripting extension (stage 1 of that plan): *YATI:
+  Configure…* (settings kept as project properties), *Sync Godot project…* (flags enums of
+  `project.godot`'s layer names, `GodotNodeType`, `MapRef`), *Import scenes as classes…* (a class per
+  scene with a script: `godot_scene` and a member per export, merged with hand-made members), *Check
+  map in Godot* (runs the native importer's check script, messages as Issues), and validation of
+  maps and tilesets on save. Tested under Node (`node --test tiled-extension/test`, also in CI)
+  against a fake of Tiled's documented API, with a sample Godot project and the `.tiled-project`
+  it produces. No Tiled ran yet: its README has the manual checklist.
 
 ## [3.1.0] — 2026-10-18
 
