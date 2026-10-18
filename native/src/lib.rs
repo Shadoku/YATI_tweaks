@@ -10,12 +10,15 @@
 //!   thread with `FileAccess` (or from a zip archive); queries and `to_dictionary()`.
 //! - [`TiledTileSets`](tileset::TiledTileSets): the TileSet builder (the runtime's
 //!   `TilesetCreator`) and its cache.
+//! - [`TiledBuilder`](builder::TiledBuilder): the node tree of a map in one call (the runtime's
+//!   `TilemapCreator`), tile layers filled through `tile_map_data`.
 //!
 //! Everything here runs on the main thread except the decoding of tile layer payloads, which
 //! runs on one thread per layer and touches no Godot object.
 
 use godot::prelude::*;
 
+mod builder;
 mod diag;
 mod dynobj;
 mod files;
