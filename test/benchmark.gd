@@ -72,9 +72,17 @@ func _init() -> void:
 		printerr("cannot load " + runtime_dir.path_join("Importer.gd"))
 		quit(2)
 		return
-	var data_loader: GDScript = load(runtime_dir.path_join("DataLoader.gd"))
-	var dict_builder: GDScript = load(runtime_dir.path_join("DictionaryBuilder.gd"))
-	var tileset_creator: GDScript = load(runtime_dir.path_join("TilesetCreator.gd"))
+	# The phases of a GDScript runtime are timed with its own scripts; a runtime without them (the
+	# native importer's facade, addons/yati_native/) is timed with the native classes instead:
+	# parse = TiledMap.load, tilesets = TiledTileSets.tileset_for.
+	var native := not ResourceLoader.exists(runtime_dir.path_join("DataLoader.gd")) and ClassDB.class_exists("TiledMap")
+	var data_loader: GDScript = null
+	var dict_builder: GDScript = null
+	var tileset_creator: GDScript = null
+	if not native:
+		data_loader = load(runtime_dir.path_join("DataLoader.gd"))
+		dict_builder = load(runtime_dir.path_join("DictionaryBuilder.gd"))
+		tileset_creator = load(runtime_dir.path_join("TilesetCreator.gd"))
 
 	print("YATI benchmark  runtime=%s  map=%s  iterations=%d (+1 warm-up)" % [runtime_dir, map_path, iterations])
 	print("Godot %s" % Engine.get_version_info()["string"])
@@ -87,9 +95,9 @@ func _init() -> void:
 	var dups: Array[float] = []
 	var stats := ""
 	for i in range(iterations + 1):
-		var parse_ms := time_parse(data_loader, dict_builder, map_path)
-		var tiles_parse_ms := time_parse(data_loader, dict_builder, tiles_path)
-		var tileset_ms := time_tilesets(data_loader, dict_builder, tileset_creator, map_path)
+		var parse_ms := time_parse_native(map_path) if native else time_parse(data_loader, dict_builder, map_path)
+		var tiles_parse_ms := time_parse_native(tiles_path) if native else time_parse(data_loader, dict_builder, tiles_path)
+		var tileset_ms := time_tilesets_native(map_path) if native else time_tilesets(data_loader, dict_builder, tileset_creator, map_path)
 
 		var tiles_only := time_import(importer_script, tiles_path)
 		free_tree(tiles_only[1])
@@ -154,6 +162,24 @@ static func time_tilesets(data_loader: GDScript, dict_builder: GDScript, tileset
 	tc.call("set_map_parameters", Vector2i(TILE, TILE))
 	tc.call("set_custom_data_prefix", "data_")
 	var _ts: Variant = tc.call("create_from_dictionary_array", dict["tilesets"])
+	return (Time.get_ticks_usec() - t) / 1000.0
+
+
+## The native importer's parse: TiledMap.load (the map, its tilesets and templates) (ms).
+static func time_parse_native(path: String) -> float:
+	var t := Time.get_ticks_usec()
+	var map: RefCounted = ClassDB.instantiate("TiledMap")
+	map.call("load", path, "")
+	return (Time.get_ticks_usec() - t) / 1000.0
+
+
+## The native importer's TileSet creation for an (already loaded) map (ms).
+static func time_tilesets_native(path: String) -> float:
+	var map: RefCounted = ClassDB.instantiate("TiledMap")
+	map.call("load", path, "")
+	var t := Time.get_ticks_usec()
+	var tilesets: RefCounted = ClassDB.instantiate("TiledTileSets")
+	var _ts: Variant = tilesets.call("tileset_for", map, null)
 	return (Time.get_ticks_usec() - t) / 1000.0
 
 

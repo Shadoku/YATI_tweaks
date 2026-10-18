@@ -1,10 +1,10 @@
 name: CI
 
 # Builds the native importer (native/, a Rust GDExtension) for linux x86_64, loads it in the
-# Godot of .godot-version, and runs the test suite: the GDScript runtime (runtime/) must pass
-# it; the native importer's facade (addons/yati_native/) runs it for information until it
-# imports maps (docs/native-importer-plan.md, stage 2). The platform libraries that get
-# committed and published are native.yml's job, not this one's.
+# Godot of .godot-version, and runs the test suite: the GDScript runtime (runtime/) and the
+# native importer's facade (addons/yati_native/, docs/native-importer-plan.md stage 2) must both
+# pass it. The platform libraries that get committed and published are native.yml's job, not
+# this one's.
 
 on:
   push:
@@ -40,14 +40,15 @@ jobs:
         run: bash tools/build_native.sh
 
       # The pure-Rust core (native/tiled/, tiled_core): its unit, loader, payload and parity
-      # tests (the parity dumps are committed, so no Godot is needed), lints and formatting.
-      - name: Test the Rust core
+      # tests (the parity dumps are committed, so no Godot is needed); lints and formatting of
+      # both crates (the GDExtension's own unit tests need no engine either).
+      - name: Test the Rust crates
         working-directory: native
         run: |
           set -euo pipefail
-          cargo test --release -p tiled_core
-          cargo clippy --release -p tiled_core --all-targets -- -D warnings
-          cargo fmt -p tiled_core -- --check
+          cargo test --release --workspace
+          cargo clippy --release --workspace --all-targets -- -D warnings
+          cargo fmt --all -- --check
 
       # Godot loads a GDExtension at startup only when .godot/extension_list.cfg names it
       # (and a fresh .godot/'s first import that discovers one mid-scan aborts at shutdown);
@@ -62,8 +63,14 @@ jobs:
       - name: Test the GDScript runtime (smoke test, test suite, benchmark)
         run: sh test/run_all.sh --runtime=res://runtime
 
-      # Informational until stage 2 of docs/native-importer-plan.md (the one-shot builder and
-      # the facade): its gate makes this step required, so drop continue-on-error there.
-      - name: Test the native importer's facade (informational until stage 2)
-        continue-on-error: true
+      # The same suite against the native importer's facade (stage 2's gate).
+      - name: Test the native importer's facade
         run: '"$GODOT" --headless -s test/run_tests.gd -- --runtime=res://addons/yati_native'
+
+      # No leaks over 20 rounds of every fixture, the small map's time, the engine's floor
+      # (tools/native_gate.gd), and the benchmark for the record.
+      - name: Check the native importer (leaks, small map, benchmark)
+        run: |
+          set -euo pipefail
+          "$GODOT" --headless -s tools/native_gate.gd
+          "$GODOT" --headless -s test/benchmark.gd -- --runtime=res://addons/yati_native

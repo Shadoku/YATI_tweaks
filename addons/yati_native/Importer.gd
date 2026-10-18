@@ -22,16 +22,22 @@
 
 
 # The native importer's facade: the GDScript runtime's Importer API (runtime/Importer.gd) over
-# the GDExtension's classes, so a project switches importers by changing one preload path.
-# Stage 0 of docs/native-importer-plan.md: the extension loads, the importing is not there yet
-# (stage 2); every import method reports that and returns null.
+# the GDExtension's classes (TiledMap, TiledTileSets, TiledBuilder, TiledImportOptions), so a
+# project switches importers by changing one preload path. docs/native-importer-plan.md, stage 2.
 #
 # The native classes are reached through ClassDB, never by name, so this script still compiles
-# on a platform without a library (the import then fails with a message instead).
+# on a platform without a library (an import then fails with a message instead).
 extends RefCounted
 
+const CommonUtils := preload("CommonUtils.gd")
+const PostProcessing := preload("PostProcessing.gd")
+
 const NATIVE_CLASS: String = "TiledNative"
-const NOT_IMPLEMENTED: String = "yati_native: not implemented yet (stage 2)"
+const OPTION_NAMES: Array[String] = [
+	"use_default_filter", "add_class_as_metadata", "add_id_as_metadata", "no_alternative_tiles",
+	"map_wangset_to_terrain", "custom_data_prefix", "save_tileset_to", "parallax_mode",
+	"animation_mode", "always_wrap_root", "unknown_class_fallback",
+]
 
 # Import options: set them on the Importer instance before calling one of the import methods.
 # Use Godot's default texture filter instead of 'nearest' on the created layers.
@@ -83,7 +89,7 @@ func import_from_zip(zip_file: String, source_file_in_zip: String, project_file_
 	return _import(source_file_in_zip, project_file_in_zip, zip_file, "")
 
 
-# Imports a Tiled map and runs a post-processing script (see runtime/PostProcessing.gd) on the result.
+# Imports a Tiled map and runs a post-processing script (see PostProcessing.gd) on the result.
 func import_with_post_processing(source_file: String, post_proc_file: String, project_file: String = "") -> Node:
 	return _import(source_file, project_file, "", post_proc_file)
 
@@ -104,15 +110,52 @@ static func native_version() -> String:
 	return _native_version
 
 
-func _import(source_file: String, _project_file: String, _zip_file: String, _post_proc_file: String) -> Node:
-	last_error_count = 0
-	last_warning_count = 0
+# The options as a TiledImportOptions resource (the native classes take them so).
+func make_options() -> Resource:
+	var opts: Resource = ClassDB.instantiate("TiledImportOptions")
+	for o in OPTION_NAMES:
+		opts.set(o, get(o))
+	return opts
+
+
+func _import(source_file: String, project_file: String, zip_file: String, post_proc_file: String) -> Node:
+	var errors := 0
+	var warnings := 0
 	var ret: Node = null
 	if native_version() == "":
 		printerr("ERROR: yati_native: the native library is not loaded (class " + NATIVE_CLASS + " is missing); build it with tools/build_native.sh or download it with tools/install_native.sh.")
+		errors += 1
 	else:
-		printerr("ERROR: " + NOT_IMPLEMENTED)
-	if ret == null:
-		last_error_count = 1
-	print("Import of '" + source_file + "' finished with " + str(last_error_count) + " error(s) and " + str(last_warning_count) + " warning(s).")
+		var map: RefCounted = ClassDB.instantiate("TiledMap")
+		var err: int
+		if zip_file == "":
+			err = map.call("load", source_file, project_file)
+		else:
+			err = map.call("from_zip", zip_file, source_file, project_file)
+		errors += (map.call("get_errors") as PackedStringArray).size()
+		warnings += (map.call("get_warnings") as PackedStringArray).size()
+		if err == OK:
+			# A TileSet per import: imports never share one (the cache across imports is stage 3's)
+			var tilesets: RefCounted = ClassDB.instantiate("TiledTileSets")
+			var builder: RefCounted = ClassDB.instantiate("TiledBuilder")
+			ret = builder.call("build", map, tilesets, make_options())
+			errors += int(builder.call("get_error_count"))
+			warnings += int(builder.call("get_warning_count"))
+			if ret != null and post_proc_file != "":
+				var post_proc := PostProcessing.new()
+				ret = post_proc.call_post_process(ret, post_proc_file)
+				if post_proc.get_error() != OK:
+					errors += 1
+
+	if ret == null and errors == 0:
+		# A fatal error that was reported without being counted
+		errors = 1
+	last_error_count = errors
+	last_warning_count = warnings
+	CommonUtils.error_count = errors
+	CommonUtils.warning_count = warnings
+	if errors == 0 and warnings == 0:
+		print("Import of '" + source_file + "' succeeded.")
+	else:
+		print("Import of '" + source_file + "' finished with " + str(errors) + " error(s) and " + str(warnings) + " warning(s).")
 	return ret

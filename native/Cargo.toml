@@ -17,6 +17,13 @@ members = [".", "tiled"]
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+# godot-rust's checks on every engine call (is the object alive) off in release builds: about 30 %
+# off the object phase of a large map (docs/native-importer-plan.md, stage 2), at the price of
+# undefined behaviour instead of a panic should a node be freed under the builder (a user script's
+# _init freeing nodes of the tree being built). Off by default; the CI builds do not enable it.
+unchecked = ["godot/safeguards-release-disengaged"]
+
 [dependencies]
 godot = { version = "0.5", features = ["api-4-7"] }
 tiled_core = { path = "tiled" }

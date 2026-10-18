@@ -51,6 +51,7 @@ on:
       - "tools/check_native_image.py"
       - "tools/verify_native_bin.sh"
       - "tools/smoke_native.gd"
+      - "addons/yati_native/*.gd"
       - ".godot-version"
       - ".github/workflows/native.yml"
   workflow_dispatch:
@@ -152,8 +153,8 @@ jobs:
         run: python3 -I tools/check_native_image.py --built-after "${{ steps.start.outputs.epoch }}" "addons/yati_native/bin/${{ matrix.lib }}"
 
       # The real Godot loads it: the GDExtension registers TiledNative, a value goes through
-      # and back. The extension list is seeded first: Godot loads an extension at startup
-      # only when .godot/extension_list.cfg names it.
+      # and back, and the facade imports a fixture map with it. The extension list is seeded
+      # first: Godot loads an extension at startup only when .godot/extension_list.cfg names it.
       - name: Load the native importer in Godot
         run: |
           set -euo pipefail
