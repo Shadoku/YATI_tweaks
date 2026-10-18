@@ -1,0 +1,19 @@
+{ "type": "map", "version": "1.10", "tiledversion": "1.12.0",
+  "orientation": "orthogonal", "renderorder": "right-down", "infinite": false,
+  "width": 4, "height": 4, "tilewidth": 16, "tileheight": 16, "nextlayerid": 2, "nextobjectid": 3,
+  "tilesets": [
+    { "firstgid": 1, "name": "clip", "image": "tiles.png", "imagewidth": 128, "imageheight": 64,
+      "tilewidth": 16, "tileheight": 16, "tilecount": 32, "columns": 8, "margin": 0, "spacing": 0 }
+  ],
+  "layers": [
+    { "type": "objectgroup", "id": 1, "name": "Objects", "draworder": "topdown",
+      "opacity": 1, "visible": true, "x": 0, "y": 0,
+      "objects": [
+        { "id": 1, "name": "Clipped", "type": "", "gid": 2, "x": 0, "y": 16, "width": 16, "height": 16,
+          "rotation": 0, "visible": true,
+          "properties": [ { "name": "clip_artifacts", "type": "bool", "value": true } ] },
+        { "id": 2, "name": "Unclipped", "type": "", "gid": 2, "x": 32, "y": 16, "width": 16, "height": 16,
+          "rotation": 0, "visible": true }
+      ] }
+  ]
+}

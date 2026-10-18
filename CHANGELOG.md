@@ -64,6 +64,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - B9: with the new default `animation_mode = "strip"` an animated tile's cells use a strip atlas source
   (source ids after the tilesets' own, atlas coords `(0, 0)`) instead of the tile in the tileset's atlas,
   which keeps no animation; `animation_mode = "atlas"` gives the 3.0 result.
+- B10c-e: `test_clip_artifacts_xml_and_json` keeps `clip_artifacts` working from .tmx (string) and .tmj
+  (bool); the Reference says that `__` property forwarding to children works on collision objects only,
+  and why the hexagonal 120° rotation flag stays unsupported.
 
 ### Fixed
 - B5 (`docs/runtime-improvement-plan.md`): the Area2D gravity properties were misspelt in

@@ -498,8 +498,12 @@ This seems to be convenient as providing all of these properties would greatly i
 `Both elements do have a 'use_parent_material' property. Which one of them should the property affect?`  
 By default the property affects the parent.  
 If you want the property to affect the child, prefix the name with two underscores e.g. '__use_parent_material'
+The forwarding to children works for the collision objects (StaticBody2D, Area2D, CharacterBody2D, RigidBody2D,
+AnimatableBody2D) only; on a NavigationRegion2D, LightOccluder2D or any other node a `__` property becomes metadata
+of that name (with the underscores).
 - If linear texture filters are in effect, on tile objects (which are mapped to a Sprite2D) it may happen that the sprite shows artifacts on the border.  
-This can be overcome by adding a special property to the object named 'clip_artifacts' and setting it to `On`.
+This can be overcome by adding a special property to the object named 'clip_artifacts' (type bool) and setting it to `On`
+(the sprite region then shrinks by half a pixel on every side). An animated tile's object stays a Sprite2D with it.
 - Skip Tiled layers by adding a custom property 'no_import' (type bool) and set it to 'true' (new in v1.2).  
 
 ## Newly supported Tiled features
@@ -533,5 +537,5 @@ These Tiled features have no Godot equivalent and are ignored:
 - `wangcolor.probability` and properties on wangsets / wangcolors
 - Layer blend modes other than `normal`, `add` and `multiply` (a warning is printed and the mode is ignored)
 - Text object `underline`, `strikeout` and `kerning` (Label has no such switches)
-- The hexagonal 120° rotation flag (gid bit 28, masked off)
+- The hexagonal 120° rotation flag (gid bit 28, masked off: Godot 4's hexagonal tiles can't be rotated by 120° either)
 - Embedded images (`<image>` with a `<data>` child instead of a `source`)

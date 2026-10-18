@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- B10c: clip_artifacts on a tile object (XML stores the bool as the string "true"); same as clip.tmj -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="4" height="4" tilewidth="16" tileheight="16" infinite="0" nextlayerid="2" nextobjectid="3">
+ <tileset firstgid="1" name="clip" tilewidth="16" tileheight="16" tilecount="32" columns="8">
+  <image source="tiles.png" width="128" height="64"/>
+ </tileset>
+ <objectgroup id="1" name="Objects">
+  <object id="1" name="Clipped" gid="2" x="0" y="16" width="16" height="16">
+   <properties>
+    <property name="clip_artifacts" type="bool" value="true"/>
+   </properties>
+  </object>
+  <object id="2" name="Unclipped" gid="2" x="32" y="16" width="16" height="16"/>
+ </objectgroup>
+</map>

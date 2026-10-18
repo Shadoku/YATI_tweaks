@@ -1714,6 +1714,21 @@ func test_bug_template_file_properties() -> bool:
 	return done()
 
 
+func test_clip_artifacts_xml_and_json() -> bool:
+	# B10c: get_property() compares str(value) with "true": the XML string and the JSON bool both
+	# match. Kept that way: the region shrinks by half a pixel on every side.
+	for f in ["clip.tmx", "clip.tmj"]:
+		var n := _import(f)
+		if n == null: continue
+		var c := need(n, "Clipped", "Sprite2D") as Sprite2D
+		if c:
+			eq(c.region_rect, Rect2(16.5, 0.5, 15, 15), f + ": Clipped region")
+			eq(c.scale, Vector2(1, 1), f + ": Clipped scale")
+		var u := need(n, "Unclipped", "Sprite2D") as Sprite2D
+		if u: eq(u.region_rect, Rect2(16, 0, 16, 16), f + ": Unclipped region")
+	return done()
+
+
 # ---------------------------------------------------------------------------
 # Zip (keep last: the pre-change runtime leaks zip mode, see _reset_zip_mode)
 
