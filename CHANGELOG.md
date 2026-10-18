@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Native importer, stage 2 of `docs/native-importer-plan.md`: maps import natively.
+  `addons/yati_native/Importer.gd` (the GDScript runtime's API) now imports through the native
+  classes `TiledImportOptions`, `TiledMap` (load from the file system or a zip, queries,
+  `to_dictionary()`), `TiledTileSets` (the TileSet builder and its cache) and `TiledBuilder` (the
+  whole node tree in one call, tile layers filled with one `tile_map_data` assignment each), and
+  passes the runtime's test suite (90 of 90). About 4 to 5 times faster than the GDScript runtime
+  on the benchmark map, a small map in about 2 ms. The addon stands alone (`PostProcessing.gd` and
+  a `CommonUtils.gd` with the error counters next to `Importer.gd`); its README lists the few
+  differences from the GDScript runtime. Crate feature `unchecked` (off by default): godot-rust's
+  per-call checks off, about 30 % off the object phase.
+- `tools/native_gate.gd`: leak check (every fixture imported and freed 20 times, object and node
+  counts unchanged), small-map timing and the engine's `tile_map_data` floor; `tools/smoke_native.gd`
+  imports a fixture through the facade too.
+- `test/benchmark.gd` times a runtime without `DataLoader.gd` (the native facade) with the native
+  classes, so its phase split works for both importers.
+- The native parity tests cover the runtime improvement plan's part A fixtures and their templates
+  (`test/fixtures/expected/` has their dumps).
 - Native importer, stage 0 of `docs/native-importer-plan.md` (the scaffold, it imports nothing yet):
   the Rust crate `native/` (`yati_native`, godot-rust 0.5 for Godot 4.7) registering `TiledNative`
   (`version()`, `sum()`); `addons/yati_native/` with `yati_native.gdextension` and an `Importer.gd`
@@ -57,6 +74,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   map's properties applied over its own. Recommended; planned as the default of 4.0.
 
 ### Changed
+- CI runs the test suite against the native importer's facade as a required step, with
+  `tools/native_gate.gd` and the benchmark, and tests, lints and formats both Rust crates.
 - `test/run_tests.gd` checks that a runtime has `DataLoader.gd` / `CommonUtils.gd` before loading them,
   so the native facade (only an `Importer.gd`) runs the suite without a load error per test.
 - **Breaking** (B4): colour-typed properties that become metadata (on nodes, tiles, the TileSet, in

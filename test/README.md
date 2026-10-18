@@ -110,13 +110,20 @@ bash tools/install_native.sh          # the branch's rolling build, or a tag: v0
 # (needs .godot/extension_list.cfg naming res://addons/yati_native/yati_native.gdextension)
 godot --headless --path . -s tools/smoke_native.gd
 
-# The suite against the native facade. Until stage 2 of docs/native-importer-plan.md every test
-# fails (the facade returns null with "not implemented yet"); the run must still reach SUMMARY.
+# The suite against the native facade (stage 2 of docs/native-importer-plan.md: every test passes)
 godot --headless -s test/run_tests.gd -- --runtime=res://addons/yati_native
+
+# Benchmark: with no DataLoader.gd in the runtime folder the phases are timed with the native
+# classes (parse = TiledMap.load, tilesets = TiledTileSets.tileset_for)
+godot --headless -s test/benchmark.gd -- --runtime=res://addons/yati_native
+
+# Leaks (every fixture imported and freed 20 times), the small map's time, the engine's floor
+godot --headless -s tools/native_gate.gd          # -- --runtime=res://runtime for the GDScript one
 ```
 
-The facade has only `Importer.gd`, so the suite's helpers that reach a runtime's `DataLoader.gd`
-(zip mode reset) and `CommonUtils.gd` (error count) skip them for it.
+The facade has no `DataLoader.gd` (the zip archive is per call), so the suite's zip mode reset
+skips it; its `CommonUtils.gd` holds the error and warning counters of the last import, which
+the facade sets, so `_error_count()` works for it as for the GDScript runtime.
 
 ## Comparing against the pre-change runtime
 

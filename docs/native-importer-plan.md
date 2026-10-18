@@ -440,6 +440,107 @@ numbers measured. Stages 1 and 2 are the bulk; 3 and 4 are what the two goals ne
     are assigned as `TileSet.add_source` assigns them (`godot_atlas_id` honoured); JSON
     templates (`.tj`) instantiate (the runtime's `create_object` reads only the TMX
     `objects` key and creates nothing for them).
+- 2026-10-18, **stage 2 done** (the one-shot builder and the facade), except the benchmark's
+  120 ms, which the engine's own share of it exceeds on this machine today (below):
+  - **Classes** (`native/src/`, registered with Godot): `TiledImportOptions` (Resource, every
+    option of the facade with its default), `TiledMap` (`load(path, project_file)` and
+    `from_zip(zip, path_in_zip, project_in_zip)` through the core's file protocol, files read on
+    the main thread with `FileAccess`; `is_loaded`, `get_path`, `get_size`, `get_tile_size`,
+    `get_orientation`, `is_infinite`, `get_layers`, `to_dictionary`, `get_errors`,
+    `get_warnings`), `TiledTileSets` (`tileset_for(map, options)`: the `TilesetCreator` port and its
+    cache; `clear`, `get_cached_count`, last error and warning counts; textures per path) and
+    `TiledBuilder` (`build(map, tilesets, options) -> Node`: the `TilemapCreator` port, the whole
+    tree in one call; `get_error_count`, `get_warning_count`, `get_messages`). Modules:
+    `map.rs`, `options.rs`, `tileset.rs`, `builder/` (`mod.rs` layers and the root, `cells.rs`
+    tile layers, `objects.rs`, `nodeprops.rs` the property rules), `files.rs` (textures,
+    resources, zip members), `props.rs` and `gd.rs` (the runtime's property dictionaries and
+    GDScript's `str()`, typing, colours, masks, paths), `diag.rs` (messages), `dynobj.rs`
+    (`Parallax2D`, `NavigationPolygon` and `NavigationRegion2D`, which godot-rust lists as
+    experimental API, reached through `ClassDB`, so the crate needs no experimental feature).
+  - **Tile layers**: every tile layer's payload decoded on one thread per layer (pure Rust; the
+    distinct cell values collected on the way), each distinct value resolved once on the main
+    thread as `resolve_cell` resolves it (tiles and, with `no_alternative_tiles` off, alternative
+    tiles with their flipped polygons created on the way), then one `tile_map_data` assignment of
+    the core's blob per layer (an infinite layer's chunks merged). The format check of section 5
+    runs once per process: two cells through `set_cell` must read back as our blob and our blob
+    back as those cells; otherwise an error says so and `set_cell` fills the layers.
+  - **Facade** (`addons/yati_native/Importer.gd`): the four `import*` methods over `TiledMap`,
+    a fresh `TiledTileSets` per import (imports never share a TileSet, as
+    `test_import_twice_independent` requires) and `TiledBuilder`; `last_error_count` /
+    `last_warning_count` (the map's load messages plus the build's), the summary line,
+    post-processing through `PostProcessing.gd` (copied from `runtime/`, MIT header kept), and a
+    two-line `CommonUtils.gd` whose static counters the facade sets after each import (the
+    suite's `_error_count()` reads them). `make_options()` gives the options as a resource.
+  - **Core** (`native/tiled/`): three small additions, `Property::to_value(json)` and
+    `Property::dict_value(json)` (a property's dictionary, or its value alone, as the runtime
+    holds it) and `Property::from_project()`. The parity list has the part A fixtures
+    (`animations`, `area_gravity`, `clip` (TMX and TMJ), `colors`, `layer_class`, `parallax`,
+    `single_layer`, `template_files`, `templates`, `unknown_class`) and their templates
+    (`probe_rect.tx`, `probe_text.tx`, `probe_tpl.tx`, `tpl/door.tx`); all equal.
+  - **Tools**: `tools/smoke_native.gd` imports `test/fixtures/layers.tmx` through the facade as well
+    (works without a project import: un-imported images load with `Image.load_from_file`);
+    `tools/native_gate.gd` checks for leaks (every fixture and the zip, 20 rounds, a few frames
+    before each count since the servers release what freed navigation regions handed them only on
+    their next iteration), times the small map and measures the engine's floor;
+    `test/benchmark.gd` times a runtime without `DataLoader.gd` with the native classes (parse =
+    `TiledMap.load`, tilesets = `TiledTileSets.tileset_for`). `ci.yml` runs the suite against the
+    facade as a required step, `native_gate.gd`, the benchmark, and tests, lints and formats both
+    crates; `native.yml` rebuilds when the facade's scripts change (the smoke test imports).
+  - **Gate, measured** (this machine, Godot 4.7.2, a busy shared container: numbers vary by ±20 %
+    between runs): `test/run_tests.gd -- --runtime=res://addons/yati_native`: `SUMMARY: 90 passed,
+    0 failed (new_: 0, bug_: 0, other: 0) of 90`, no engine error printed but the missing-tileset
+    fixture's own; the GDScript runtime still `90 passed ... of 90`, `test/run_all.sh` exits 0;
+    `cargo test`, `clippy -D warnings` and `fmt --check` clean for both crates, no `unsafe` but the
+    `#[gdextension]` entry point godot-rust requires.
+    Benchmark: `RESULT runtime=res://addons/yati_native total_ms min=160.2 avg=182.1 | parse avg=7.2 |
+    tilesets avg=1.4 | tile layers avg=124.2 | objects avg=49.4` (other runs: min 168 to 188, avg 171
+    to 200); the GDScript runtime in the same session `total_ms min=671.6 avg=772.2 | parse avg=164.4
+    | tilesets avg=3.4 | tile layers avg=386.3 | objects avg=218.0`, so 4 to 5 times faster. The
+    small map (`layers.tmx`, 10 warm imports): mean 1.57 to 2.44 ms over seven runs, under 2 ms in
+    four of them, min 1.42 to 2.30 (the GDScript runtime 3.2 to 4.7); quietly, the native parts
+    split as `TiledMap.load` 0.2 ms, TileSet 0.6, build 1.0. Leaks: none (objects 1498 -> 1498, nodes and orphan nodes unchanged after
+    20 rounds of 24 maps; the GDScript runtime alike).
+  - **Why the 120 ms are not met**: the engine's share. `native_gate.gd` imports the benchmark's
+    tiles-only map in 117.9 ms, of which the six `tile_map_data` assignments alone take 102.0 ms
+    when repeated on fresh layers (the rest, 16 ms, is parse, TileSet, decoding, resolution and
+    blobs). The plan's estimate counted 6 x 14 ms; `bench_materialize.gd` measures 26.7 ms per
+    layer on this machine today (14 when the plan was written), so the floor has moved by more than
+    the 36 ms the estimate had to spare. The objects phase (about 45 ms for 2 720 objects; the same
+    node calls from GDScript, measured bare, take about 20 ms) is the engine calls plus godot-rust's
+    per-call checks (object alive, main thread): built with the crate feature `unchecked`
+    (`safeguards-release-disengaged`) the objects-only part of the map takes 33 ms instead of 47.
+    That feature is off by default and in CI (it turns a use of a freed node into undefined
+    behaviour, and user scripts run during a build: `godot_script` properties, scene instances).
+    The whole benchmark with `unchecked`: `total_ms min=148.9 avg=155.8 | parse avg=6.0 | tilesets
+    avg=1.3 | tile layers avg=113.1 | objects avg=35.4` (best of two runs; the default build in
+    the same session, min 169 to 207). Scaled by today's floor (102 ms for the plan's 84), the gate
+    would be about 146 ms: within reach with `unchecked` on a quiet machine, not by default.
+  - **Accepted differences** (none visible to the suite; `addons/yati_native/README.md` lists
+    them for users): no `__internal__` custom data layer, the runtime's marker of tiles with
+    collision shapes, which it removes at the end of an import (kept on the Rust side; a TileSet
+    saved with `save_tileset_to` and the TileSets of templates, which the runtime never cleans,
+    have that layer less); custom types merged into tilesets only templates use (stage 1's
+    decision, the runtime merges none there); references resolved relative to the referencing file
+    only (stage 1's decision); a tile object of class `instance` keeps its sprite's scale (the
+    runtime reads it from the sprite it has just freed, a script error); an embedded tileset after
+    an external one resolves its image relative to the map (the runtime, relative to the previous
+    external tileset's directory); a numeric object or layer name keeps its spelling (the XML
+    dictionary types `name="007"` as the int 7); the template merge also applies the instance's
+    `width`, `height`, `rotation`, `visible`, `text` and `gid` in the builder (B1, B2) and joins
+    its file properties with the map's directory (B10b), as the runtime's `create_object` does,
+    while `tiled_core`'s `Map::instantiate` stays the stage 1 merge; JSON templates (`.tj`) instantiate
+    (stage 1's decision; the runtime's `create_object` creates nothing for them).
+  - **Decisions the plan left open**: the TileSet cache key adds the map's tile size, orientation
+    and stagger, and the zip archive, to the plan's (tileset paths or embedded-tileset hashes with
+    first gids, `custom_data_prefix`, `map_wangset_to_terrain`, `animation_mode`; a template's
+    TileSet has its own entry, built with an empty prefix as the runtime builds it); strips are
+    cached with the TileSet they belong to (a per-(tileset, tile) cache matters once TileSets are
+    shared across combinations, stage 3); the facade uses a fresh `TiledTileSets` per import, so
+    nothing is shared between imports yet (stage 3's job, with the test's expectation in mind);
+    `TiledMap.load` and `from_zip` are instance methods returning an `Error` (the facade reaches the
+    classes through `ClassDB`, so they must work on an instance); `TiledMap.load` prints the load's
+    messages itself, `build` its own, the facade adds the counts; the messages keep the runtime's
+    wording and colour tags (`Yellow` for the map's, `yellow` for the tilesets').
 
 ## 7. Behaviour changes from the runtime improvement plan
 
