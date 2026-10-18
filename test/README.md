@@ -60,6 +60,11 @@ Test name prefixes:
   (see the comment in each test).
 - everything else must pass on both the old and the new runtime.
 
+The items of `docs/runtime-improvement-plan.md` (B1 to B10) use the same prefixes: `bug_...` for what the
+3.0 runtime got wrong, `new_...` for their new options. Tests of a 3.0 result that a new default changed
+run with the option's old value (`parallax_mode = "legacy"`, `animation_mode = "atlas"`), so the old path
+stays covered.
+
 ### Benchmark options (after `--`)
 
 | Option | Meaning |
