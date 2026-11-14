@@ -152,3 +152,23 @@ test("real Tiled: without a project (tiled.project is null) the actions say so a
 	none(lines, /^ISSUE error/);
 	none(lines, /Cannot read property/);
 });
+
+test("real Tiled: the rules sample's broken map files its rule findings; setting two members as Pick does fixes one", { skip: SKIP }, () => {
+	const root = tempDir("yati-real-tiled-rules-");
+	dirs.push(root);
+	copyDir(path.join(SAMPLE_DIR, "rules"), root);
+	const broken = path.join(root, "maps", "broken.tmx");
+	const cellar = path.join(root, "maps", "cellar.tmx");
+	const lines = runTiled(path.join(root, "rules.tiled-project"), ["save:" + broken, "rules-set:" + broken + ":1:to_map=" + cellar + ":to_spawn=from_town"]);
+	const issues = lines.filter((l) => l.indexOf("ISSUE ") === 0);
+	// Tiled's own values (a file property's localFile, the class defaults through members, the
+	// template's class of cellar.tmx's spawn read from the file): the eight findings of rules.test.mjs.
+	assert.equal(issues.length, 8 + 7, lines.join("\n"));
+	assert.match(issues[0], /^ISSUE error: YATI: unsaved map: Object 'nowhere' \(id 1, layer Objects\): to_map is not set/);
+	assert.match(issues[2], /^ISSUE error: YATI: unsaved map: Object 'typo' \(id 3, layer Objects\): to_spawn names 'from_twn', but cellar\.tmx has no object/);
+	assert.match(issues[4], /^ISSUE error: YATI: unsaved map: Object 'empty' \(id 5, layer Objects\): sequence is not set/);
+	assert.match(issues[6], /^ISSUE error: YATI: unsaved map: Object 'misspelt' .*did you mean SIGN_WELCOME, SIGN_WELL\?\)\.$/);
+	has(lines, "HARNESS rules-set: to_map localFile '" + cellar + "', to_spawn 'from_town'");
+	// After the set, object 1 has no finding left.
+	assert.equal(issues.slice(8).filter((l) => l.indexOf("'nowhere'") >= 0).length, 0, issues.slice(8).join("\n"));
+});

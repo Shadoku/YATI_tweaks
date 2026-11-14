@@ -8,7 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { API_SURFACE, REFERENCE } from "./helpers/api_surface.mjs";
 import { ACTIONS } from "../yati-godot/yati-godot.mjs";
-import { scenario, CHECK_OUTPUT, gameProjectTypes } from "./helpers/scenario.mjs";
+import { scenario, rulesScenario, CHECK_OUTPUT, gameProjectTypes } from "./helpers/scenario.mjs";
 
 const scenarios = [];
 after(() => { for (const s of scenarios) s.cleanup(); });
@@ -62,6 +62,25 @@ test("every member the extension touches is documented, and every documented one
 	for (const issue of b.fake.out.issues)
 		issue.activate();
 	for (const k of b.fake.used)
+		used.add(k);
+
+	// The rules (sample/rules/): the save hook with a world, and the four actions on a selected object.
+	const c = run(rulesScenario({ fakeOptions: { process: () => ({ code: 0 }) } }));
+	c.fake.emitAboutToBeSaved(c.open("town.tmx"));
+	const broken = c.open("broken.tmx");
+	c.fake.emitAboutToBeSaved(broken);
+	c.fake.select(broken, [1]);
+	c.fake.answers.files.push(path.join(c.maps, "cellar.tmx"));
+	c.fake.answers.dialogs.push((d) => { d.button("OK").click(); });
+	c.fake.trigger(ACTIONS.pick);
+	c.fake.trigger(ACTIONS.follow);
+	c.fake.api.tiled.activeAsset = c.fake.api.tiled.openAssets.find((x) => x.fileName.endsWith("broken.tmx"));
+	c.fake.select(broken, [5]);
+	c.fake.trigger(ACTIONS.openFile);
+	c.fake.select(broken, [7]);
+	c.fake.trigger(ACTIONS.text);
+	assert.deepEqual(c.fake.out.errors.filter((e) => e.indexOf("YATI: broken.tmx") !== 0), []);
+	for (const k of c.fake.used)
 		used.add(k);
 
 	const documented = Object.keys(API_SURFACE).sort();

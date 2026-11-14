@@ -14,11 +14,14 @@
 // that file, read through Tiled's own format: the real API values of its properties), and
 // options:<text> (the Import options dialog built from that text with the real combo boxes, two
 // of them changed, OK pressed, the text it hands back logged).
+// rules-set:<map file>:<object id>:<map member>=<map file>:<object member>=<name> reads the map
+// through Tiled's format, sets the two members as "Pick map and object" does (Asset.macro,
+// setProperty with tiled.filePath), logs what the object then holds, and runs the save hook on it.
 // Output: tiled.log lines, which Tiled prints to the console; the test reads the ones that start
 // with "HARNESS ", "ALERT ", "CONFIRM ", "PROMPT ", "ISSUE " and "YATI".
 //
 // Under Node (node --test runs every file under test/) this file does nothing.
-import { install, ACTIONS, configureDialog, optionsDialog, currentSettings } from "../../yati-godot/yati-godot.mjs";
+import { install, ACTIONS, configureDialog, optionsDialog, currentSettings, setMapAndObject } from "../../yati-godot/yati-godot.mjs";
 
 /* global tiled, TextFile, File, Process, Dialog, ClassPropertyType, StorageType */
 if (typeof tiled !== "undefined" && typeof tiled.registerAction === "function")
@@ -70,6 +73,8 @@ function main() {
 			tiled.log("HARNESS save hook on " + file + (asset ? "" : " (not read)"));
 			for (let k = 0; k < saveHooks.length; k++)
 				saveHooks[k](asset);
+		} else if (step.indexOf("rules-set:") === 0) {
+			rulesSetStep(api, step.substring(10), saveHooks);
 		} else if (step.indexOf("options:") === 0) {
 			optionsStep(api, step.substring(8));
 		} else if ((step === "configure" || step.indexOf("configure:") === 0) && tiled.project !== null) {
@@ -123,4 +128,27 @@ function optionsStep(api, text) {
 	w.custom_data_prefix.text = "d_";
 	w.ok.click();
 	tiled.log("HARNESS options applied: '" + applied + "'");
+}
+
+function rulesSetStep(api, spec, saveHooks) {
+	const parts = spec.split(":");
+	const map = tiled.mapFormat("tmx").read(parts[0]);
+	const id = Number(parts[1]);
+	let object = null;
+	for (let i = 0; i < map.layers.length; i++) {
+		const l = map.layers[i];
+		if (!l.isObjectLayer)
+			continue;
+		for (let k = 0; k < l.objects.length; k++) {
+			if (l.objects[k].id === id)
+				object = l.objects[k];
+		}
+	}
+	const m = parts[2].split("=");
+	const o = parts[3].split("=");
+	setMapAndObject(api, map, object, m[0], m[1], o[0], o[1]);
+	const v = object.property(m[0]);
+	tiled.log("HARNESS rules-set: " + m[0] + " localFile '" + (v && v.localFile) + "', " + o[0] + " '" + object.property(o[0]) + "'");
+	for (let k = 0; k < saveHooks.length; k++)
+		saveHooks[k](map);
 }

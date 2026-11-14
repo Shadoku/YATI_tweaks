@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createFakeTiled, tiledJson } from "./fake_tiled.mjs";
 import { install } from "../../yati-godot/yati-godot.mjs";
-import { GODOT_FIXTURE, MAP_FIXTURES, IMPORTER_FIXTURES, FIXTURES, tempDir, copyDir } from "./node_io.mjs";
+import { GODOT_FIXTURE, MAP_FIXTURES, IMPORTER_FIXTURES, FIXTURES, SAMPLE_DIR, tempDir, copyDir } from "./node_io.mjs";
 
 // options: {properties: [{name, type, value}], propertyTypes, checkScript: bool, fakeOptions,
 //           noProject: bool, inMaps: bool (the project file in maps/, where game.tiled-project's
@@ -47,4 +47,26 @@ export const CHECK_OUTPUT = fs.readFileSync(path.join(FIXTURES, "check_output.tx
 // The types of maps/game.tiled-project, for a scenario that validates the fixture maps.
 export function gameProjectTypes() {
 	return JSON.parse(fs.readFileSync(path.join(MAP_FIXTURES, "game.tiled-project"), "utf8")).propertyTypes;
+}
+
+// The rules sample (sample/rules/: its project with yati_rules and the classes, its maps, sequences,
+// templates and table) in a temporary directory, with the fake and the extension installed.
+// options: {fakeOptions, edit(json): changes the project file's JSON before Tiled reads it}
+export function rulesScenario(options) {
+	const o = options || {};
+	const root = tempDir();
+	copyDir(path.join(SAMPLE_DIR, "rules"), root);
+	const projectFile = path.join(root, "rules.tiled-project");
+	if (o.edit) {
+		const json = JSON.parse(fs.readFileSync(projectFile, "utf8"));
+		o.edit(json);
+		fs.writeFileSync(projectFile, tiledJson(json));
+	}
+	const fake = createFakeTiled(Object.assign({ projectFile: projectFile }, o.fakeOptions || {}));
+	install(fake.api);
+	return {
+		root: root, maps: path.join(root, "maps"), projectFile: projectFile, fake: fake,
+		cleanup() { fs.rmSync(root, { recursive: true, force: true }); },
+		open(name) { return fake.openFile(path.join(root, "maps", name)); },
+	};
 }

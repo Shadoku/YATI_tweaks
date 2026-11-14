@@ -524,6 +524,25 @@ class FakeMapObject {
 	get y() { return this._y; }
 	get tile() { return this._tile === null ? null : this._map._fake._rec.wrap(this._tile, "Tile"); }
 	properties() { return this._map._apiProps(this._props); }
+	// TiledObject.setProperty on an object: a FilePath becomes a file property, a string a string
+	// one. The map is modified; a change outside a macro is a step of its own on the undo stack.
+	setProperty(name, value) {
+		let raw;
+		if (value && value.__filePath)
+			raw = { type: "file", value: value.localFile, propertyType: "", dir: "" };
+		else if (typeof value === "string")
+			raw = { type: "string", value: value, propertyType: "", dir: "" };
+		else if (typeof value === "boolean")
+			raw = { type: "bool", value: String(value), propertyType: "", dir: "" };
+		else if (typeof value === "number")
+			raw = { type: Number.isInteger(value) ? "int" : "float", value: String(value), propertyType: "", dir: "" };
+		else
+			throw new Error("fake: cannot set " + JSON.stringify(value));
+		this._props[name] = raw;
+		this._map._modified = true;
+		if (this._map._macroDepth === 0)
+			this._map._undo.push("Change property " + name);
+	}
 	resolvedProperties() {
 		const merged = Object.assign({}, this._tile ? this._tile._props : {}, this._templateProps, this._props);
 		return this._map._apiProps(merged);
@@ -584,6 +603,8 @@ class FakeMap extends PropertyReader {
 		this._selected = [];
 		this._currentLayer = null;
 		this._saves = 0;
+		this._undo = [];		// the undo stack's entries: a macro's text, or one per loose change
+		this._macroDepth = 0;
 		const dir = path.dirname(fileName);
 		const root = parseXml(fs.readFileSync(fileName, "utf8"));
 		this._tilesets = [];
@@ -603,6 +624,17 @@ class FakeMap extends PropertyReader {
 	set currentLayer(v) { this._currentLayer = v; }
 	pixelToScreen(x, y) { return { x: x, y: y }; }
 	properties() { return this._apiProps(this._props); }
+	// Asset.macro: the callback's changes as one undo step named `text`.
+	macro(text, callback) {
+		this._macroDepth++;
+		try {
+			return callback();
+		} finally {
+			this._macroDepth--;
+			if (this._macroDepth === 0)
+				this._undo.push(text);
+		}
+	}
 	save() {
 		this._fake._emit("assetAboutToBeSaved", this._fake._wrapAsset(this));
 		this._saves++;
@@ -1108,6 +1140,13 @@ export function createFakeTiled(options) {
 			return a;
 		},
 		trigger(actionId) { out.actions[actionId].trigger(); },
+		// Selects objects of an open map by id, as the user would (the map is the raw FakeMap).
+		select(map, ids) {
+			const found = ids.map((id) => map._findObject(id));
+			if (found.some((o) => o === null))
+				throw new Error("fake: no object " + ids.join(","));
+			map._selected = found.map((o) => rec.wrap(o, "MapObject"));
+		},
 		// Closes every open asset (an Issue's activation then has to open its map).
 		closeAll() { openAssets.length = 0; activeAsset = null; },
 		emitAboutToBeSaved(asset) { fake._emit("assetAboutToBeSaved", fake._wrapAsset(asset)); },

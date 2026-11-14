@@ -102,6 +102,7 @@ export const API_SURFACE = {
 	"Asset.isTileset": "classes/Asset.html#isTileset",
 	"Asset.modified": "classes/Asset.html#modified",
 	"Asset.save": "classes/Asset.html#save",
+	"Asset.macro": "classes/Asset.html#macro (one undo step for the callback's changes)",
 	"TileMap.layers": "classes/TileMap.html#layers",
 	"TileMap.selectedObjects": "classes/TileMap.html#selectedObjects",
 	"TileMap.currentLayer": "classes/TileMap.html#currentLayer",

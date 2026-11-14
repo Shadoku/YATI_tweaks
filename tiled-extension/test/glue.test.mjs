@@ -20,15 +20,18 @@ const configured = (extra) => [{ name: "godot_project", type: "string", value: "
 // For a project in maps/ with game.tiled-project's types (their paths are relative to maps/).
 const inMaps = (extra) => [{ name: "godot_project", type: "string", value: "../godot_project" }].concat(extra || []);
 
-test("install: four actions in the Map menu after a separator, the save hook", () => {
+test("install: eight actions in the Map menu after a separator, the save hook", () => {
 	const s = make();
 	const out = s.fake.out;
-	assert.deepEqual(Object.keys(out.actions), [ACTIONS.configure, ACTIONS.sync, ACTIONS.scenes, ACTIONS.check]);
+	assert.deepEqual(Object.keys(out.actions), [ACTIONS.configure, ACTIONS.sync, ACTIONS.scenes, ACTIONS.check,
+		ACTIONS.pick, ACTIONS.follow, ACTIONS.openFile, ACTIONS.text]);
 	assert.deepEqual(Object.values(out.actions).map((a) => a.text), [
 		"YATI: Configure…", "YATI: Sync Godot project…", "YATI: Import scenes as classes…", "YATI: Check map in Godot",
+		"YATI: Pick map and object…", "YATI: Follow reference", "YATI: Open or create file…", "YATI: Show text for selected object",
 	]);
 	assert.deepEqual(Object.values(ACTION_TEXTS), Object.values(out.actions).map((a) => a.text));
-	assert.deepEqual(out.menus.Map, [{ separator: true }, { action: "YatiConfigure" }, { action: "YatiSyncGodotProject" }, { action: "YatiImportScenes" }, { action: "YatiCheckMap" }]);
+	assert.deepEqual(out.menus.Map, [{ separator: true }, { action: "YatiConfigure" }, { action: "YatiSyncGodotProject" }, { action: "YatiImportScenes" }, { action: "YatiCheckMap" },
+		{ action: "YatiPickMapObject" }, { action: "YatiFollowReference" }, { action: "YatiOpenOrCreateFile" }, { action: "YatiShowText" }]);
 });
 
 // A --version run that answers like Godot 4 for the check's fake process, the check output for the rest.
