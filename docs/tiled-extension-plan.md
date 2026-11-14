@@ -330,3 +330,26 @@ through the `.tiled-project` file, the maps and (for the check) the Godot binary
 - 2026-10-18, **part 2 planned**: the UX pass (`YATI: Configure…` as one dialog with a field
   per setting, tooltips and validation before it closes; the project reopened by the extension
   through `tiled.open(project.fileName)` instead of by hand) is `docs/tiled-extension-ux-plan.md`.
+- 2026-11-14, **project rules** (branch `claude/vibrant-faraday-efxhhu`): for a game whose classes refer to
+  other things (a warp's `to_map` and `to_spawn`, a trigger's sequence file and its sections, a text key of a
+  CSV table, a world's start map and spawn), the project property `yati_rules`, a JSON array of rules naming a
+  class (or a `.world`), a member and a kind: `map`, `object_in_map`, `file` (with `contains` patterns and a
+  `template`), `key` (with `table` and `keyPattern`). Nothing in it knows a game. `lib/rules.mjs` parses them
+  (a mistake is a warning naming the rule), checks a map model and a world, reads a map that is not open from
+  its `.tmx`/`.tmj` with `TextFile` (classes from templates and tiles; a map open in Tiled is read from the API
+  with its unsaved changes), and reads the CSV. The save hook adds the findings; four actions on the selected
+  object: *Pick map and object…* (`promptOpenFile`, a `Dialog` combo box, then both members through
+  `Asset.macro` and `setProperty`: one undo step), *Follow reference* (`tiled.open`, selection and centring as
+  the Issues do), *Open or create file…* (`Process.exec` of `xdg-open`, then `open`, or `cmd /c start` for a
+  drive-letter path, or `yati_open_command`; Tiled's API has no way to open a file externally, and `exec`
+  waits, so the command must be a launcher), *Show text for selected object* (a message box: the API has no
+  status bar). Decisions: rules are a flat list (one rule per member, `class` may list several classes) rather
+  than a map by class; world rules run when a map the world holds is saved, the world read from disk (under
+  `--evaluate`, `tiled.loadWorld` added nothing to `tiled.worlds`, and the reference documents no properties on
+  a world); `object_in_map` stays silent when the map member's own `map` rule already reports the map; the key
+  shape defaults to UPPER_SNAKE_CASE with an underscore, so `OK` is plain text. **Confirmed in the real Tiled
+  1.12.0, headless** (`real_tiled.test.mjs`): the rule findings on the rules sample's broken map with Tiled's own
+  values, and `Asset.macro` with `MapObject.setProperty(tiled.filePath(...))` on a map read through the tmx
+  format, the file read back as its `localFile`. **For the editor** (README checklist 9 to 13): the four actions'
+  dialogs, the undo step, `tiled.open` of a target map from an action, the opener on each platform (Windows'
+  `cmd /c start` untested).

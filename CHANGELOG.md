@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Tiled extension, project rules: the project property `yati_rules` (a JSON array) declares what class members
+  refer to, generically: a map that exists (`map`), a named object of a class in the map another member names
+  (`object_in_map`), a file that exists and matches given patterns (`file`, e.g. a sequence file's sections), a key
+  of a CSV translation table when the value is shaped like one (`key`); a rule may name a `.world` file instead of
+  classes. A saved map's objects (and a world that holds the map) are checked; each finding is an Issue that
+  selects its object. Four actions on the selected object: *YATI: Pick map and object…* (both members in one undo
+  step), *YATI: Follow reference*, *YATI: Open or create file…* (from the rule's template; `yati_open_command`),
+  *YATI: Show text for selected object*. `lib/rules.mjs`, `sample/rules/`, `test/rules*.test.mjs`
+  (`docs/tiled-extension-plan.md`, section 5).
 - Tiled extension, *YATI: Configure…*: one dialog with a field per setting (folder pickers, the binary
   with *Browse…* and a *Test* that runs `--version`, the import options with their mistakes shown as you
   type, a check box for the validation on save), a tooltip on every field, and a check of every field

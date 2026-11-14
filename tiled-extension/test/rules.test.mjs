@@ -302,3 +302,12 @@ test("the actions' helpers: where a template's copy goes, how a file is opened, 
 	assert.equal(memberPath(findMember(props, "c"), "/p/maps/m.tmx", ctx), "/g/s.xml");
 	assert.equal(memberPath(findMember(props, "zzz"), "/p/maps/m.tmx", ctx), "");
 });
+
+test("the README's example rules parse without a problem", () => {
+	const readme = fs.readFileSync(path.join(path.dirname(SAMPLE_DIR), "README.md"), "utf8");
+	const block = /## Rules[\s\S]*?```json\n([\s\S]*?)```/.exec(readme)[1];
+	const parsed = parseRules(block);
+	assert.deepEqual(parsed.problems, []);
+	assert.equal(parsed.rules.length, 7);
+	assert.ok(parsed.rules[2].contains[1].regex.test("<sequence name=\"on_leave\">"));
+});
