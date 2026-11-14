@@ -13,6 +13,8 @@ export const SETTING_NAMES = {
 	validate: "yati_validate",
 	generated: "yati_generated",
 	fixups: "yati_fixups",
+	rules: "yati_rules",
+	openCommand: "yati_open_command",
 };
 
 export const DEFAULT_GODOT_BINARY = "godot";
@@ -230,6 +232,8 @@ export function readSettings(getProperty, projectFile) {
 		importOptions: options.options,
 		importOptionWarnings: options.warnings,
 		validate: validate,
+		rulesRaw: str(SETTING_NAMES.rules),
+		openCommand: str(SETTING_NAMES.openCommand),
 		generated: parseGenerated(getProperty(SETTING_NAMES.generated)),
 		fixups: parseFixups(getProperty(SETTING_NAMES.fixups)),
 		missing: godotProject === "" ? [SETTING_NAMES.godotProject] : [],

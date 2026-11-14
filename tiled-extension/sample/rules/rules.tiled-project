@@ -1,0 +1,118 @@
+{
+    "automappingRulesFile": "",
+    "commands": [],
+    "compatibilityVersion": 1100,
+    "extensionsPath": "extensions",
+    "folders": [
+        "."
+    ],
+    "properties": [
+        {
+            "name": "yati_rules",
+            "propertytype": "",
+            "type": "string",
+            "value": "[\n  {\"class\": \"warp\", \"member\": \"to_map\", \"kind\": \"map\", \"required\": true},\n  {\"class\": \"warp\", \"member\": \"to_spawn\", \"kind\": \"object_in_map\", \"map\": \"to_map\", \"targetClass\": \"player_spawn\", \"required\": true},\n  {\"class\": \"trigger\", \"member\": \"sequence\", \"kind\": \"file\", \"required\": true,\n   \"contains\": [\n     {\"pattern\": \"<sequence\\\\s+name=.on_enter.\", \"label\": \"section named on_enter\"},\n     {\"pattern\": \"<sequence\\\\s+name=.on_leave.\", \"label\": \"section named on_leave\"}],\n   \"template\": \"templates/trigger.xml\", \"folder\": \"sequences\"},\n  {\"class\": \"interactable\", \"member\": \"sequence\", \"kind\": \"file\", \"required\": true,\n   \"contains\": [{\"pattern\": \"<sequence\\\\s+name=.on_interact.\", \"label\": \"section named on_interact\"}],\n   \"template\": \"templates/interactable.xml\", \"folder\": \"sequences\"},\n  {\"class\": [\"sign\", \"interactable\"], \"member\": \"text\", \"kind\": \"key\", \"table\": \"text/strings.csv\"},\n  {\"world\": \"maps/game.world\", \"member\": \"start_map\", \"kind\": \"map\", \"required\": true},\n  {\"world\": \"maps/game.world\", \"member\": \"start_spawn\", \"kind\": \"object_in_map\", \"map\": \"start_map\", \"targetClass\": \"player_spawn\", \"required\": true}\n]"
+        }
+    ],
+    "propertyTypes": [
+        {
+            "color": "#ff5dade2",
+            "drawFill": true,
+            "id": 1,
+            "members": [
+                {
+                    "name": "to_map",
+                    "type": "file",
+                    "value": ""
+                },
+                {
+                    "name": "to_spawn",
+                    "type": "string",
+                    "value": ""
+                }
+            ],
+            "name": "warp",
+            "type": "class",
+            "useAs": [
+                "property",
+                "object",
+                "tile"
+            ]
+        },
+        {
+            "color": "#ff58d68d",
+            "drawFill": true,
+            "id": 2,
+            "members": [],
+            "name": "player_spawn",
+            "type": "class",
+            "useAs": [
+                "property",
+                "object",
+                "tile"
+            ]
+        },
+        {
+            "color": "#fff5b041",
+            "drawFill": true,
+            "id": 3,
+            "members": [
+                {
+                    "name": "sequence",
+                    "type": "file",
+                    "value": ""
+                }
+            ],
+            "name": "trigger",
+            "type": "class",
+            "useAs": [
+                "property",
+                "object",
+                "tile"
+            ]
+        },
+        {
+            "color": "#ffaf7ac5",
+            "drawFill": true,
+            "id": 4,
+            "members": [
+                {
+                    "name": "sequence",
+                    "type": "file",
+                    "value": ""
+                },
+                {
+                    "name": "text",
+                    "type": "string",
+                    "value": ""
+                }
+            ],
+            "name": "interactable",
+            "type": "class",
+            "useAs": [
+                "property",
+                "object",
+                "tile"
+            ]
+        },
+        {
+            "color": "#ffcacfd2",
+            "drawFill": true,
+            "id": 5,
+            "members": [
+                {
+                    "name": "text",
+                    "type": "string",
+                    "value": ""
+                }
+            ],
+            "name": "sign",
+            "type": "class",
+            "useAs": [
+                "property",
+                "object",
+                "tile"
+            ]
+        }
+    ]
+}

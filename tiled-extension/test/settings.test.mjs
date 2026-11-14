@@ -68,6 +68,14 @@ test("settings: defaults and relative paths", () => {
 	assert.equal(u.scenesDir, "/abs/game/levels");
 	assert.equal(u.godotBinary, "godot4");
 	assert.equal(readSettings(props({ yati_validate: "false" }), "/p.tiled-project").validate, false);
+	// The rules (parsed by lib/rules.mjs) and the command that opens files, as written.
+	assert.equal(s.rulesRaw, "");
+	assert.equal(s.openCommand, "");
+	const r = readSettings(props({ yati_rules: " [] ", yati_open_command: "code -r" }), "/p.tiled-project");
+	assert.equal(r.rulesRaw, "[]");
+	assert.equal(r.openCommand, "code -r");
+	assert.equal(SETTING_NAMES.rules, "yati_rules");
+	assert.equal(SETTING_NAMES.openCommand, "yati_open_command");
 });
 
 test("import options: name=value pairs, warnings", () => {

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The rules sample's first map: every reference fine (no rule finding on save). -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="16" height="16" tilewidth="16" tileheight="16" infinite="0" nextlayerid="2" nextobjectid="6">
+ <objectgroup id="1" name="Objects">
+  <object id="1" name="from_cellar" class="player_spawn" x="32" y="32" width="16" height="16"/>
+  <object id="2" name="to_cellar" class="warp" x="64" y="32" width="16" height="16">
+   <properties>
+    <property name="to_map" type="file" value="cellar.tmx"/>
+    <property name="to_spawn" value="from_town"/>
+   </properties>
+  </object>
+  <object id="3" name="well" class="trigger" x="96" y="32" width="32" height="32">
+   <properties>
+    <property name="sequence" type="file" value="../sequences/well_trigger.xml"/>
+   </properties>
+  </object>
+  <object id="4" name="welcome" class="sign" x="32" y="96" width="16" height="16">
+   <properties>
+    <property name="text" value="SIGN_WELCOME"/>
+   </properties>
+  </object>
+  <object id="5" name="notice" class="interactable" x="64" y="96" width="16" height="16">
+   <properties>
+    <property name="sequence" type="file" value="../sequences/notice.xml"/>
+    <property name="text" value="Plain words, no key."/>
+   </properties>
+  </object>
+ </objectgroup>
+</map>

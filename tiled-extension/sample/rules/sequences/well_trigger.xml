@@ -1,0 +1,7 @@
+<sequences>
+	<sequence name="on_enter">
+		<prompt key="SIGN_WELL"/>
+	</sequence>
+	<sequence name="on_leave">
+	</sequence>
+</sequences>

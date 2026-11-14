@@ -1,0 +1,5 @@
+<sequences>
+	<sequence name="on_interact">
+		<prompt key="NOTICE_READ"/>
+	</sequence>
+</sequences>

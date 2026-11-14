@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The rules sample's second map: its spawn comes from a template (objects/spawn.tx gives the class); no rule finding on save. -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="16" height="16" tilewidth="16" tileheight="16" infinite="0" nextlayerid="2" nextobjectid="4">
+ <objectgroup id="1" name="Objects">
+  <object id="1" name="from_town" template="../objects/spawn.tx" x="32" y="32"/>
+  <object id="2" name="up" class="warp" x="64" y="32" width="16" height="16">
+   <properties>
+    <property name="to_map" type="file" value="town.tmx"/>
+    <property name="to_spawn" value="from_cellar"/>
+   </properties>
+  </object>
+  <object id="3" name="barrel" class="interactable" x="96" y="32" width="16" height="16">
+   <properties>
+    <property name="sequence" type="file" value="../sequences/notice.xml"/>
+    <property name="text" value="NOTICE_READ"/>
+   </properties>
+  </object>
+ </objectgroup>
+</map>

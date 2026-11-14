@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The rules sample's map of mistakes: one rule finding per object (rules.test.mjs, glue.test.mjs, the README's checklist). -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="16" height="16" tilewidth="16" tileheight="16" infinite="0" nextlayerid="2" nextobjectid="11">
+ <objectgroup id="1" name="Objects">
+  <object id="1" name="nowhere" class="warp" x="0" y="0" width="16" height="16">
+   <properties>
+    <property name="to_spawn" value="from_town"/>
+   </properties>
+  </object>
+  <object id="2" name="lost" class="warp" x="16" y="0" width="16" height="16">
+   <properties>
+    <property name="to_map" type="file" value="attic.tmx"/>
+    <property name="to_spawn" value="from_town"/>
+   </properties>
+  </object>
+  <object id="3" name="typo" class="warp" x="32" y="0" width="16" height="16">
+   <properties>
+    <property name="to_map" type="file" value="cellar.tmx"/>
+    <property name="to_spawn" value="from_twn"/>
+   </properties>
+  </object>
+  <object id="4" name="wrong_class" class="warp" x="48" y="0" width="16" height="16">
+   <properties>
+    <property name="to_map" type="file" value="cellar.tmx"/>
+    <property name="to_spawn" value="up"/>
+   </properties>
+  </object>
+  <object id="5" name="empty" class="trigger" x="0" y="32" width="16" height="16"/>
+  <object id="6" name="half" class="trigger" x="16" y="32" width="16" height="16">
+   <properties>
+    <property name="sequence" type="file" value="../sequences/half_trigger.xml"/>
+   </properties>
+  </object>
+  <object id="7" name="misspelt" class="sign" x="0" y="64" width="16" height="16">
+   <properties>
+    <property name="text" value="SIGN_WELCOM"/>
+   </properties>
+  </object>
+  <object id="8" name="plain" class="sign" x="16" y="64" width="16" height="16">
+   <properties>
+    <property name="text" value="Hello there"/>
+   </properties>
+  </object>
+  <object id="9" name="silent" class="interactable" x="32" y="64" width="16" height="16">
+   <properties>
+    <property name="sequence" type="file" value="../sequences/well_trigger.xml"/>
+   </properties>
+  </object>
+  <object id="10" name="back" class="warp" x="48" y="64" width="16" height="16">
+   <properties>
+    <property name="to_map" type="file" value="town.tmx"/>
+    <property name="to_spawn" value="from_cellar"/>
+   </properties>
+  </object>
+ </objectgroup>
+</map>

@@ -1,0 +1,5 @@
+<sequences>
+	<!-- on_leave is missing on purpose: maps/broken.tmx's object 6 names this file. -->
+	<sequence name="on_enter">
+	</sequence>
+</sequences>

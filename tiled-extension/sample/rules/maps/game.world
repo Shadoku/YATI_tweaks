@@ -1,0 +1,11 @@
+{
+    "maps": [
+        { "fileName": "town.tmx", "height": 256, "width": 256, "x": 0, "y": 0 },
+        { "fileName": "cellar.tmx", "height": 256, "width": 256, "x": 256, "y": 0 }
+    ],
+    "properties": [
+        { "name": "start_map", "type": "file", "value": "town.tmx" },
+        { "name": "start_spawn", "type": "string", "value": "from_cellar" }
+    ],
+    "type": "world"
+}

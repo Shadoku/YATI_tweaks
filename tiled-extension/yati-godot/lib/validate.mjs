@@ -82,7 +82,7 @@ function findProp(props, name) {
 
 // The object's properties with its class's members that it does not override (the importers add
 // those with their defaults), each member marked `fromClass`.
-function withClassMembers(props, cls) {
+export function withClassMembers(props, cls) {
 	if (!cls || !cls.members)
 		return props;
 	const out = props.slice();
@@ -95,7 +95,7 @@ function withClassMembers(props, cls) {
 	return out;
 }
 
-function describeObject(o) {
+export function describeObject(o) {
 	const name = o.name !== "" ? "'" + o.name + "'" : "(unnamed)";
 	return "Object " + name + " (id " + o.id + (o.layerPath ? ", layer " + o.layerPath : "") + ")";
 }
