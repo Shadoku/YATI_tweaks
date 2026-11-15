@@ -370,3 +370,12 @@ through the `.tiled-project` file, the maps and (for the check) the Godot binary
   findings on `sample/rules/maps/portals/clash.tmx` (`real_tiled.test.mjs`, the map read through the tmx format and
   given its file name through a `Proxy`). **For the editor** (README checklist 14 and 15): Pick's list, the undo step
   and Follow.
+- 2026-11-15, open items noted for later (asked for by a game that uses the rules; neither is started):
+  - **An `exclude` for the project-wide rules.** `object_in_project` and `unique_name` take a `maps` folder or glob
+    but cannot leave a folder out. A game that keeps template maps under `maps/templates/` (copied to start a new
+    map, never loaded) has their placeholder names counted for uniqueness and offered by Pick. Wanted: an
+    `exclude` field (a folder or glob, or a list) on those two kinds, or a project-wide setting.
+  - **A layer's old `x` / `y` attributes.** A map last saved by an older Tiled can carry `x` / `y` on a layer
+    (seen: `<objectgroup ... y="-1">`). Tiled 1.12 neither shows nor edits them, and both importers apply them as
+    a pixel offset, so every object of the layer sits off by that much. Wanted: the importers ignore them as Tiled
+    does (or warn once), and the extension's save-time validation reports them.
