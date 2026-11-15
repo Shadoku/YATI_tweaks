@@ -1029,7 +1029,7 @@ impl Creator {
                 td.set_modulate(crate::gd::tiled_color(&val, Color::WHITE));
             } else if lname == "modulate" && ty == "string" {
                 td.set_modulate(crate::gd::color_from_string(&val));
-            } else if lname == "material" && ty == "file" {
+            } else if lname == "material" && ty == "file" && !val.is_empty() {
                 let base = self.base_dir.clone();
                 let m = load_resource(&val, &base, &mut self.diag)
                     .and_then(|r| r.try_cast::<godot::classes::Material>().ok());

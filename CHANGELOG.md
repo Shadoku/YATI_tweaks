@@ -72,6 +72,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unset warned. The extension's validation on save no longer reports unset references either.
 
 ### Fixed
+- Both importers: an empty `file` value (a project class's file member left at its default `""`, or an object's own
+  file property set to `""`) names no file: nothing is loaded or assigned and nothing is printed. Before, with
+  `assign_node_properties` every such object printed `Resource file '' not found` and a warning (the value then
+  stored as metadata) when the class's scene exported a Resource of that name; an empty `material`, `tile_set`,
+  `physics_material_override` or `navigation_polygon` printed the error too, and an empty `godot_script` took the
+  scene's script away. An empty value for a property the node does not have stays metadata, as before.
+- Both importers: a relative file value (a file property, a tileset's or template's `source`, an image) is resolved
+  against the referencing file's directory and nothing else. Before, the bare value was first tried against the
+  process's working directory, so with the project inside another checkout (a git worktree under
+  `<repo>/.claude/worktrees/x/`) a map-relative `../../../data/sprites/entities.png` could load the outer
+  checkout's file, as `res://../../../data/...`. An absolute value (`res://`, `user://`, `/`, `C:/`) is used as it
+  is; the map passed to `import()` is still read as given. The native importer's difference "the runtime first
+  tries the bare name relative to the working directory" is gone (`Reference.md`). Native library: the fix is in
+  the Rust crate (`native/src/files.rs`, `builder/`), so it needs a library built from this commit or later.
 - Tiled extension: without an open project every map or tileset save, and every action, failed with
   "YATI: Cannot read property 'fileName' of null" (`tiled.project` is null in Tiled 1.12 when no
   project is loaded, not a project with blank properties as the reference says). The actions now say

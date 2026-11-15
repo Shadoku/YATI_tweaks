@@ -2162,6 +2162,121 @@ func test_new_tiled_import_hook() -> bool:
 	return done()
 
 
+func _write(path: String, text: String) -> void:
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path.get_base_dir()))
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_string(text)
+	f.close()
+
+
+func test_bug_empty_file_property() -> bool:
+	# An empty file value (a project class's file member left at its default "", or an object's own
+	# file property set to "") names no file: nothing is loaded or assigned and nothing is printed,
+	# whether it would go to an export of the class's scene, to one of the special properties
+	# (material, physics_material_override, godot_script) or to metadata. Before, every such object
+	# printed "Resource file '' not found" and a warning, and an empty godot_script took the
+	# scene's script away.
+	var dir := OUT + "empty_file/"
+	_write(dir + "empty_file.tiled-project", """{
+    "folders": ["."],
+    "propertyTypes": [
+        {"id": 1, "name": "Holder", "type": "class", "useAs": ["object"], "members": [
+            {"name": "godot_scene", "type": "file", "value": "res://test/fixtures/enemy.tscn"},
+            {"name": "icon", "type": "file", "value": ""}
+        ]}
+    ]
+}
+""")
+	_write(dir + "empty_file.tmx", """<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="8" height="8" tilewidth="16" tileheight="16" infinite="0" nextlayerid="2" nextobjectid="5">
+ <objectgroup id="1" name="Things">
+  <object id="1" name="Default" class="Holder" x="16" y="16" width="16" height="16"/>
+  <object id="2" name="Own" class="Holder" x="48" y="16" width="16" height="16">
+   <properties>
+    <property name="icon" type="file" value=""/>
+   </properties>
+  </object>
+  <object id="3" name="Special" class="Holder" x="80" y="16" width="16" height="16">
+   <properties>
+    <property name="godot_script" type="file" value=""/>
+    <property name="hp" type="int" value="7"/>
+    <property name="material" type="file" value=""/>
+    <property name="sprite_file" type="file" value=""/>
+   </properties>
+  </object>
+  <object id="4" name="Plain" x="16" y="48" width="16" height="16">
+   <properties>
+    <property name="material" type="file" value=""/>
+    <property name="physics_material_override" type="file" value=""/>
+   </properties>
+  </object>
+ </objectgroup>
+</map>
+""")
+	var imp := _new_importer()
+	var n := _import_with(imp, dir + "empty_file.tmx", dir + "empty_file.tiled-project")
+	if n == null: return done()
+	eq(imp.get("last_error_count"), 0, "errors")
+	eq(imp.get("last_warning_count"), 0, "warnings")
+	for name in ["Default", "Own"]:
+		var h := need(n, name)
+		if _is_scene(h, ENEMY_SCENE, name):
+			check(h.get("icon") == null, name + ".icon does not keep its default")
+			check(not h.has_meta("icon"), name + ": an empty icon stored as metadata")
+	var s := need(n, "Special")
+	if _is_scene(s, ENEMY_SCENE, "Special"):
+		check(s.get_script() != null, "Special: an empty godot_script took the scene's script away")
+		eq(s.get("hp"), 7, "Special.hp")
+		check((s as CanvasItem).material == null, "Special.material is set")
+		meta(s, "sprite_file", "")
+	var p := need(n, "Plain (SB)", "StaticBody2D")
+	if p:
+		check((p as CanvasItem).material == null, "Plain.material is set")
+		check((p as StaticBody2D).physics_material_override == null, "Plain.physics_material_override is set")
+	return done()
+
+
+func test_bug_relative_file_ignores_working_directory() -> bool:
+	# A relative file value is relative to the referencing file (here the map) and nothing else.
+	# Before, both importers first tried it relative to the process's working directory, so when a
+	# file of that name existed there (a project checked out inside another one, the working
+	# directory the outer checkout) that file was loaded instead, as res://<the bare value>.
+	# The decoy is the value read from the working directory: the project's root when the suite
+	# runs as documented (from the repository root).
+	var dir := OUT + "cwd_probe/"
+	var mat := """[gd_resource type="CanvasItemMaterial" format=3]
+
+[resource]
+blend_mode = %d
+"""
+	_write(OUT + "cwd_decoy.tres", mat % CanvasItemMaterial.BLEND_MODE_ADD)
+	_write(dir + "test/out/cwd_decoy.tres", mat % CanvasItemMaterial.BLEND_MODE_SUB)
+	_write(dir + "cwd_probe.tmx", """<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="8" height="8" tilewidth="16" tileheight="16" infinite="0" nextlayerid="2" nextobjectid="2">
+ <objectgroup id="1" name="Things">
+  <object id="1" name="Probe" x="16" y="16" width="16" height="16">
+   <properties>
+    <property name="material" type="file" value="test/out/cwd_decoy.tres"/>
+   </properties>
+  </object>
+ </objectgroup>
+</map>
+""")
+	if not FileAccess.file_exists("test/out/cwd_decoy.tres"):
+		print("  (the working directory is not the project's root: the decoy is not in the way)")
+	var imp := _new_importer()
+	var n := _import_with(imp, dir + "cwd_probe.tmx")
+	if n == null: return done()
+	eq(imp.get("last_error_count"), 0, "errors")
+	var p := need(n, "Probe (SB)", "StaticBody2D")
+	if p:
+		var m := (p as CanvasItem).material as CanvasItemMaterial
+		if check(m != null, "Probe.material missing"):
+			eq(m.blend_mode, CanvasItemMaterial.BLEND_MODE_SUB, "Probe.material (the map's, not the working directory's)")
+			eq(m.resource_path, dir + "test/out/cwd_decoy.tres", "Probe.material path")
+	return done()
+
+
 func _map_meta(n: Node, rect: Rect2, size_tiles: Vector2i, tile_size: Vector2i, orientation: String) -> void:
 	meta(n, "map_rect", rect)
 	meta(n, "map_size_tiles", size_tiles)

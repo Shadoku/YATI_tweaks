@@ -1038,6 +1038,22 @@ this machine): what it needs is written down. The game's switch is a change in i
     preparing worker); clippy `-D warnings` and `fmt --check` clean; `test/run_all.sh` exits 0 for
     both runtimes (its benchmark runs there: the GDScript runtime `min=753.4 avg=790.6`, the facade
     `min=183.8 avg=208.6 | tile layers avg=146.5 | cached import avg=226.3`, a busy moment).
+- 2026-11-15: two bugs a game found, fixed in both importers, test first
+  (`test_bug_empty_file_property`, `test_bug_relative_file_ignores_working_directory`; both failed
+  against both facades before). An empty `file` value names no file: no resource is loaded or
+  assigned and nothing is printed (it printed `Resource file '' not found` and a warning per object
+  for a class member left at `""`, and an empty `godot_script` took a scene's script away). A
+  relative file value is resolved against the referencing file's directory only, never the working
+  directory (`files::fs_candidate`, with Rust unit tests; `DataLoader._resolve_path_in_file_system`),
+  which also ends the difference "the runtime first tries the bare name relative to the working
+  directory". Gates: `test/run_tests.gd` `SUMMARY: 107 passed, 0 failed` for both runtimes;
+  `test/run_all.sh` exits 0 for both (check_map 18 passed, `test_async.gd` 71, `test_stream.gd` 86);
+  `native_gate.gd` leaks none (objects 1900 -> 1900); `cargo test --release --workspace`, clippy
+  `-D warnings` and `fmt --check` clean. GitHub Actions did not run for the branch, so the Linux
+  library built here was committed with the fix (the commit after it, `native-commit.txt` naming
+  the fix's commit); the Windows MSVC library could not be cross-built here (`cargo xwin` needs the
+  MSVC CRT and Windows SDK from aka.ms, which this machine's network refuses), and the Windows and
+  macOS libraries stay the previous build, without the fix, until the workflow runs.
 
 ## 7. Behaviour changes from the runtime improvement plan
 

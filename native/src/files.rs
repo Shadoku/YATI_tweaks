@@ -9,7 +9,7 @@
 //! through `ResourceLoader.load_threaded_request` while it parses ([`request_threaded`]).
 
 use crate::diag::Diag;
-use crate::gd::{cleanup_path, get_extension, path_join};
+use crate::gd::{cleanup_path, get_extension, is_absolute_path, path_join};
 use godot::classes::{
     FileAccess, Image, ImageTexture, Object, ResourceLoader, Texture2D, ZipReader,
 };
@@ -118,13 +118,27 @@ pub fn orphan_count() -> usize {
     ORPHANS.with(|o| o.borrow().len())
 }
 
-/// `DataLoader._resolve_path_in_file_system`: the name as given, else relative to `base`.
-pub fn resolve_in_fs(file: &str, base: &str) -> Option<String> {
-    if FileAccess::file_exists(file) {
-        return Some(file.to_string());
+/// The path a file reference names, before asking whether it exists: an absolute one (`res://`,
+/// `user://`, `/`, `C:/`) as it is, a relative one joined to `base` (the referencing file's
+/// directory) and nothing else; `None` for an empty reference, which names no file.
+///
+/// Never the reference relative to the process's working directory: with the project inside
+/// another checkout (a git worktree under `.claude/worktrees/`), a map-relative `../../x.png`
+/// would find the outer checkout's file and load it as `res://../../x.png`.
+pub fn fs_candidate(file: &str, base: &str) -> Option<String> {
+    if file.is_empty() {
+        None
+    } else if is_absolute_path(file) {
+        Some(file.to_string())
+    } else {
+        Some(path_join(base, file))
     }
-    let joined = path_join(base, file);
-    FileAccess::file_exists(joined.as_str()).then_some(joined)
+}
+
+/// `DataLoader._resolve_path_in_file_system`: [`fs_candidate`] when that file exists.
+pub fn resolve_in_fs(file: &str, base: &str) -> Option<String> {
+    let path = fs_candidate(file, base)?;
+    FileAccess::file_exists(path.as_str()).then_some(path)
 }
 
 /// `DataLoader.load_resource_from_file`.
@@ -272,5 +286,47 @@ impl Textures {
         let texture: Gd<Texture2D> = ImageTexture::create_from_image(&image)?.upcast();
         cache(key, &texture);
         Some(texture)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fs_candidate;
+
+    #[test]
+    fn a_relative_reference_is_relative_to_its_base_only() {
+        let base = "res://content/maps/overworld/coast";
+        assert_eq!(
+            fs_candidate("../../../data/sprites/entities.png", base).as_deref(),
+            Some("res://content/maps/overworld/coast/../../../data/sprites/entities.png")
+        );
+        assert_eq!(
+            fs_candidate("door.tres", "res://maps").as_deref(),
+            Some("res://maps/door.tres")
+        );
+        // The main map, read with no base, is the one name a working directory may resolve
+        assert_eq!(
+            fs_candidate("maps/a.tmx", "").as_deref(),
+            Some("maps/a.tmx")
+        );
+    }
+
+    #[test]
+    fn an_absolute_reference_is_kept() {
+        for p in [
+            "res://a/b.tres",
+            "user://x.png",
+            "/abs/y.png",
+            "C:/z.png",
+            "C:\\z.png",
+        ] {
+            assert_eq!(fs_candidate(p, "res://maps").as_deref(), Some(p));
+        }
+    }
+
+    #[test]
+    fn an_empty_reference_names_no_file() {
+        assert_eq!(fs_candidate("", "res://maps"), None);
+        assert_eq!(fs_candidate("", ""), None);
     }
 }

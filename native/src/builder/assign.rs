@@ -259,6 +259,10 @@ impl Build<'_> {
         file_base: &str,
         info: &PropInfo,
     ) {
+        // An empty file value names no resource: the property keeps its (scene's) value
+        if ty == "file" && info.ty == VariantType::OBJECT && value.stringify().is_empty() {
+            return;
+        }
         if let Some(v) = self.convert_for_property(node, name, info, ty, &value, file_base) {
             node.set(name, &v);
             return;

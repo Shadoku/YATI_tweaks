@@ -6,8 +6,8 @@ test/out/
 # Local copy of the baseline runtime used for benchmark comparison
 baseline_runtime/
 # The native importer: cargo's output, and the libraries tools/build_native.sh copies into
-# addons/yati_native/bin/. A local build is never committed; .github/workflows/native.yml
-# commits the CI-built libraries (with `git add -f`, past this rule).
+# addons/yati_native/bin/. .github/workflows/native.yml commits the CI-built libraries (with
+# `git add -f`, past this rule); a local build only when the workflow cannot run (README "Building").
 native/target/
 addons/yati_native/bin/*
 !addons/yati_native/bin/.gitkeep

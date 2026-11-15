@@ -836,7 +836,7 @@ func handle_tile_properties(properties: Array, current_tile: TileData):
 		elif name.to_lower() == "modulate" and  type == "string":
 			current_tile.modulate = Color(val)
 		elif name.to_lower() == "material" and  type == "file":
-			current_tile.material = DataLoader.load_resource_from_file(val, _base_path_tileset)
+			if val != "": current_tile.material = DataLoader.load_resource_from_file(val, _base_path_tileset)
 		elif name.to_lower() == "z_index" and  type == "int":
 			current_tile.z_index = int(val)
 		elif name.to_lower() == "y_sort_origin" and  type == "int":

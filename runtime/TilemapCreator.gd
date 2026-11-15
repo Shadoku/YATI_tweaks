@@ -2708,6 +2708,7 @@ func handle_properties(target_node: Node, properties: Array, base_dir: String = 
 		var type: String = property.get("type", "string")
 		if type == "file" or type == "string":
 			var val := str(property.get("value", ""))
+			if val == "": continue	# an empty value names no script: the node keeps its own
 			var path = val
 			if type == "file" and not val.is_absolute_path():
 				path = CommonUtils.cleanup_path(file_base.replace("res://", "") + "/" + val)
@@ -2784,13 +2785,13 @@ func handle_properties(target_node: Node, properties: Array, base_dir: String = 
 			if int(val) < CanvasItem.TEXTURE_REPEAT_MAX:
 				target_node.texture_repeat = int(val)
 		elif lname == "material" and type == "file":
-			target_node.material = DataLoader.load_resource_from_file(val, file_base)
+			if val != "": target_node.material = DataLoader.load_resource_from_file(val, file_base)
 		elif lname == "use_parent_material" and type == "bool":
 			target_node.use_parent_material = val.to_lower() == "true"
 	
 		# TileMapLayer properties
 		elif lname == "tile_set" and type == "file" and target_node is TileMapLayer:
-			target_node.tile_set = DataLoader.load_resource_from_file(val, file_base)
+			if val != "": target_node.tile_set = DataLoader.load_resource_from_file(val, file_base)
 
 		# Experimental only! Not sure if properly functioning
 		elif lname == "tileset_resource_path" and type == "string" and target_node is TileMapLayer:
@@ -2924,7 +2925,7 @@ func handle_properties(target_node: Node, properties: Array, base_dir: String = 
 			
 		# StaticBody2D properties
 		elif lname == "physics_material_override" and type == "file" and target_node is StaticBody2D:
-			target_node.physics_material_override = DataLoader.load_resource_from_file(val, file_base)
+			if val != "": target_node.physics_material_override = DataLoader.load_resource_from_file(val, file_base)
 		elif lname == "constant_linear_velocity_x" and (type == "float" or type == "int") and target_node is StaticBody2D:
 			target_node.constant_linear_velocity = Vector2(float(val), target_node.constant_linear_velocity.y)
 		elif lname == "constant_linear_velocity_y" and (type == "float" or type == "int") and target_node is StaticBody2D:
@@ -2983,7 +2984,7 @@ func handle_properties(target_node: Node, properties: Array, base_dir: String = 
 			if int(val) < 2:
 				target_node.center_of_mass_mode = int(val)
 		elif lname == "physics_material_override" and type == "file" and target_node is RigidBody2D:
-			target_node.physics_material_override = DataLoader.load_resource_from_file(val, file_base)
+			if val != "": target_node.physics_material_override = DataLoader.load_resource_from_file(val, file_base)
 		elif lname == "gravity_scale" and  (type == "float" or type == "int") and target_node is RigidBody2D:
 			target_node.gravity_scale = float(val)
 		elif lname == "custom_integrator" and type == "bool" and target_node is RigidBody2D:
@@ -3031,7 +3032,7 @@ func handle_properties(target_node: Node, properties: Array, base_dir: String = 
 				
 		# NavigationRegion2D properties
 		elif lname == "navigation_polygon" and type == "file" and target_node is NavigationRegion2D:
-			target_node.navigation_polygon = DataLoader.load_resource_from_file(val, file_base)
+			if val != "": target_node.navigation_polygon = DataLoader.load_resource_from_file(val, file_base)
 		elif lname == "enabled" and type == "bool" and target_node is NavigationRegion2D:
 			target_node.enabled = val.to_lower() == "true"
 		elif lname == "navigation_layers" and (type == "string" or type == "int") and target_node is NavigationRegion2D:
@@ -3169,6 +3170,9 @@ func set_property_or_meta(node: Node, name: String, type: String, value, file_ba
 	if _assign_node_properties:
 		var info = (assignable if assignable != null else get_assignable_properties(node)).get(name)
 		if info != null:
+			# An empty file value names no resource: the property keeps its (scene's) value
+			if type == "file" and info["type"] == TYPE_OBJECT and str(value) == "":
+				return
 			var converted = convert_for_property(info, type, value, file_base)
 			if converted.size() == 1:
 				node.set(name, converted[0])

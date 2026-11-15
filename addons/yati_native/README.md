@@ -356,9 +356,8 @@ suite is the specification). The accepted differences, each with its reason, are
 [Reference](https://github.com/Shadoku/YATI_tweaks/blob/main/Reference.md#differences-between-the-gdscript-and-the-native-importer).
 In short: TileSets and textures are cached across imports (`share_tilesets`; a file changed on
 disk needs `clear()` / `clear_textures()`); no `__internal__` custom data layer is left in saved or
-template TileSets; custom types are merged into tilesets only templates use; references resolve
-relative to the referencing file only (the runtime first tries the bare name relative to the
-working directory) and an embedded tileset after an external one relative to the map; JSON
+template TileSets; custom types are merged into tilesets only templates use; an embedded tileset after an external
+one resolves relative to the map; JSON
 templates (`.tj`) instantiate; a numeric name (`name="007"`) keeps its spelling; engine classes'
 property lists are read once per process; `TilemapCreator.gd` is a stand-in (`create`,
 `get_map_rect`, `get_tileset`); a few malformed inputs no Tiled version writes are read differently.
@@ -372,7 +371,11 @@ decoding and the blobs, pure Rust, no Godot). `bash tools/build_native.sh` runs
 `yati_native.gdextension` expects (`lib<name>.<os>.<rust target triple>.<ext>`; `--check` only
 tells whether it is there). The repository's CI (`.github/workflows/native.yml`) builds Linux
 x86_64, Windows x86_64 and a universal macOS framework on every push that touches the crate,
-checks each library as an image and loads it in Godot, and publishes them.
+checks each library as an image and loads it in Godot, and publishes them, committing them back to
+the branch. When the workflow cannot run, a change to the crate may carry a library built locally
+with `tools/build_native.sh` for this machine's platform, in a commit of its own after the change
+(`bin/native-commit.txt` naming the change's commit, the commit message naming the libraries built
+locally); the other platforms' libraries stay as they were last built until the workflow runs.
 
 `cargo build --release --features unchecked` turns godot-rust's per-call checks (is the object
 still alive) off: about 30 % off the object phase of a large map, at the price of undefined

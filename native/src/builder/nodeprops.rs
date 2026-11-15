@@ -191,6 +191,10 @@ impl Build<'_> {
             }
             if ty == "file" || ty == "string" {
                 let val = p.val();
+                if val.is_empty() {
+                    // An empty value names no script: the node keeps its own
+                    continue;
+                }
                 let mut path = val.clone();
                 if ty == "file" && !is_absolute_path(&val) {
                     path = cleanup_path(&format!("{}/{}", file_base.replace("res://", ""), val));
@@ -296,15 +300,19 @@ impl Build<'_> {
                     set(node, "texture_repeat", i().to_variant());
                 }
             } else if lname == "material" && ty == "file" {
-                let r = load_resource(&val, &file_base, &mut self.diag);
-                set(node, "material", r.to_variant());
+                if !val.is_empty() {
+                    let r = load_resource(&val, &file_base, &mut self.diag);
+                    set(node, "material", r.to_variant());
+                }
             } else if lname == "use_parent_material" && ty == "bool" {
                 set(node, "use_parent_material", b().to_variant());
             }
             // TileMapLayer properties
             else if lname == "tile_set" && ty == "file" && k.tml {
-                let r = load_resource(&val, &file_base, &mut self.diag);
-                set(node, "tile_set", r.to_variant());
+                if !val.is_empty() {
+                    let r = load_resource(&val, &file_base, &mut self.diag);
+                    set(node, "tile_set", r.to_variant());
+                }
             } else if lname == "tileset_resource_path" && ty == "string" && k.tml {
                 if let Ok(mut ts) = node.get("tile_set").try_to::<Gd<Resource>>() {
                     ts.set_path(val.as_str());
@@ -394,8 +402,10 @@ impl Build<'_> {
             }
             // StaticBody2D properties
             else if lname == "physics_material_override" && ty == "file" && k.sb {
-                let r = load_resource(&val, &file_base, &mut self.diag);
-                set(node, "physics_material_override", r.to_variant());
+                if !val.is_empty() {
+                    let r = load_resource(&val, &file_base, &mut self.diag);
+                    set(node, "physics_material_override", r.to_variant());
+                }
             } else if lname == "constant_linear_velocity_x" && num && k.sb {
                 vec_part(node, "constant_linear_velocity", Some(fv()), None);
             } else if lname == "constant_linear_velocity_y" && num && k.sb {
@@ -657,8 +667,10 @@ impl Build<'_> {
                 }
             }
             "physics_material_override" if ty == "file" => {
-                let r = load_resource(val, file_base, &mut self.diag);
-                set(node, "physics_material_override", r.to_variant())
+                if !val.is_empty() {
+                    let r = load_resource(val, file_base, &mut self.diag);
+                    set(node, "physics_material_override", r.to_variant())
+                }
             }
             "gravity_scale" if num => set(node, "gravity_scale", fl.to_variant()),
             "custom_integrator" if ty == "bool" => set(node, "custom_integrator", b.to_variant()),
@@ -720,8 +732,10 @@ impl Build<'_> {
         let nav = |n: &Gd<Node>| n.get("navigation_polygon").try_to::<Gd<Resource>>().ok();
         match lname {
             "navigation_polygon" if ty == "file" => {
-                let r = load_resource(val, file_base, &mut self.diag);
-                set(node, "navigation_polygon", r.to_variant())
+                if !val.is_empty() {
+                    let r = load_resource(val, file_base, &mut self.diag);
+                    set(node, "navigation_polygon", r.to_variant())
+                }
             }
             "enabled" if ty == "bool" => set(node, "enabled", b.to_variant()),
             "navigation_layers" if mask => {

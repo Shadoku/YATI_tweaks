@@ -90,10 +90,13 @@ static func _resolve_path_in_zip(reader: ZIPReader, file_name: String, base_path
 	return ""
 
 
+# The file a reference names: an absolute path (res://, user://, /, C:/) as it is, a relative one
+# relative to base_path (the referencing file's directory) and nothing else: never relative to the
+# process's working directory, which a project inside another checkout would make find the outer
+# one's file. "" when there is no such file.
 static func _resolve_path_in_file_system(file_name: String, base_path: String) -> String:
-	if FileAccess.file_exists(file_name):
-		return file_name
-	var checked_file := base_path.path_join(file_name)
+	if file_name == "": return ""
+	var checked_file := file_name if file_name.is_absolute_path() else base_path.path_join(file_name)
 	if FileAccess.file_exists(checked_file):
 		return checked_file
 	return ""

@@ -317,7 +317,6 @@ the options that shape a TileSet) and handed to the next map with that combinati
 | Asynchronous import, streaming | no | `import_async`, `make_streamer` |
 | Internal custom data layer `__internal__` | left in saved and template TileSets | never created |
 | Custom types on tilesets only templates use | not merged | merged |
-| References (tilesets, templates, images) | the bare name relative to the working directory is tried first | relative to the referencing file only |
 | JSON templates (`.tj`) | create nothing | instantiate |
 | A numeric object or layer name (`name="007"`) | `"7"` | `"007"` |
 

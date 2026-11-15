@@ -217,7 +217,8 @@ Type `bool`, default: `true`
 A custom property that no special case of the [custom properties reference](#custom-properties-reference) handles
 and whose name is a property of the created node (an `@export var` or any `var` of its script, or an engine
 property such as `rotation`) is assigned to that property with `set()` instead of becoming metadata, converted to
-the property's type where that is safe; a value that does not fit stays metadata, with a warning. Off: every such
+the property's type where that is safe; a value that does not fit stays metadata, with a warning. An empty `file`
+value (a class member left at its default `""`) assigns nothing to a Resource property and prints nothing. Off: every such
 property is metadata, as before 3.1. See [Scene mapping and node properties](#scene-mapping-and-node-properties).
 
 ### Tiled project file
@@ -370,7 +371,9 @@ Properties of type 'file' refer to previously saved Godot resources e.g. 'materi
 By specifing the property and setting its value to the resource file path the resource will be loaded.  
 A relative path is resolved like Tiled saves it: relative to the file that holds the property, i.e. the map, or the
 template (.tx) for the properties of a template object; a property that a template instance overrides is saved in the
-map and so is relative to the map.  
+map and so is relative to the map. It is never tried relative to the process's working directory; an absolute path
+(`res://`, `user://`, `/`, `C:/`) is used as it is. An empty value names no file: nothing is loaded or assigned (the
+node keeps its own value, a scene's export its default), and nothing is printed.  
 **Please note:** The numerous resource-specific properties, e.g. for materials, can only be set by loading previously saved resources.  
 This seems to be convenient as providing all of these properties would greatly inflate the already extensive list.
 
@@ -771,7 +774,6 @@ default options, except the caches and the references resolved relative to their
 | Textures | loaded per import | cached per process; a file changed on disk needs `Importer.shared_tilesets().clear_textures()` | a texture is loaded once for every map and chunk |
 | Internal custom data layer `__internal__` (marks tiles with collision shapes) | created, then removed at the end of an import; left in a TileSet saved with `save_tileset_to` and in templates' TileSets | never created (kept on the Rust side) | the layer is an implementation detail; the runtime only forgets to remove it |
 | Custom types on tilesets that only templates use, and on layers marked `no_import` | not merged | merged | the model merges custom types when it loads a file, wherever they apply; nothing reads them in a skipped layer |
-| References (external tilesets, templates, images) | the bare name relative to the working directory is tried first, then relative to the referencing file | relative to the referencing file only | what Tiled does; the first try is a runtime accident that can pick an unrelated file |
 | An embedded tileset listed after an external one | its image resolved relative to the previous external tileset's directory | relative to the map | the runtime keeps the last tileset's directory by mistake |
 | JSON templates (`.tj`) | create nothing (`create_object` reads only the TMX `objects` key), and a reference to such an instance warns as dangling | instantiate, and references to them resolve | the JSON template format is Tiled's too |
 | A numeric object or layer name (`name="007"`) | the XML dictionary types it as the int 7: the node is named `7` | keeps its spelling: `007` | the name is a string in Tiled |
