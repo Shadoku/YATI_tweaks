@@ -20,7 +20,7 @@ through the `.tiled-project` file, the maps, and (for the check) the Godot binar
 > before relying on those, and report what differs in `docs/tiled-extension-plan.md` (section 5)
 > or `docs/tiled-extension-ux-plan.md` (section 4). The [rules](#rules) are newer: their save-time
 > findings and the setting of two members in one undo step ran in the real Tiled headless, the four
-> actions only against the fake; the checklist's steps 9 to 13 are for them.
+> actions only against the fake; the checklist's steps 9 to 15 are for them.
 
 - Requires **Tiled 1.12** or newer (the custom-type API is new in 1.12).
 - The check action also needs **Godot 4.7** and the game's `addons/yati_native/` with
@@ -107,8 +107,8 @@ of the active map and need `yati_rules`.
 | *YATI: Sync Godot project…* | reads `project.godot` | the enums `GodotPhysicsLayers`, `GodotNavigationLayers`, `GodotRenderLayers` (flags, stored as int, one value per layer up to the highest named one, an unnamed layer as `Layer N`, so a value's index is its bit); `GodotNodeType` (the mapping table's class names, stored as string, for a `godot_node_type` property); the class `MapRef` (`map`: file, `object`: int), the Reference's convention for a reference into another map |
 | *YATI: Import scenes as classes…* | scans `godot_scenes_dir` for `.tscn` files whose root node has a script (asks first) | one class per scene (below); the enums its exports use; `Vector2` / `Vector2i` when an export needs them |
 | *YATI: Check map in Godot* | runs the game's check script on the active map (offers to save it first) | Issues: one per error or warning of the import |
-| *YATI: Pick map and object…* | for an `object_in_map` rule with a `map` member: asks for a map (file dialog), then offers the names of its objects of the rule's `targetClass` in a list (several such rules for the class: a list of them first) | both members, in one undo step |
-| *YATI: Follow reference* | opens the map an `object_in_map` rule's `map` member names (or stays in the map without one) and selects and centres the named object; says so when there is none. Without such a value, a `map` rule's map is opened | nothing |
+| *YATI: Pick map and object…* | for an `object_in_map` rule with a `map` member: asks for a map (file dialog), then offers the names of its objects of the rule's `targetClass` in a list. For an `object_in_project` rule: one list of every named object of the rule's classes in the project's maps, each as `<map>: <name> (<class>)`, sorted by map. Several such rules for the class: a list of them first | both members (`object_in_map`) or the one member (`object_in_project`), in one undo step |
+| *YATI: Follow reference* | opens the map an `object_in_map` rule's `map` member names (or stays in the map without one), or for an `object_in_project` rule the project map that holds the named object, and selects and centres the named object; says so when there is none, and when there are several (the first is selected). Without such a value, a `map` rule's map is opened | nothing |
 | *YATI: Open or create file…* | opens a `file` rule's file with `yati_open_command` or the system's program for it. Unset member and a rule `template`: copies the template into the rule's `folder` (else beside the map) as `<map>_<object name>.<suffix>` after asking, and sets the member; a set member whose file is missing: makes that file from the template | the file; the member, in one undo step |
 | *YATI: Show text for selected object* | for each `key` rule: the table's text in every language, plain text, or that the key is not in the table (with keys that look close) | nothing (a message box and the log) |
 | (saving a map or tileset) | validates it, a map also against the rules | Issues: one per finding (below) |
@@ -210,19 +210,31 @@ lines) is a JSON array. Each rule says what one class member refers to:
 |-------|---------|
 | `class` | the objects' class (`"Warp"`), a list of classes, or `"*"` for any object. The class is the object's own, else its tile's, else its template's, as Tiled resolves it; class names are case-sensitive |
 | `world` | instead of `class`: a `.world` file (relative to the project file) whose own properties the rule checks |
-| `member` | the member (property) checked. An object that does not set it has its class's default |
-| `kind` | `map`, `object_in_map`, `file` or `key` (below) |
-| `required` | `true`: an unset or empty value is a finding. Otherwise an empty value is fine |
+| `member` | the member (property) checked. An object that does not set it has its class's default. `unique_name` takes none: it checks the objects' own names |
+| `kind` | `map`, `object_in_map`, `object_in_project`, `unique_name`, `file` or `key` (below) |
+| `required` | `true`: an unset or empty value is a finding (for `unique_name`: an object without a name). Otherwise an empty value is fine |
 | `severity` | `"error"` (the default) or `"warning"` |
 
 | Kind | The value must | Fields of its own |
 |------|----------------|-------------------|
 | `map` | name a `.tmx` or `.tmj` file that exists | |
 | `object_in_map` | be the name of an object in the map the member `map` names (in the same map without `map`), of class `targetClass` when given; two objects with that name and class are a warning | `map`, `targetClass` |
+| `object_in_project` | be the name of exactly one object in any map of the project, of one of the classes `targetClass` (a name or a list) when given. No such object, or more than one (each named with its map and id), is a finding | `targetClass`, `maps` |
+| `unique_name` | (no `member`) an object of the rule's classes has a name that no other object of those classes has, in this map or any other map of the project; each clash is a finding naming the other map and object id. With `required`, every such object must have a name | `maps` |
 | `file` | name a file that exists, whose text matches every `contains` pattern | `contains`: `[{"pattern": <regular expression>, "label": <what it is, for the message>}]`; `template`: the file *Open or create file…* copies; `folder`: where the copies go (else beside the map) |
 | `key` | when it matches `keyPattern` (default `^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$`: UPPER_SNAKE_CASE with an underscore), be a key of the CSV file `table`, i.e. in its first column (Godot's translation CSV: a header row `keys,en,...`); a value of another shape is plain text and fine | `table`, `keyPattern` |
 
-Paths in a rule (`world`, `template`, `folder`, `table`) are relative to the project file. Values
+The project's maps, for `object_in_project` and `unique_name`, are the `.tmx` and `.tmj` files under
+the project's folders (*Project > Add Folder to Project*, `Project.folders`; hidden folders are
+skipped), or, with `maps`, the files a folder holds (`"maps"`) or a glob matches (`"maps/**/*.tmx"`:
+`*` and `?` stay within a folder, `**` spans folders), relative to the project file. The map being
+saved counts as it is in Tiled, as does every map open in Tiled; the others are read from their
+files on each save, and a file whose text has not changed since the last save is not parsed again.
+In a project of 300 maps of 51 objects each, the first save in a session took about 0.33 s in Tiled
+1.12.0 (reading and parsing every map) and each later save about 0.07 s; under Node the check of
+the same project takes about 60 ms. A map that cannot be read is a warning, and the rules skip it.
+
+Paths in a rule (`world`, `template`, `folder`, `table`, `maps`) are relative to the project file. Values
 are read as Tiled stores them: a file member relative to its map (a class's default relative to the
 project file), `res://` against the Godot project; a `string` member holding a path works too. A
 map that a rule looks into is read as it is open in Tiled (with unsaved changes), else from its
@@ -231,40 +243,43 @@ read from a Tiled properties list (`"properties": [{"name", "type", "value"}]`) 
 from the world file's top-level string keys; the world's rules run when a map the world lists (or
 one of its patterns matches) is saved. An unknown field is a mistake (it catches `"requird"`).
 
-A complete example, for a game whose classes are `Warp` (`to_map`: file, `to_spawn`: string),
-`PlayerSpawn`, `Trigger` (`sequence`: file), `Interactable` (`text`, `sequence`) and `Sign`
-(`text`), whose sequences are XML files of `<sequence name="...">` sections, whose text is the
-CSV table `text/strings.csv` beside the Tiled folder, and whose `.world` has `start_map` /
-`start_spawn` (adjust the paths to your layout):
+A complete example, for a game whose `Warp` objects have one member `to` (string) naming another
+object anywhere in the project, a `Warp` or a `PlayerSpawn`, whose names are unique across every
+map; `Trigger` (`sequence`: file), `Interactable` (`text`, `sequence`) and `Sign` (`text`); whose
+sequences are XML files of `<sequence name="...">` sections; whose text is the CSV table
+`text/strings.csv`; and whose `.world` names its `start_spawn` (adjust the paths to your layout):
 
 ```json
 [
-  {"class": "Warp", "member": "to_map", "kind": "map", "required": true},
-  {"class": "Warp", "member": "to_spawn", "kind": "object_in_map", "map": "to_map", "targetClass": "PlayerSpawn", "required": true},
+  {"class": ["Warp", "PlayerSpawn"], "kind": "unique_name", "required": true},
+  {"class": "Warp", "member": "to", "kind": "object_in_project", "targetClass": ["Warp", "PlayerSpawn"]},
+  {"class": "Warp", "member": "sequence", "kind": "file"},
   {"class": "Trigger", "member": "sequence", "kind": "file", "required": true,
-   "contains": [
-     {"pattern": "<sequence\\s+name=.on_enter.", "label": "section named on_enter"},
-     {"pattern": "<sequence\\s+name=.on_leave.", "label": "section named on_leave"}],
-   "template": "templates/trigger.xml", "folder": "../sequences"},
+   "contains": [{"pattern": "<sequence\\s+name=.on_(enter|leave).", "label": "section named on_enter or on_leave"}],
+   "template": "sequences/templates/trigger.xml", "folder": "sequences"},
   {"class": "Interactable", "member": "sequence", "kind": "file",
    "contains": [{"pattern": "<sequence\\s+name=.on_interact.", "label": "section named on_interact"}],
-   "template": "templates/interactable.xml", "folder": "../sequences"},
-  {"class": ["Interactable", "Sign"], "member": "text", "kind": "key", "table": "../text/strings.csv"},
-  {"world": "maps/game.world", "member": "start_map", "kind": "map", "required": true},
-  {"world": "maps/game.world", "member": "start_spawn", "kind": "object_in_map", "map": "start_map", "targetClass": "PlayerSpawn", "required": true}
+   "template": "sequences/templates/interactable.xml", "folder": "sequences"},
+  {"class": ["Interactable", "Sign"], "member": "text", "kind": "key", "table": "text/strings.csv"},
+  {"world": "maps/overworld/overworld.world", "member": "start_spawn", "kind": "object_in_project", "targetClass": ["Warp", "PlayerSpawn"], "required": true}
 ]
 ```
 
 Patterns are JavaScript regular expressions inside JSON strings, so a backslash is written twice;
-`name=.on_enter.` takes either quote. With these rules a save reports, for instance:
-`Object 'cellar_door' (id 12, layer Objects): to_spawn names 'from_twn', but cellar.tmx has no
-object of that name and class PlayerSpawn.`, `... sequence names well.xml, which has no section
-named on_leave.`, `... text is 'SIGN_WELCOM', shaped like a key, but strings.csv has no such key
-(did you mean SIGN_WELCOME?).`. `sample/rules/` is a small Tiled project with these rules (in
-lower case class names), maps with and without mistakes, sequences, templates, a table and a world.
+`name=.on_(enter|leave).` takes either quote. With these rules a save reports, for instance:
+`Object 'cellar_door' (id 12, layer Objects): to names 'from_twn', but no map of the project has an
+object of that name and class Warp or PlayerSpawn.`, `Object 'gate' (id 3, layer Objects): the name
+'gate' is also used by maps/coast/beach.tmx (id 7, class Warp); ...`, `... sequence names
+well.xml, which has no section named on_interact.`, `... text is 'SIGN_WELCOM', shaped like a key,
+but strings.csv has no such key (did you mean SIGN_WELCOME?).`. `sample/rules/` is a small Tiled
+project with rules of every kind (in lower case class names; its warps use `object_in_map` with a
+`to_map` member, its portals in `maps/portals/` `object_in_project` and `unique_name`), maps with and
+without mistakes, sequences, templates, a table and a world.
 
 What the rules cannot see: a warp in another map that names an object you rename here is reported
-when that map is saved, not this one; a world file is read from disk, not from Tiled's worlds.
+when that map is saved, not this one (and a name you give here that another map already uses is
+reported here, but not in the other map until it is saved); a world file is read from disk, not
+from Tiled's worlds.
 
 ## Check map in Godot
 
@@ -353,6 +368,16 @@ The rules (`sample/rules/`, its own Tiled project; copy `yati-godot/` into its `
 13. Select `welcome` in `town.tmx` and run *YATI: Show text for selected object*: the English and
     German text of `SIGN_WELCOME`; on `misspelt` in `broken.tmx`: not a key, with
     `SIGN_WELCOME, SIGN_WELL` suggested.
+14. Open `maps/portals/clash.tmx`, change something and save: six findings (`east_gate` also in
+    `east.tmx`, `nowhere_gate` in no map, the portal without a name, the two spawns named `twin`,
+    and `to_twin` naming both). Save `maps/portals/west.tmx`: none (its portal names `from_town` in
+    `maps/cellar.tmx`). Rename `east_gate` in `clash.tmx` to `clash_gate` without saving, then save
+    `east.tmx`: no finding (the open map counts as it is).
+15. In `east.tmx` select `east_gate` and run *YATI: Pick map and object…*: one list of the project's
+    portals and spawns, `maps/cellar.tmx: from_town (player_spawn)` first; choose `maps/town.tmx:
+    from_cellar (player_spawn)` and *OK*: `to` is `from_cellar`, one *Edit > Undo* restores it.
+    Run *YATI: Follow reference* on it: `town.tmx` opens with `from_cellar` selected and centred. On
+    `to_twin` in `clash.tmx`: `twin` (id 3) is selected and a message names both objects.
 
 The headless run (`test/real_tiled.test.mjs`) confirmed in Tiled 1.12.0: the ES module loads with
 its relative imports; `ClassPropertyType` and its constants exist on the global, and the global
@@ -364,7 +389,9 @@ project file Tiled writes equal to the fake's; `new Dialog(title)` with `addFile
 (`isDirectory`, `fileName` a plain path), `addTextInput` (`text`, `placeholderText`),
 `addCheckBox` (`checked`), `addComboBox` (`currentIndex`), `addButton` (`click()` reaching the connected
 handler), `addLabel` (`text`), tooltips read back, a `Process` run from a handler, properties written from the
-handler reaching the project file. Not confirmed yet, for the editor: the dialog's look; a
+handler reaching the project file; `Project.folders` (absolute paths) and the save hook of the
+rules that look across the project's maps (`sample/rules/maps/portals/`, a map read through
+Tiled's format given its file name). Not confirmed yet, for the editor: the dialog's look; a
 `res://` file property read as an empty `localFile` with the URL in `url`; `Process.exec`
 finding `godot` on `PATH`; an Issue's activation; `tiled.extendMenu` (headless there is no Map
 menu, and the extension logs that instead of failing).
@@ -426,5 +453,6 @@ fallback message runs), so the reload is the next run. Without a Tiled the test 
 | `yati-godot/lib/rules.mjs` | the project's rules: parsed, checked on a map and a world; maps read from their files; the CSV table; the actions' helpers |
 | `yati-godot/lib/check_output.mjs` | the check's command line and output |
 | `test/rules.test.mjs`, `test/rules_glue.test.mjs` | the rules under Node, and in the glue against the fake (on `sample/rules/`) |
+| `test/rules_project.test.mjs`, `test/rules_project_glue.test.mjs` | the rules that look across the project (`object_in_project`, `unique_name`, the project's maps, a 300-map project's cost) under Node, and in the glue against the fake (on `sample/rules/maps/portals/`) |
 | `test/real_tiled.test.mjs` | the sample inside a real Tiled, headless (skipped without one), the rules sample's save hook among it |
 | `test/helpers/real_tiled_harness.mjs` | runs inside Tiled under `--evaluate`: the actions and the save hook, the dialogs stubbed |

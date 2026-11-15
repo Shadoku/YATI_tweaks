@@ -289,6 +289,8 @@ class FakeProject {
 			this._load(fs.readFileSync(this._fileName, "utf8"));
 	}
 	get fileName() { return this._fileName; }
+	// Absolute paths, as Tiled gives them (the file stores them relative to itself).
+	get folders() { return (this._other.folders || []).map((f) => path.resolve(this._dir(), f)); }
 	get propertyTypes() { return this._types.map((t) => this._fake._wrapType(t)); }
 	findTypeByName(name) {
 		const t = this._types.find((x) => x._name === name);

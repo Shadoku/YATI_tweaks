@@ -65,6 +65,7 @@ export const API_SURFACE = {
 
 	// Project (classes/Project.html, since 1.10.1; the type API since 1.12)
 	"Project.fileName": "classes/Project.html#fileName",
+	"Project.folders": "classes/Project.html#folders (since 1.10.1; absolute paths, as Tiled 1.12.0 gives them)",
 	"Project.propertyTypes": "classes/Project.html#propertyTypes (since 1.12)",
 	"Project.findTypeByName": "classes/Project.html#findTypeByName (since 1.12)",
 	"Project.addClassType": "classes/Project.html#addClassType (since 1.12)",

@@ -14,6 +14,9 @@
 // that file, read through Tiled's own format: the real API values of its properties), and
 // options:<text> (the Import options dialog built from that text with the real combo boxes, two
 // of them changed, OK pressed, the text it hands back logged).
+// save-as:<map file> is save: with the asset's fileName that file (a map read through a format has
+// none, and headless Tiled cannot open one in the editor): the rules that look across the project
+// then take the map as the saved one, not as a stranger holding the same objects.
 // rules-set:<map file>:<object id>:<map member>=<map file>:<object member>=<name> reads the map
 // through Tiled's format, sets the two members as "Pick map and object" does (Asset.macro,
 // setProperty with tiled.filePath), logs what the object then holds, and runs the save hook on it.
@@ -71,6 +74,18 @@ function main() {
 			const file = step.substring(5);
 			const asset = /\.tsx$/i.test(file) ? tiled.tilesetFormat("tsx").read(file) : tiled.mapFormat("tmx").read(file);
 			tiled.log("HARNESS save hook on " + file + (asset ? "" : " (not read)"));
+			for (let k = 0; k < saveHooks.length; k++)
+				saveHooks[k](asset);
+		} else if (step.indexOf("save-as:") === 0) {
+			const file = step.substring(8);
+			const read = tiled.mapFormat("tmx").read(file);
+			const asset = new Proxy(read, { get: function (target, key) {
+				if (key === "fileName")
+					return file;
+				const v = target[key];
+				return typeof v === "function" ? v.bind(target) : v;
+			} });
+			tiled.log("HARNESS save hook on " + file + " as that file");
 			for (let k = 0; k < saveHooks.length; k++)
 				saveHooks[k](asset);
 		} else if (step.indexOf("rules-set:") === 0) {

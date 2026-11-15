@@ -11,7 +11,7 @@
             "name": "yati_rules",
             "propertytype": "",
             "type": "string",
-            "value": "[\n  {\"class\": \"warp\", \"member\": \"to_map\", \"kind\": \"map\", \"required\": true},\n  {\"class\": \"warp\", \"member\": \"to_spawn\", \"kind\": \"object_in_map\", \"map\": \"to_map\", \"targetClass\": \"player_spawn\", \"required\": true},\n  {\"class\": \"trigger\", \"member\": \"sequence\", \"kind\": \"file\", \"required\": true,\n   \"contains\": [\n     {\"pattern\": \"<sequence\\\\s+name=.on_enter.\", \"label\": \"section named on_enter\"},\n     {\"pattern\": \"<sequence\\\\s+name=.on_leave.\", \"label\": \"section named on_leave\"}],\n   \"template\": \"templates/trigger.xml\", \"folder\": \"sequences\"},\n  {\"class\": \"interactable\", \"member\": \"sequence\", \"kind\": \"file\", \"required\": true,\n   \"contains\": [{\"pattern\": \"<sequence\\\\s+name=.on_interact.\", \"label\": \"section named on_interact\"}],\n   \"template\": \"templates/interactable.xml\", \"folder\": \"sequences\"},\n  {\"class\": [\"sign\", \"interactable\"], \"member\": \"text\", \"kind\": \"key\", \"table\": \"text/strings.csv\"},\n  {\"world\": \"maps/game.world\", \"member\": \"start_map\", \"kind\": \"map\", \"required\": true},\n  {\"world\": \"maps/game.world\", \"member\": \"start_spawn\", \"kind\": \"object_in_map\", \"map\": \"start_map\", \"targetClass\": \"player_spawn\", \"required\": true}\n]"
+            "value": "[\n  {\"class\": \"warp\", \"member\": \"to_map\", \"kind\": \"map\", \"required\": true},\n  {\"class\": \"warp\", \"member\": \"to_spawn\", \"kind\": \"object_in_map\", \"map\": \"to_map\", \"targetClass\": \"player_spawn\", \"required\": true},\n  {\"class\": \"trigger\", \"member\": \"sequence\", \"kind\": \"file\", \"required\": true,\n   \"contains\": [\n     {\"pattern\": \"<sequence\\\\s+name=.on_enter.\", \"label\": \"section named on_enter\"},\n     {\"pattern\": \"<sequence\\\\s+name=.on_leave.\", \"label\": \"section named on_leave\"}],\n   \"template\": \"templates/trigger.xml\", \"folder\": \"sequences\"},\n  {\"class\": \"interactable\", \"member\": \"sequence\", \"kind\": \"file\", \"required\": true,\n   \"contains\": [{\"pattern\": \"<sequence\\\\s+name=.on_interact.\", \"label\": \"section named on_interact\"}],\n   \"template\": \"templates/interactable.xml\", \"folder\": \"sequences\"},\n  {\"class\": [\"sign\", \"interactable\"], \"member\": \"text\", \"kind\": \"key\", \"table\": \"text/strings.csv\"},\n  {\"world\": \"maps/game.world\", \"member\": \"start_map\", \"kind\": \"map\", \"required\": true},\n  {\"world\": \"maps/game.world\", \"member\": \"start_spawn\", \"kind\": \"object_in_map\", \"map\": \"start_map\", \"targetClass\": \"player_spawn\", \"required\": true},\n  {\"class\": [\"portal\", \"player_spawn\"], \"kind\": \"unique_name\", \"required\": true},\n  {\"class\": \"portal\", \"member\": \"to\", \"kind\": \"object_in_project\", \"targetClass\": [\"portal\", \"player_spawn\"]}\n]"
         }
     ],
     "propertyTypes": [
@@ -107,6 +107,25 @@
                 }
             ],
             "name": "sign",
+            "type": "class",
+            "useAs": [
+                "property",
+                "object",
+                "tile"
+            ]
+        },
+        {
+            "color": "#ffaf7ac5",
+            "drawFill": true,
+            "id": 6,
+            "members": [
+                {
+                    "name": "to",
+                    "type": "string",
+                    "value": ""
+                }
+            ],
+            "name": "portal",
             "type": "class",
             "useAs": [
                 "property",

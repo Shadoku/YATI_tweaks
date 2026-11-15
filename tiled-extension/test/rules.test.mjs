@@ -27,6 +27,8 @@ function context(projectFile) {
 	const types = projectTypes(projectFile);
 	const base = contextFromTypes(types, projectFile, "", (p) => fs.existsSync(p));
 	return Object.assign(base, {
+		projectFolders: [path.dirname(projectFile)],
+		listDir: io.listDir,
 		readText: io.readText,
 		mapObjects: (p) => {
 			const text = io.readText(p);
@@ -48,7 +50,7 @@ const brief = (f) => f.severity + " " + f.code + " #" + f.objectId;
 test("the sample's rules parse into normalized rules", () => {
 	const parsed = parseRules(sampleRules());
 	assert.deepEqual(parsed.problems, []);
-	assert.equal(parsed.rules.length, 7);
+	assert.equal(parsed.rules.length, 9);		// the last two the portals' (rules_project_glue.test.mjs)
 	const spawn = parsed.rules[1];
 	assert.deepEqual([spawn.index, spawn.kind, spawn.member, spawn.classes, spawn.map, spawn.targetClass, spawn.required, spawn.severity],
 		[2, "object_in_map", "to_spawn", ["warp"], "to_map", "player_spawn", true, "error"]);
@@ -79,7 +81,7 @@ test("a rule with a mistake is left out and named", () => {
 	assert.match(problems("[{")[0], /^yati_rules is not valid JSON/);
 	assert.match(problems("{}")[0], /must be a JSON array/);
 	const cases = [
-		["{\"class\": \"a\", \"member\": \"m\"}", /rule 1: "kind" is missing; it is one of map, object_in_map, file, key\./],
+		["{\"class\": \"a\", \"member\": \"m\"}", /rule 1: "kind" is missing; it is one of map, object_in_map, object_in_project, unique_name, file, key\./],
 		["{\"class\": \"a\", \"member\": \"m\", \"kind\": \"maps\"}", /"kind" is "maps"/],
 		["{\"class\": \"a\", \"member\": \"m\", \"kind\": \"map\", \"requird\": true}", /unknown field "requird" for kind map/],
 		["{\"class\": \"a\", \"member\": \"m\", \"kind\": \"map\", \"template\": \"x\"}", /unknown field "template" for kind map/],
@@ -308,6 +310,12 @@ test("the README's example rules parse without a problem", () => {
 	const block = /## Rules[\s\S]*?```json\n([\s\S]*?)```/.exec(readme)[1];
 	const parsed = parseRules(block);
 	assert.deepEqual(parsed.problems, []);
-	assert.equal(parsed.rules.length, 7);
-	assert.ok(parsed.rules[2].contains[1].regex.test("<sequence name=\"on_leave\">"));
+	assert.deepEqual(parsed.rules.map((r) => r.kind), ["unique_name", "object_in_project", "file", "file", "file", "key", "object_in_project"]);
+	assert.deepEqual(parsed.rules[0].classes, ["Warp", "PlayerSpawn"]);
+	assert.equal(parsed.rules[0].required, true);
+	assert.deepEqual([parsed.rules[1].member, parsed.rules[1].targetClasses], ["to", ["Warp", "PlayerSpawn"]]);
+	assert.ok(parsed.rules[3].contains[0].regex.test("<sequence name=\"on_enter\">"));
+	assert.ok(parsed.rules[3].contains[0].regex.test("<sequence name='on_leave'>"));
+	assert.ok(!parsed.rules[3].contains[0].regex.test("<sequence name=\"main\">"));
+	assert.deepEqual([parsed.rules[6].world, parsed.rules[6].member, parsed.rules[6].targetClasses], ["maps/overworld/overworld.world", "start_spawn", ["Warp", "PlayerSpawn"]]);
 });

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The rules sample's portal mistakes (six findings on save, as test/rules_project_glue.test.mjs lists them): a name east.tmx uses too, a target no map has, a portal without a name, two spawns of one name and a portal naming them. -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="16" height="16" tilewidth="16" tileheight="16" infinite="0" nextlayerid="2" nextobjectid="6">
+ <objectgroup id="1" name="Objects">
+  <object id="1" name="east_gate" class="portal" x="0" y="0" width="16" height="16">
+   <properties>
+    <property name="to" value="nowhere_gate"/>
+   </properties>
+  </object>
+  <object id="2" class="portal" x="16" y="0" width="16" height="16">
+   <properties>
+    <property name="to" value="west_gate"/>
+   </properties>
+  </object>
+  <object id="3" name="twin" class="player_spawn" x="32" y="0" width="16" height="16"/>
+  <object id="4" name="twin" class="player_spawn" x="48" y="0" width="16" height="16"/>
+  <object id="5" name="to_twin" class="portal" x="64" y="0" width="16" height="16">
+   <properties>
+    <property name="to" value="twin"/>
+   </properties>
+  </object>
+ </objectgroup>
+</map>

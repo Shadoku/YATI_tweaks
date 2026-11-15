@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Tiled extension, project rules: two kinds that look across every map of the project. `object_in_project`: the
+  value names exactly one object, of one of the classes `targetClass` (a name or a list), in any map of the project
+  (`.tmx` and `.tmj` under the project's folders, `Project.folders`, or under a rule's `maps` folder or glob); none
+  or several (each named with its map and id) is a finding. `unique_name` (no `member`): an object of the rule's
+  classes whose name another object of those classes has, in this map or another, is a finding naming that map and
+  object id; `required`: every such object needs a name. The saved map and every open map count as they are in
+  Tiled; other maps are read from their files on each save and parsed again only when their text changed (300 maps
+  of 51 objects: about 0.33 s for the first save in Tiled 1.12.0, 0.07 s after). *YATI: Pick map and object…* offers
+  an `object_in_project` member the project's objects of its classes as `<map>: <name> (<class>)` and sets the one
+  member; *YATI: Follow reference* opens the map that holds the named object and selects it. `sample/rules/maps/
+  portals/`, `test/rules_project*.test.mjs`, a real-Tiled test of the save hook. The README's example now has a
+  warp contract of one member `to`.
 - Tiled extension, project rules: the project property `yati_rules` (a JSON array) declares what class members
   refer to, generically: a map that exists (`map`), a named object of a class in the map another member names
   (`object_in_map`), a file that exists and matches given patterns (`file`, e.g. a sequence file's sections), a key

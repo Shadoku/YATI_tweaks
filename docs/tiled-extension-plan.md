@@ -353,3 +353,20 @@ through the `.tiled-project` file, the maps and (for the check) the Godot binary
   format, the file read back as its `localFile`. **For the editor** (README checklist 9 to 13): the four actions'
   dialogs, the undo step, `tiled.open` of a target map from an action, the opener on each platform (Windows'
   `cmd /c start` untested).
+- 2026-11-15, **rules across the project**: the game's warp names one object anywhere in the project (`to`), and
+  the names of warps and spawns must be unique across every map, so two kinds look across the project's maps.
+  `object_in_project` (`targetClass` a name or a list, optional `maps`): the value names exactly one object of those
+  classes in any map; `unique_name` (no `member`, optional `maps` and `required`): an object's name is used by no
+  other object of the rule's classes here or in another map. Decisions: the maps are the `.tmx`/`.tmj` files under
+  `Project.folders` (documented since 1.10.1; Tiled 1.12.0 gives absolute paths; the glue falls back to the
+  project file's `folders`), walked with `File.directoryEntries` (hidden folders skipped), or a rule's `maps`
+  folder or glob relative to the project file; the saved map and open maps count as they are in Tiled; the other
+  maps are read on every save (the API gives no modification time) and parsed only when their text changed since
+  the last save, so a save costs reading the files: 300 maps of 51 objects took about 0.33 s for the first save and
+  0.07 s for each later one in Tiled 1.12.0 headless, 60 ms under Node; ambiguity in `object_in_project` is an error
+  (a warp cannot pick one), unlike `object_in_map`'s warning, which stays. Pick offers `<map>: <name> (<class>)`
+  sorted by map and sets the one member; Follow opens the map holding the object and selects it by id. New API
+  member: `Project.folders`. **Confirmed in the real Tiled 1.12.0, headless**: `Project.folders` and the save hook's
+  findings on `sample/rules/maps/portals/clash.tmx` (`real_tiled.test.mjs`, the map read through the tmx format and
+  given its file name through a `Proxy`). **For the editor** (README checklist 14 and 15): Pick's list, the undo step
+  and Follow.

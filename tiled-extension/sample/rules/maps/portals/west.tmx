@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The rules sample's portals: west_gate leads to the cellar's spawn from_town, in another folder of the project (maps/cellar.tmx). No finding on save. -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="16" height="16" tilewidth="16" tileheight="16" infinite="0" nextlayerid="2" nextobjectid="2">
+ <objectgroup id="1" name="Objects">
+  <object id="1" name="west_gate" class="portal" x="32" y="32" width="16" height="16">
+   <properties>
+    <property name="to" value="from_town"/>
+   </properties>
+  </object>
+ </objectgroup>
+</map>

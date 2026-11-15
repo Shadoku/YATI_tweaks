@@ -172,3 +172,26 @@ test("real Tiled: the rules sample's broken map files its rule findings; setting
 	// After the set, object 1 has no finding left.
 	assert.equal(issues.slice(8).filter((l) => l.indexOf("'nowhere'") >= 0).length, 0, issues.slice(8).join("\n"));
 });
+
+test("real Tiled: the portals' rules look across the project's folders (Project.folders) on save", { skip: SKIP }, () => {
+	const root = tempDir("yati-real-tiled-portals-");
+	dirs.push(root);
+	copyDir(path.join(SAMPLE_DIR, "rules"), root);
+	const portals = path.join(root, "maps", "portals");
+	const lines = runTiled(path.join(root, "rules.tiled-project"), ["save-as:" + path.join(portals, "clash.tmx"), "save-as:" + path.join(portals, "west.tmx")]);
+	const issues = lines.filter((l) => l.indexOf("ISSUE ") === 0);
+	// clash.tmx's six findings of rules_project_glue.test.mjs; west.tmx (whose portal names a spawn
+	// in maps/cellar.tmx, another folder) none.
+	const expected = [
+		/^ISSUE error: YATI: clash\.tmx: Object 'east_gate' \(id 1, layer Objects\): the name 'east_gate' is also used by maps\/portals\/east\.tmx \(id 1, class portal\);/,
+		/^ISSUE error: YATI: clash\.tmx: Object 'east_gate' \(id 1, layer Objects\): to names 'nowhere_gate', but no map of the project has/,
+		/^ISSUE error: YATI: clash\.tmx: Object \(unnamed\) \(id 2, layer Objects\): has no name;/,
+		/^ISSUE error: YATI: clash\.tmx: Object 'twin' \(id 3, layer Objects\): the name 'twin' is also used by this map \(id 4, class player_spawn\);/,
+		/^ISSUE error: YATI: clash\.tmx: Object 'twin' \(id 4, layer Objects\): the name 'twin' is also used by this map \(id 3, class player_spawn\);/,
+		/^ISSUE error: YATI: clash\.tmx: Object 'to_twin' \(id 5, layer Objects\): to names 'twin', which 2 objects of the project have: this map \(id 3\), this map \(id 4\);/,
+	];
+	assert.equal(issues.length, expected.length, lines.join("\n"));
+	for (let i = 0; i < expected.length; i++)
+		assert.match(issues[i], expected[i]);
+	has(lines, "HARNESS save hook on " + path.join(portals, "west.tmx") + " as that file");
+});

@@ -9,8 +9,10 @@
 //                                  (flags enums of project.godot's layer names), GodotNodeType, MapRef
 //   YATI: Import scenes as classes...  one class type per scene with a script (godot_scene + exports)
 //   YATI: Check map in Godot       runs the game's addons/yati_native/check_map.gd on the map
-//   YATI: Pick map and object...   sets an object's map member and object member (yati_rules) at once
-//   YATI: Follow reference         opens the map an object's members name and selects the named object
+//   YATI: Pick map and object...   sets an object's map member and object member (yati_rules) at once,
+//                                  or an object_in_project member from the project's objects
+//   YATI: Follow reference         opens the map an object's members name (or the project map that
+//                                  holds the named object) and selects the named object
 //   YATI: Open or create file...   opens a file member's file, or makes it from the rule's template
 //   YATI: Show text for selected object   the translation table's text for its key members
 //   (on save)                      validation, with the project's rules (yati_rules); the project
@@ -35,6 +37,7 @@ import { validateMap, validateTileset, templateReferences, contextFromTypes, mas
 import {
 	parseRules, rulesForClass, worldRules, ruleLabel, findMember, memberText, memberPath, isMapFile, readTable, keyPreview,
 	parseMapObjects, parseWorld, worldContains, checkRules, checkWorld, objectNames, newFilePath, openCommands, MAP_FILTER,
+	projectObjectChoices, findProjectObject,
 } from "./lib/rules.mjs";
 import { CHECK_SCRIPT_LOCAL, checkArguments, parseCheckOutput, summarize } from "./lib/check_output.mjs";
 
@@ -965,13 +968,44 @@ function ruleFindings(api, s, model, vctx) {
 function ruleContext(api, s, classes, savingModel) {
 	return {
 		projectFile: s.projectFile,
+		projectFolders: projectFolders(api, s),
 		godotProject: s.godotProject,
 		classes: classes,
 		fileExists: function (p) { return api.File.exists(p); },
 		readText: function (p) { return readText(api, p); },
+		listDir: function (dir) { return api.File.exists(dir) ? listDir(api, dir) : null; },
 		mapObjects: function (p) { return mapObjectsOf(api, p, savingModel); },
 	};
 }
+
+// The project's folders as absolute paths: Project.folders (Tiled gives them absolute), else the
+// "folders" of the project file (relative to it), else the project file's directory.
+function projectFolders(api, s) {
+	const project = currentProject(api);
+	const folders = project !== null ? project.folders : undefined;
+	if (Array.isArray(folders) || (folders && typeof folders.length === "number")) {
+		const out = [];
+		for (let i = 0; i < folders.length; i++)
+			out.push(joinPath(s.projectDir, String(folders[i])));
+		return out;
+	}
+	const text = s.projectFile !== "" ? readText(api, s.projectFile) : null;
+	if (text !== null) {
+		try {
+			const json = JSON.parse(text);
+			if (Array.isArray(json.folders))
+				return json.folders.map(function (f) { return joinPath(s.projectDir, String(f)); });
+		} catch (e) {
+			// fall through: the project's directory
+		}
+	}
+	return s.projectDir !== "" ? [s.projectDir] : [];
+}
+
+// Maps read from their files, kept from one save to the next while their text is the same: the
+// rules that look across the project read every map's text on each save but parse only the
+// changed ones.
+const PARSED_MAPS = {};
 
 function mapObjectsOf(api, file, savingModel) {
 	const target = cleanPath(file);
@@ -986,7 +1020,12 @@ function mapObjectsOf(api, file, savingModel) {
 	const text = readText(api, file);
 	if (text === null)
 		return { objects: [], error: "it does not exist" };
-	return parseMapObjects(text, file, function (p) { return readText(api, p); });
+	const kept = PARSED_MAPS[target];
+	if (kept !== undefined && kept.text === text)
+		return kept.result;
+	const result = parseMapObjects(text, file, function (p) { return readText(api, p); });
+	PARSED_MAPS[target] = { text: text, result: result };
+	return result;
 }
 
 // The open map with this file name, or null.
@@ -1105,15 +1144,21 @@ function pickMapAndObject(api) {
 	const sel = selectedForRules(api, title);
 	if (sel === null)
 		return;
-	const pairs = rulesForClass(sel.rules, sel.cls, ["object_in_map"]).filter(function (r) { return r.map !== ""; });
+	const pairs = rulesForClass(sel.rules, sel.cls, ["object_in_map", "object_in_project"]).filter(function (r) {
+		return r.kind === "object_in_project" || r.map !== "";
+	});
 	if (pairs.length === 0) {
 		t.alert(title + ": no rule gives " + (sel.cls !== "" ? "class '" + sel.cls + "'" : "an object without a class") +
-			" a map member and an object member (kind object_in_map with \"map\" in " + SETTING_NAMES.rules + ").", TITLE);
+			" a map member and an object member (kind object_in_map with \"map\" in " + SETTING_NAMES.rules + "), or an object_in_project member.", TITLE);
 		return;
 	}
 	const rule = chooseRule(api, title, sel.label + ": which reference?", pairs);
 	if (rule === null)
 		return;
+	if (rule.kind === "object_in_project") {
+		pickProjectObject(api, sel, rule);
+		return;
+	}
 	const current = selectedPath(sel, rule.map);
 	const startDir = current !== "" && api.File.exists(dirName(current)) ? dirName(current) : dirName(sel.map.fileName);
 	const file = t.promptOpenFile(startDir, MAP_FILTER, title + " " + rule.map);
@@ -1146,6 +1191,39 @@ function pickMapAndObject(api) {
 	t.log("YATI: " + sel.label + ": " + rule.map + " = " + file + ", " + rule.member + " = " + names[chosen] + ".");
 }
 
+// Pick for an object_in_project rule: every named object of the rule's classes in the project's
+// maps (the active map as it is now), "<map>: <name> (<class>)" sorted by map; the member set.
+function pickProjectObject(api, sel, rule) {
+	const t = api.tiled;
+	const title = ACTION_TEXTS.pick;
+	const here = objectList(sel.map.layers);
+	const choices = projectObjectChoices(rule, sel.ctx, sel.map.fileName, here);
+	if (choices.length === 0) {
+		t.alert(title + ": no map of the project has a named object" + (rule.targetClasses.length > 0 ? " of class " + rule.targetClasses.join(" or ") : "") +
+			". Give the object a name first.", TITLE);
+		return;
+	}
+	const currentName = memberText(findMember(sel.props, rule.member));
+	let index = 0;
+	for (let i = 0; i < choices.length; i++) {
+		if (choices[i].name === currentName) {
+			index = i;
+			break;
+		}
+	}
+	let chosen = -1;
+	const d = choiceDialog(api, title, sel.label + ": " + rule.member + ", an object" +
+		(rule.targetClasses.length > 0 ? " of class " + rule.targetClasses.join(" or ") : "") + " in any map of the project", "Object",
+		choices.map(function (c) { return c.label; }), index, function (i) { chosen = i; });
+	d.dialog.exec();
+	if (chosen < 0)
+		return;
+	const name = choices[chosen].name;
+	const object = sel.object;
+	sel.map.macro("YATI: Set " + rule.member, function () { object.setProperty(rule.member, name); });
+	t.log("YATI: " + sel.label + ": " + rule.member + " = " + name + " (" + choices[chosen].label + ").");
+}
+
 // An object's map member (a file property) and object member (a string) set as one undo step.
 export function setMapAndObject(api, map, object, mapMember, file, objectMember, name) {
 	map.macro("YATI: Set " + mapMember + " and " + objectMember, function () {
@@ -1163,10 +1241,10 @@ function followReference(api) {
 	if (sel === null)
 		return;
 	const withValue = function (r) { return memberText(findMember(sel.props, r.member)) !== ""; };
-	const objectRules = rulesForClass(sel.rules, sel.cls, ["object_in_map"]);
+	const objectRules = rulesForClass(sel.rules, sel.cls, ["object_in_map", "object_in_project"]);
 	const mapRules = rulesForClass(sel.rules, sel.cls, ["map"]);
 	if (objectRules.length + mapRules.length === 0) {
-		t.alert(title + ": no rule of kind object_in_map or map applies to " + (sel.cls !== "" ? "class '" + sel.cls + "'" : "an object without a class") + ".", TITLE);
+		t.alert(title + ": no rule of kind object_in_map, object_in_project or map applies to " + (sel.cls !== "" ? "class '" + sel.cls + "'" : "an object without a class") + ".", TITLE);
 		return;
 	}
 	let candidates = objectRules.filter(withValue);
@@ -1179,6 +1257,10 @@ function followReference(api) {
 	const rule = chooseRule(api, title, sel.label + ": follow which reference?", candidates);
 	if (rule === null)
 		return;
+	if (rule.kind === "object_in_project") {
+		followProjectObject(api, sel, rule);
+		return;
+	}
 	let file = sel.map.fileName;
 	const mapMember = rule.kind === "map" ? rule.member : rule.map;
 	if (mapMember !== "") {
@@ -1220,6 +1302,44 @@ function followReference(api) {
 	}
 	if (objects.length > 1)
 		t.alert(title + ": " + baseName(file) + " has " + objects.length + " objects named '" + name + "'; the first is selected.", TITLE);
+}
+
+// Follow for an object_in_project rule: the project map that holds the named object opened (or
+// brought to the front), the object selected and centred.
+function followProjectObject(api, sel, rule) {
+	const t = api.tiled;
+	const title = ACTION_TEXTS.follow;
+	const name = memberText(findMember(sel.props, rule.member));
+	const found = findProjectObject(rule, name, sel.ctx, sel.map.fileName, objectList(sel.map.layers));
+	if (found.length === 0) {
+		t.alert(title + ": no map of the project has an object named '" + name + "'" +
+			(rule.targetClasses.length > 0 ? " of class " + rule.targetClasses.join(" or ") : "") + ".", TITLE);
+		return;
+	}
+	const first = found[0];
+	let target = cleanPath(first.file) === cleanPath(sel.map.fileName) ? sel.map : openMap(api, first.file);
+	if (target === null)
+		target = t.open(first.file);
+	if (target === null || target === undefined || !target.isTileMap) {
+		t.alert(title + ": " + first.file + " could not be opened as a map.", TITLE);
+		return;
+	}
+	t.activeAsset = target;
+	const objects = objectList(target.layers).filter(function (o) { return o.id === first.id; });
+	if (objects.length === 0) {
+		t.alert(title + ": " + baseName(first.file) + " has no object with id " + first.id + " any more.", TITLE);
+		return;
+	}
+	const o = objects[0].object;
+	target.selectedObjects = [o];
+	const view = t.mapEditor.currentMapView;
+	if (view) {
+		const p = target.pixelToScreen(o.x, o.y);
+		view.centerOn(p.x, p.y);
+	}
+	if (found.length > 1)
+		t.alert(title + ": " + found.length + " objects of the project are named '" + name + "' (" +
+			found.map(function (c) { return c.label.substring(0, c.label.indexOf(": ")) + " id " + c.id; }).join(", ") + "); the first is selected.", TITLE);
 }
 
 // YATI: Open or create file... A file rule's file opened with the system's program for it; when

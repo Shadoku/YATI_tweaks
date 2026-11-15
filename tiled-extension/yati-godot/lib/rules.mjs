@@ -10,6 +10,12 @@
 //   map            the value is a map file (.tmx or .tmj) that exists
 //   object_in_map  the value is the name of an object in the map the member `map` names (in the
 //                  same map without `map`), of class `targetClass` when given
+//   object_in_project  the value is the name of an object in any map of the project (the maps under
+//                  the project's folders, or under the rule's `maps` folder or glob), of one of the
+//                  classes `targetClass` (a name or a list) when given; exactly one such object
+//   unique_name    (no `member`) an object of the rule's classes has a name no other object of those
+//                  classes has, in this map or any other map of the project (`maps` as above);
+//                  `required`: every such object has a name
 //   file           the value is a file that exists; each of `contains` ([{pattern, label}], a regular
 //                  expression and how to call it) must match its text. `template` and `folder` are
 //                  what "Open or create file" copies and where it puts the copy
@@ -23,10 +29,11 @@
 //
 // Written for Qt's JavaScript engine (ECMAScript 2016) as well as Node.
 
-import { joinPath, dirName, baseName, stem, cleanPath } from "./settings.mjs";
+import { joinPath, dirName, baseName, stem, cleanPath, relativePath } from "./settings.mjs";
 import { resolveFileValue, withClassMembers, describeObject } from "./validate.mjs";
+import { walkFiles } from "./scene_exports.mjs";
 
-export const RULE_KINDS = ["map", "object_in_map", "file", "key"];
+export const RULE_KINDS = ["map", "object_in_map", "object_in_project", "unique_name", "file", "key"];
 
 // UPPER_SNAKE_CASE with at least one underscore (SIGN_WELCOME): "OK" or "HELP" stay plain text.
 export const DEFAULT_KEY_PATTERN = "^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$";
@@ -37,6 +44,8 @@ const COMMON_FIELDS = ["kind", "member", "class", "world", "required", "severity
 const KIND_FIELDS = {
 	map: [],
 	object_in_map: ["map", "targetClass"],
+	object_in_project: ["targetClass", "maps"],
+	unique_name: ["maps"],
 	file: ["contains", "template", "folder"],
 	key: ["table", "keyPattern"],
 };
@@ -44,10 +53,11 @@ const KIND_FIELDS = {
 // ---------------------------------------------------------------------------------------------
 // The rules
 
-// yati_rules's text as {rules, problems}: each rule normalized ({index (1-based), kind, member,
-// classes ([] for a world rule; ["*"] for any class), world, required, severity, map, targetClass,
-// contains: [{regex, label}], template, folder, table, keyPattern: RegExp}); a rule with a
-// problem is left out and the problem names it. Unset or empty: no rules, no problems.
+// yati_rules's text as {rules, problems}: each rule normalized ({index (1-based), kind, member ("" for
+// unique_name), classes ([] for a world rule; ["*"] for any class), world, required, severity, map,
+// targetClass (object_in_map's one name), targetClasses ([] for any class), maps, contains:
+// [{regex, label}], template, folder, table, keyPattern: RegExp}); a rule with a problem is left out
+// and the problem names it. Unset or empty: no rules, no problems.
 export function parseRules(raw) {
 	const out = { rules: [], problems: [] };
 	if (raw === undefined || raw === null || String(raw).trim() === "")
@@ -92,11 +102,17 @@ function parseRule(v, index) {
 		if (allowed.indexOf(keys[i]) < 0)
 			return fail("unknown field \"" + keys[i] + "\" for kind " + kind + " (it takes " + allowed.join(", ") + ").");
 	}
-	if (typeof v.member !== "string" || v.member === "")
+	if (kind === "unique_name") {
+		if (v.member !== undefined)
+			return fail("unique_name checks the objects' own names; it takes no \"member\".");
+		if (v.world !== undefined)
+			return fail("unique_name applies to objects: give \"class\" (a class name or a list), not \"world\".");
+	} else if (typeof v.member !== "string" || v.member === "") {
 		return fail("\"member\" (the member's name) is missing.");
+	}
 	const rule = {
-		index: index, kind: kind, member: v.member, classes: [], world: "", required: v.required === true,
-		severity: "error", map: "", targetClass: "", contains: [], template: "", folder: "", table: "", keyPattern: null,
+		index: index, kind: kind, member: kind === "unique_name" ? "" : v.member, classes: [], world: "", required: v.required === true,
+		severity: "error", map: "", targetClass: "", targetClasses: [], maps: "", contains: [], template: "", folder: "", table: "", keyPattern: null,
 	};
 	if (v.required !== undefined && typeof v.required !== "boolean")
 		return fail("\"required\" is true or false.");
@@ -127,12 +143,20 @@ function parseRule(v, index) {
 	const fields = KIND_FIELDS[kind];
 	for (let i = 0; i < fields.length; i++) {
 		const name = fields[i];
-		if (name === "contains" || name === "keyPattern")
+		if (name === "contains" || name === "keyPattern" || (name === "targetClass" && kind === "object_in_project"))
 			continue;
 		const s = str(name);
 		if (s === null)
 			return fail("\"" + name + "\" is a string.");
 		rule[name] = s;
+	}
+	if (kind === "object_in_map" && rule.targetClass !== "")
+		rule.targetClasses = [rule.targetClass];
+	if (kind === "object_in_project" && v.targetClass !== undefined) {
+		const targets = typeof v.targetClass === "string" ? [v.targetClass] : v.targetClass;
+		if (!Array.isArray(targets) || targets.length === 0 || targets.some(function (c) { return typeof c !== "string" || c === ""; }))
+			return fail("\"targetClass\" is a class name or a list of class names.");
+		rule.targetClasses = targets.slice();
 	}
 	if (kind === "object_in_map" && rule.world !== "" && rule.map === "")
 		return fail("a world rule of kind object_in_map needs \"map\" (the world property that names the map).");
@@ -207,6 +231,10 @@ export function worldRules(rules, projectDir) {
 
 // A rule in a list to choose from: "to_spawn (object in the map to_map names)".
 export function ruleLabel(r) {
+	if (r.kind === "object_in_project")
+		return r.member + " (an object" + (r.targetClasses.length > 0 ? " of class " + r.targetClasses.join(" or ") : "") + " in any map of the project)";
+	if (r.kind === "unique_name")
+		return "names (unique among " + classList(r.classes, " and ") + " objects in the project)";
 	if (r.kind === "object_in_map")
 		return r.member + " (an object" + (r.targetClass !== "" ? " of class " + r.targetClass : "") + " in " + (r.map !== "" ? "the map " + r.map + " names" : "this map") + ")";
 	if (r.kind === "map")
@@ -214,6 +242,10 @@ export function ruleLabel(r) {
 	if (r.kind === "file")
 		return r.member + " (a file)";
 	return r.member + " (a text key)";
+}
+
+function classList(classes, joiner) {
+	return classes.indexOf("*") >= 0 ? "all" : classes.join(joiner);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -639,6 +671,7 @@ export function checkRules(map, rules, ctx) {
 	const findings = [];
 	const env = environment(ctx);
 	const mapFile = map.fileName || "";
+	env.skipFile = mapFile !== "" ? cleanPath(mapFile) : "";	// the saved map: its model, not its file
 	const sameMap = map.objects.map(function (o) {
 		return { id: o.id, name: o.name, className: o.className !== "" ? o.className : (o.tileClassName || "") };
 	});
@@ -650,13 +683,17 @@ export function checkRules(map, rules, ctx) {
 			continue;
 		const props = withClassMembers(o.properties || [], ctx.classes ? ctx.classes[cls] : undefined);
 		const holder = { where: describeObject(o), file: mapFile, props: props, sameMap: sameMap, mapRules: applying };
+		const report = function (severity, code, text) {
+			findings.push({ severity: severity, code: code, text: text, objectId: o.id, layerId: 0 });
+		};
 		for (let k = 0; k < applying.length; k++) {
-			checkMember(applying[k], holder, env, function (severity, code, text) {
-				findings.push({ severity: severity, code: code, text: text, objectId: o.id, layerId: 0 });
-			});
+			if (applying[k].kind === "unique_name")
+				checkUniqueName(applying[k], o, cls, holder, env, report);
+			else
+				checkMember(applying[k], holder, env, report);
 		}
 	}
-	return findings;
+	return env.unreadable.concat(findings);
 }
 
 // The findings of a world's rules (objectId 0: a world has no object to select).
@@ -669,7 +706,7 @@ export function checkWorld(worldFile, world, rules, ctx) {
 			findings.push({ severity: severity, code: code, text: text, objectId: 0, layerId: 0 });
 		});
 	}
-	return findings;
+	return env.unreadable.concat(findings);
 }
 
 // The context with caches: a file read once per check.
@@ -682,14 +719,38 @@ function environment(ctx) {
 			texts[p] = ctx.readText(p);
 		return texts[p];
 	};
-	return {
+	const projectDir = ctx.projectFile ? dirName(ctx.projectFile) : "";
+	const mapObjects = function (p) {
+		if (maps[p] === undefined)
+			maps[p] = ctx.mapObjects(p);
+		return maps[p];
+	};
+	const indexes = {};
+	const env = {
 		ctx: ctx,
-		projectDir: ctx.projectFile ? dirName(ctx.projectFile) : "",
+		projectDir: projectDir,
 		readText: readText,
-		mapObjects: function (p) {
-			if (maps[p] === undefined)
-				maps[p] = ctx.mapObjects(p);
-			return maps[p];
+		mapObjects: mapObjects,
+		unreadable: [],
+		skipFile: "",
+		// The objects of the project's maps (the rule's `maps`, else the project's folders) by name,
+		// built once per check and `maps` value; the maps that could not be read reported once.
+		projectIndex: function (rule) {
+			const key = rule.maps;
+			if (indexes[key] === undefined) {
+				const all = projectMapFiles(key, projectDir, ctx.projectFolders || [], ctx.listDir || function () { return null; });
+				const files = all.filter(function (f) { return f !== env.skipFile; });
+				indexes[key] = projectObjects(files, mapObjects);
+				indexes[key].holdsSkipped = files.length < all.length;
+				for (let i = 0; i < indexes[key].errors.length; i++) {
+					const e = indexes[key].errors[i];
+					const seen = env.unreadable.some(function (f) { return f.file === e.file; });
+					if (!seen)
+						env.unreadable.push({ severity: "warning", code: "rule-unreadable", file: e.file, objectId: 0, layerId: 0,
+							text: "The project's map " + projectLabel(e.file, projectDir) + " could not be read (" + e.error + "); the rules that look across the project skip it." });
+				}
+			}
+			return indexes[key];
 		},
 		table: function (p) {
 			if (tables[p] === undefined) {
@@ -699,6 +760,7 @@ function environment(ctx) {
 			return tables[p];
 		},
 	};
+	return env;
 }
 
 function checkMember(rule, holder, env, report) {
@@ -726,6 +788,10 @@ function checkMember(rule, holder, env, report) {
 	}
 	if (rule.kind === "object_in_map") {
 		checkObjectInMap(rule, text, holder, env, push);
+		return;
+	}
+	if (rule.kind === "object_in_project") {
+		checkObjectInProject(rule, text, holder, env, push);
 		return;
 	}
 	if (rule.kind === "file") {
@@ -769,7 +835,7 @@ function checkMember(rule, holder, env, report) {
 function kindNoun(rule) {
 	if (rule.kind === "map")
 		return "a map";
-	if (rule.kind === "object_in_map")
+	if (rule.kind === "object_in_map" || rule.kind === "object_in_project")
 		return "an object's name";
 	if (rule.kind === "file")
 		return "a file";
@@ -816,6 +882,203 @@ function checkObjectInMap(rule, name, holder, env, push) {
 		push("warning", "rule-ambiguous-object", "names '" + name + "', and " + inMap + " has " + matching.length + " such objects " +
 			"(ids " + matching.map(function (o) { return o.id; }).join(", ") + "); give them names of their own.");
 	}
+}
+
+// The objects of the project named `name`, with the holder's own map as it is now (an open map's
+// unsaved objects) in place of its file: [{file, id, name, className, here}].
+function projectNamed(rule, name, holder, env) {
+	const index = env.projectIndex(rule);
+	const here = holder.sameMap !== null ? cleanPath(holder.file) : "";
+	const out = [];
+	// The saved map counts when the rule looks across the whole project, or its maps hold it.
+	if (holder.sameMap !== null && (rule.maps === "" || index.holdsSkipped)) {
+		for (let i = 0; i < holder.sameMap.length; i++) {
+			const o = holder.sameMap[i];
+			if (o.name === name)
+				out.push({ file: holder.file, id: o.id, name: name, className: o.className, here: true });
+		}
+	}
+	const listed = index.byName[name] || [];
+	for (let i = 0; i < listed.length; i++) {
+		if (cleanPath(listed[i].file) !== here || here === "")
+			out.push({ file: listed[i].file, id: listed[i].id, name: name, className: listed[i].className, here: false });
+	}
+	return out;
+}
+
+function ofClasses(o, classes) {
+	return classes.length === 0 || classes.indexOf("*") >= 0 || classes.indexOf(o.className) >= 0;
+}
+
+// "this map (id 3)" or "maps/town.tmx (id 3)".
+function placeLabel(o, env, withClass) {
+	return (o.here ? "this map" : projectLabel(o.file, env.projectDir)) + " (id " + o.id + (withClass ? ", class " + (o.className === "" ? "none" : o.className) : "") + ")";
+}
+
+function projectLabel(file, projectDir) {
+	return projectDir !== "" ? relativePath(projectDir, file) : cleanPath(file);
+}
+
+function checkObjectInProject(rule, name, holder, env, push) {
+	const named = projectNamed(rule, name, holder, env);
+	const matching = named.filter(function (o) { return ofClasses(o, rule.targetClasses); });
+	const classes = rule.targetClasses.length > 0 ? " and class " + rule.targetClasses.join(" or ") : "";
+	if (matching.length === 0) {
+		let text = "names '" + name + "', but no map of the project has an object of that name" + classes;
+		if (named.length > 0)
+			text += " (" + (named[0].here ? "this map" : projectLabel(named[0].file, env.projectDir)) + " has one of class " +
+				(named[0].className === "" ? "none" : "'" + named[0].className + "'") + ")";
+		push("error", "rule-missing-object", text + ".");
+	} else if (matching.length > 1) {
+		push("error", "rule-ambiguous-object", "names '" + name + "', which " + matching.length + " objects of the project have: " +
+			matching.map(function (o) { return placeLabel(o, env, false); }).join(", ") + "; give them names of their own.");
+	}
+}
+
+function checkUniqueName(rule, o, cls, holder, env, report) {
+	const severity = function (s) { return rule.severity === "warning" ? "warning" : s; };
+	const kinds = classList(rule.classes, " and ");
+	if (o.name === "") {
+		if (rule.required)
+			report(severity("error"), "rule-required", holder.where + ": has no name; the project's rules (yati_rules) require one for " + kinds + " objects.");
+		return;
+	}
+	const others = projectNamed(rule, o.name, holder, env).filter(function (x) {
+		return ofClasses(x, rule.classes) && !(x.here && x.id === o.id);
+	});
+	if (others.length === 0)
+		return;
+	report(severity("error"), "rule-duplicate-name", holder.where + ": the name '" + o.name + "' is also used by " +
+		others.map(function (x) { return placeLabel(x, env, true); }).join(", ") +
+		"; the project's rules (yati_rules) want the names of " + kinds + " objects unique across the project.");
+}
+
+// ---------------------------------------------------------------------------------------------
+// The project's maps
+
+// The map files (.tmx, .tmj) a rule looks across, sorted, each once: under each of the project's
+// folders (absolute paths, as Tiled's Project.folders gives them) when `spec` is empty; else `spec`,
+// relative to the project's directory: a map file, a folder (every map under it), or a glob where
+// `*` and `?` stay within a folder and `**` spans folders. Hidden folders are skipped.
+// listDir(dir) -> {dirs: [names], files: [names]} or null.
+export function projectMapFiles(spec, projectDir, folders, listDir) {
+	const isMap = function (name) { return isMapFile(name); };
+	const seen = {};
+	const out = [];
+	const add = function (list) {
+		for (let i = 0; i < list.length; i++) {
+			const p = cleanPath(list[i]);
+			if (!seen[p]) {
+				seen[p] = true;
+				out.push(p);
+			}
+		}
+	};
+	if (spec === "") {
+		for (let i = 0; i < folders.length; i++)
+			add(walkFiles(folders[i], listDir, isMap));
+	} else if (/[*?]/.test(spec)) {
+		const pattern = joinPath(projectDir, spec);
+		const parts = pattern.split("/");
+		let fixed = 0;
+		while (fixed < parts.length && !/[*?]/.test(parts[fixed]))
+			fixed++;
+		const root = parts.slice(0, fixed).join("/") || "/";
+		const re = globRegex(pattern);
+		add(walkFiles(root, listDir, isMap).filter(function (p) { return re.test(cleanPath(p)); }));
+	} else {
+		const target = joinPath(projectDir, spec);
+		if (isMapFile(target))
+			add([target]);		// one map (one that is not there is reported as unreadable)
+		else
+			add(walkFiles(target, listDir, isMap));
+	}
+	return out.sort();
+}
+
+function globRegex(pattern) {
+	let re = "";
+	for (let i = 0; i < pattern.length; i++) {
+		const c = pattern.charAt(i);
+		if (c === "*" && pattern.charAt(i + 1) === "*") {
+			if (pattern.charAt(i + 2) === "/") {
+				re += "(?:[^/]*/)*";
+				i += 2;
+			} else {
+				re += ".*";
+				i += 1;
+			}
+		} else if (c === "*") {
+			re += "[^/]*";
+		} else if (c === "?") {
+			re += "[^/]";
+		} else {
+			re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+		}
+	}
+	return new RegExp("^" + re + "$");
+}
+
+// The named objects of the maps by name: {byName: {name: [{file, id, className}]}, errors: [{file, error}]}.
+// mapObjects(path) -> {objects: [{id, name, className}], error}, as checkRules' context gives it.
+export function projectObjects(files, mapObjects) {
+	const byName = {};
+	const errors = [];
+	for (let i = 0; i < files.length; i++) {
+		const read = mapObjects(files[i]);
+		if (read.error !== "") {
+			errors.push({ file: files[i], error: read.error });
+			continue;
+		}
+		for (let k = 0; k < read.objects.length; k++) {
+			const o = read.objects[k];
+			if (o.name === "")
+				continue;
+			if (!Object.prototype.hasOwnProperty.call(byName, o.name))
+				byName[o.name] = [];
+			byName[o.name].push({ file: files[i], id: o.id, className: o.className });
+		}
+	}
+	return { byName: byName, errors: errors };
+}
+
+// What "Pick map and object" offers for an object_in_project rule: every named object of the rule's
+// classes in the project's maps, the map `currentFile` as `currentObjects` hold it ([{id, name,
+// className}], an open map's objects), sorted by map then name: [{label: "maps/town.tmx: gate
+// (Warp)", name, file, id}].
+export function projectObjectChoices(rule, ctx, currentFile, currentObjects) {
+	const projectDir = ctx.projectFile ? dirName(ctx.projectFile) : "";
+	const files = projectMapFiles(rule.maps, projectDir, ctx.projectFolders || [], ctx.listDir);
+	const here = currentFile ? cleanPath(currentFile) : "";
+	const out = [];
+	const push = function (file, o) {
+		if (o.name !== "" && ofClasses(o, rule.targetClasses))
+			out.push({ label: projectLabel(file, projectDir) + ": " + o.name + (o.className !== "" ? " (" + o.className + ")" : ""), name: o.name, file: file, id: o.id });
+	};
+	for (let i = 0; i < files.length; i++) {
+		if (files[i] === here)
+			continue;
+		const read = ctx.mapObjects(files[i]);
+		for (let k = 0; k < read.objects.length; k++)
+			push(files[i], read.objects[k]);
+	}
+	if (here !== "") {
+		for (let k = 0; k < currentObjects.length; k++)
+			push(here, currentObjects[k]);
+	}
+	return out.sort(function (a, b) {
+		const fa = projectLabel(a.file, projectDir);
+		const fb = projectLabel(b.file, projectDir);
+		if (fa !== fb)
+			return fa < fb ? -1 : 1;
+		return a.name < b.name ? -1 : (a.name > b.name ? 1 : a.id - b.id);
+	});
+}
+
+// Where an object_in_project rule's value points: the objects of that name and the rule's classes,
+// the open map `currentFile` as `currentObjects` hold it: [{file, id}].
+export function findProjectObject(rule, name, ctx, currentFile, currentObjects) {
+	return projectObjectChoices(rule, ctx, currentFile, currentObjects).filter(function (c) { return c.name === name; });
 }
 
 // The names to offer for an object_in_map rule from a map's objects: those of the rule's class
