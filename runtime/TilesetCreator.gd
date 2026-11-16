@@ -78,6 +78,7 @@ var _grid_size: Vector2i
 var _tile_offset: Vector2i
 var _object_alignment
 var _object_groups = null
+var _tileset_infos: Dictionary = {}	# firstgid -> {"name": tileset name, "source": the map's source attribute ("" embedded)}
 var _object_groups_counter: int = 0
 var _tileset_orientation
 var _map_wangset_to_terrain: bool = false
@@ -156,6 +157,8 @@ func create_from_dictionary_array(tileSets: Array):
 			CommonUtils.count_error("ERROR: Tileset '" + str(tile_set.get("source", "")) + "' could not be read.")
 			continue
 
+		if tile_set.has("firstgid"):
+			_tileset_infos[int(tile_set["firstgid"])] = {"name": str(tile_set_dict.get("name", "")), "source": str(tile_set.get("source", ""))}
 		create_or_append(tile_set_dict)
 		_append = true
 
@@ -167,6 +170,11 @@ func create_from_dictionary_array(tileSets: Array):
 
 func get_registered_atlas_sources():
 	return _atlas_sources
+
+
+# firstgid -> {"name", "source"} of each tileset of the list (a tile object's _tiled_import info)
+func get_tileset_infos() -> Dictionary:
+	return _tileset_infos
 
 
 func get_registered_object_groups():

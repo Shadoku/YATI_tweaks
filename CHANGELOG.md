@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Both importers, the `_tiled_import(info)` hook: a node made for a tile object (a scene instance from its own
+  class or its tile's, or a tile object's sprite or body with a `godot_script`) gets `info.tile`, what a scene needs
+  to draw and behave like its tile: `texture` and `region` (what the importer draws: the tileset's image, a
+  collection tile's own image, an animation strip's), `flip_h`, `flip_v`, `flip_d`, `gid`, `tile_id`, `tileset`,
+  `tileset_source`, `size` (unscaled), `drawn_size`, `scale` (what was applied), `alignment`, `top_left` (the image's
+  corner from the anchor), `offset` (the tileset's tile offset), `rect` (the covered area, top-left first), the
+  tile's own `class` and `properties`, its collision `shapes` (`{type, name, position, size, rotation, points}` in
+  the tile's pixels, as saved) and `animation` frames (`{region, duration}`). Nothing changes in how the instance is
+  placed (the anchor, the object's size as `scale`); Reference.md's "Scene mapping and node properties" now writes
+  that placement down, and that `info.rect` of a tile object is as saved (y at the bottom). Fixtures
+  `tile_info.tmx`, `tile_info.tsx`, `tile_info.tiled-project`, `tile_probe.tscn`; tests
+  `test_new_tile_object_info`, `test_new_tile_object_properties`, and a streamed one in `test/test_stream.gd`.
+  Native library: needs one built from this commit or later.
+- `TiledStreamer.get_layer(name)`, `get_object_layer(name)` and `get_loaded_chunks(name)`: a name with `/` is a
+  path of Tiled layer names through group layers (`"upper/Background"`, `"a/b/Deep"`); a bare name finds the first
+  layer of that name as before (also inside groups). A layer inside a group could not be told from a top-level layer
+  of the same name. Native library: needs one built from this commit or later.
 - Tiled extension, project rules: two kinds that look across every map of the project. `object_in_project`: the
   value names exactly one object, of one of the classes `targetClass` (a name or a list), in any map of the project
   (`.tmx` and `.tmj` under the project's folders, `Project.folders`, or under a rule's `maps` folder or glob); none
@@ -84,6 +101,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unset warned. The extension's validation on save no longer reports unset references either.
 
 ### Fixed
+- Both importers: a tile object with a class of its own on a tile that has a class kept the tile's class as its
+  `class` metadata (the scene was already chosen by the object's class). The object's own class wins, as in Tiled;
+  an object without one still takes the tile's.
 - Both importers: an empty `file` value (a project class's file member left at its default `""`, or an object's own
   file property set to `""`) names no file: nothing is loaded or assigned and nothing is printed. Before, with
   `assign_node_properties` every such object printed `Resource file '' not found` and a warning (the value then

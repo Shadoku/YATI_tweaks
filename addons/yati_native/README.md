@@ -132,7 +132,7 @@ in pixels), `map_size_tiles`, `tile_size` and `orientation`. `WorldLoader.gd`:
 | `warn_unknown_classes` | `true` | warn once per import about each unknown class; off for a game that handles its classes itself |
 | `class_scenes` | `{}` | Tiled class (case-insensitive) to a scene path: its objects become instances |
 | `read_godot_scene_from_custom_types` | `true` | a project class's `godot_scene` member maps the class to that scene |
-| `assign_node_properties` | `true` | custom properties named like a node property set it (typed; a class of members `x` and `y` fits a `Vector2` / `Vector2i`); `_tiled_import(info)` is called |
+| `assign_node_properties` | `true` | custom properties named like a node property set it (typed; a class of members `x` and `y` fits a `Vector2` / `Vector2i`); `_tiled_import(info)` is called (a tile object's `info.tile`: the tile's texture, region, flips, ids, sizes, `top_left`, `rect`, class, properties, collision `shapes` and `animation` frames; Reference.md, "The `_tiled_import` hook") |
 | `object_refs` | `"nodepath"` | object properties: a NodePath to the target's node (an unset one, 0, an empty NodePath silently; a dangling id an empty one with a warning); `"geometry"`: its points; `"both"` |
 | `share_tilesets` | `true` | native only: use the shared TileSet cache (below); off, every import builds its own |
 | `async_tiles_per_frame` | `256` | native only: `import_async`'s TileSet tiles created per frame |
@@ -270,7 +270,9 @@ Maps with the same tilesets share one TileSet.
 **Everything at once.** `load_all()` loads the whole map (or every map of a world) in one call:
 the content of `import()`.
 
-Queries: `get_layer(name)`, `get_object_layer(name)`, `get_map_root(path)`, `get_loaded_maps()`,
+Queries: `get_layer(name)`, `get_object_layer(name)` (the first map's layer of that name; a name with
+`/` is a path of Tiled layer names through group layers, `get_layer("upper/Background")`),
+`get_map_root(path)`, `get_loaded_maps()`,
 `loaded_chunk_count()`, `get_loaded_chunks(layer)`, `get_spawned_object_count()`, `is_settled()`,
 `get_error_count()`, `get_warning_count()`. Signals: `chunk_loaded(layer_name, coords)`,
 `chunk_unloaded(layer_name, coords)`, `object_spawned`, `object_despawned`, `map_loaded`,

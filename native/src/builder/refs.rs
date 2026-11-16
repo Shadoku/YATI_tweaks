@@ -6,8 +6,35 @@
 use super::{Build, Obj};
 use crate::gd::{gd_str, to_int, typed_value, value_to_variant, PV};
 use crate::props::GProp;
+use godot::classes::{TileData, TileSetAtlasSource};
 use godot::prelude::*;
-use tiled_core::Value;
+use std::sync::Arc;
+use tiled_core::{Object, Value};
+
+/// A tile object's tile as the builder drew it, kept for `info.tile` of its nodes' hook
+/// (`get_tile_import_info`).
+#[derive(Clone)]
+pub(crate) struct TileRef {
+    pub source: Gd<TileSetAtlasSource>,
+    pub coords: Vector2i,
+    pub data: Gd<TileData>,
+    /// The gid without the flip flags.
+    pub gid: u32,
+    pub flip_h: bool,
+    pub flip_v: bool,
+    pub flip_d: bool,
+    /// The scale the builder gave the tile's sprite (and a scene instance): drawn size / tile size.
+    pub scale: Vector2,
+    /// The effective object alignment (`bottomleft`, `bottom`, ...).
+    pub alignment: String,
+    /// The tileset's tile offset.
+    pub offset: Vector2i,
+    /// The object's position as saved (its anchor) and size.
+    pub anchor: Vector2,
+    pub drawn: Vector2,
+    /// The tile's collision objects, if it has any.
+    pub shapes: Option<Arc<Vec<Object>>>,
+}
 
 /// An object property waiting for every node to exist.
 pub(crate) struct PendingRef {
@@ -60,7 +87,8 @@ impl Build<'_> {
     /// only from its scene or a `godot_script` property). `scene`: the node is a scene's root.
     pub(super) fn hook_candidate(&mut self, node: &Gd<Node>, obj: &Obj, scene: bool, scripts: u64) {
         if (scene || self.scripts_set != scripts) && node.get_script().is_some() {
-            self.hooks.push((node.clone(), obj.clone()));
+            self.hooks
+                .push((node.clone(), obj.clone(), self.cur_tile.clone()));
         }
     }
 
@@ -207,14 +235,17 @@ impl Build<'_> {
     /// `finish_import`'s hook calls: every candidate whose script has `_tiled_import`.
     pub(super) fn call_import_hooks(&mut self) {
         let hooks = std::mem::take(&mut self.hooks);
-        for (mut node, obj) in hooks {
+        for (mut node, obj, tile) in hooks {
             if !node.is_instance_valid()
                 || node.get_script().is_none()
                 || !node.has_method(IMPORT_HOOK_METHOD)
             {
                 continue;
             }
-            let info = self.import_info(&node, &obj);
+            let mut info = self.import_info(&node, &obj);
+            if let Some(t) = &tile {
+                info.set("tile", &self.tile_info(t));
+            }
             node.call(IMPORT_HOOK_METHOD, &[info.to_variant()]);
         }
     }
@@ -265,6 +296,102 @@ impl Build<'_> {
         );
         d.set("shape", &shape);
         d.set("shape_type", shape_type);
+        d
+    }
+
+    /// `get_tile_import_info`: `info.tile` of a tile object (Reference.md, "The `_tiled_import`
+    /// hook"): the texture and region the builder drew (an animation strip's with
+    /// `animation_mode` `strip`), ids, flips, sizes, where the tile sits relative to the node's
+    /// origin, its class, properties, collision shapes (in the tile's pixels, as saved) and
+    /// animation frames.
+    fn tile_info(&self, t: &TileRef) -> VarDictionary {
+        let first_gid = self
+            .first_gids
+            .get(self.first_gid_index(t.gid))
+            .copied()
+            .unwrap_or(0);
+        let mut ts_name = String::new();
+        let mut ts_source = String::new();
+        if let Some(list) = &self.map.tilesets {
+            if let Some(i) = list.iter().position(|e| e.firstgid == Some(first_gid)) {
+                ts_source = list[i].source.clone().unwrap_or_default();
+                ts_name = self
+                    .map
+                    .tileset(i)
+                    .and_then(|ts| ts.name.clone())
+                    .or_else(|| list[i].name.clone())
+                    .unwrap_or_default();
+            }
+        }
+        let rs = t.source.get_texture_region_size();
+        let size = Vector2::new(rs.x as f32, rs.y as f32);
+        let unit = super::objects::alignment_unit(&t.alignment)
+            .or_else(|| super::objects::alignment_unit("bottomleft"))
+            .unwrap_or(Vector2::ZERO);
+        let corner = unit - Vector2::new(0.5, 0.5);
+        let rect2 = |r: Rect2i| {
+            Rect2::new(
+                Vector2::new(r.position.x as f32, r.position.y as f32),
+                Vector2::new(r.size.x as f32, r.size.y as f32),
+            )
+        };
+        let mut props = VarDictionary::new();
+        for m in t.data.get_meta_list().iter_shared() {
+            let key = m.to_string();
+            if key == "class" {
+                continue;
+            }
+            props.set(key.as_str(), &t.data.get_meta(&m));
+        }
+        let class = if t.data.has_meta("class") {
+            t.data.get_meta("class").stringify().to_string()
+        } else {
+            String::new()
+        };
+        let mut frames = VarArray::new();
+        let count = t.source.get_tile_animation_frames_count(t.coords);
+        if count > 1 {
+            for i in 0..count {
+                let mut fr = VarDictionary::new();
+                let r = t
+                    .source
+                    .get_tile_texture_region_ex(t.coords)
+                    .frame(i)
+                    .done();
+                fr.set("region", rect2(r));
+                fr.set(
+                    "duration",
+                    t.source.get_tile_animation_frame_duration(t.coords, i) as f64,
+                );
+                frames.push(&fr.to_variant());
+            }
+        }
+        let mut shapes = VarArray::new();
+        for o in t.shapes.iter().flat_map(|s| s.iter()) {
+            shapes.push(&tile_shape_info(o).to_variant());
+        }
+        let region = rect2(t.source.get_tile_texture_region(t.coords));
+        let mut d = VarDictionary::new();
+        d.set("gid", t.gid as i64);
+        d.set("tile_id", t.gid as i64 - first_gid);
+        d.set("tileset", ts_name.as_str());
+        d.set("tileset_source", ts_source.as_str());
+        d.set("texture", &t.source.get_texture().to_variant());
+        d.set("region", region);
+        d.set("flip_h", t.flip_h);
+        d.set("flip_v", t.flip_v);
+        d.set("flip_d", t.flip_d);
+        d.set("size", size);
+        d.set("drawn_size", t.drawn);
+        d.set("scale", t.scale);
+        d.set("alignment", t.alignment.as_str());
+        d.set("top_left", corner * size);
+        d.set("offset", Vector2::new(t.offset.x as f32, t.offset.y as f32));
+        d.set("rect", Rect2::new(t.anchor + corner * t.drawn, t.drawn));
+        d.set("class", class.as_str());
+        d.set("properties", &props);
+        d.set("shapes", &shapes);
+        d.set("animation", &frames);
         d
     }
 
@@ -328,4 +455,37 @@ impl Build<'_> {
             _ => typed_value(ty, val),
         }
     }
+}
+
+/// `get_tile_shape_info`: one collision object of a tile as `info.tile.shapes` holds it, in the
+/// tile's pixels from its top-left corner, as Tiled saves it (not flipped, scaled or transposed).
+fn tile_shape_info(o: &Object) -> VarDictionary {
+    let num = |n: Option<tiled_core::Num>| n.map(|n| n.as_f64()).unwrap_or(0.0) as f32;
+    let mut points = PackedVector2Array::new();
+    let kind = if o.point == Some(true) {
+        "point"
+    } else if o.ellipse == Some(true) {
+        "ellipse"
+    } else if o.capsule == Some(true) {
+        "capsule"
+    } else if let Some(p) = o.polygon.as_ref().or(o.polyline.as_ref()) {
+        for pt in p {
+            points.push(Vector2::new(pt.x as f32, pt.y as f32));
+        }
+        if o.polygon.is_some() {
+            "polygon"
+        } else {
+            "polyline"
+        }
+    } else {
+        "rectangle"
+    };
+    let mut d = VarDictionary::new();
+    d.set("type", kind);
+    d.set("name", o.name.as_deref().unwrap_or(""));
+    d.set("position", Vector2::new(num(o.x), num(o.y)));
+    d.set("size", Vector2::new(num(o.width), num(o.height)));
+    d.set("rotation", num(o.rotation) as f64);
+    d.set("points", &points);
+    d
 }

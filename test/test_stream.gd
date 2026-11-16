@@ -11,6 +11,8 @@ extends SceneTree
 ##   once; the measured costs;
 ## - world mode over test/fixtures/world/test.world: maps load (asynchronously) when the window
 ##   reaches them and go when it leaves; load_all() loads every map;
+## - get_layer / get_object_layer by a path through group layers ("upper/Ground");
+## - a streamed tile object's _tiled_import(info) gets info.tile;
 ## - Importer.make_streamer() for a map path (loaded asynchronously) and a world;
 ## - no leaks: streaming in and out 20 times leaves Performance.OBJECT_COUNT at its baseline.
 ##
@@ -29,7 +31,7 @@ const EQUAL_MAPS := {
 	"infinite.tmx": "", "infinite.tmj": "", "scenes.tmx": "scenes.tiled-project",
 	"masks.tmx": "masks.tiled-project", "background.tmx": "", "parallax.tmx": "",
 	"animations.tmx": "", "clip.tmx": "", "colors.tmx": "", "single_layer.tmx": "",
-	"legacy_xml.tmx": "",
+	"legacy_xml.tmx": "", "tile_info.tmx": "tile_info.tiled-project",
 }
 
 var _passed := 0
@@ -52,6 +54,8 @@ func main() -> void:
 	await test_keep_objects_resident()
 	await test_budget()
 	await test_y_sorted()
+	await test_group_paths()
+	await test_tile_info()
 	await test_world()
 	await test_make_streamer()
 	await test_no_leaks()
@@ -330,6 +334,64 @@ func test_y_sorted() -> void:
 	check(any_sorted, "staggered.tmx: its layers are y-sorted, as the builder makes them")
 	var costs: Dictionary = s.get_costs()
 	check(costs["tile_samples"] > 0, "staggered.tmx: y-sorted chunks are measured (%.2f µs per y-sorted cell)" % costs["ysort_cell"])
+	s.free()
+
+
+## A map with a top-level tile layer and object layer, and layers of the same names inside the
+## group "upper"; a tile layer two groups deep.
+func write_groups_map() -> String:
+	var row := ",".join(PackedStringArray(["1", "1", "1", "1"]))
+	var data1 := ",\n".join(PackedStringArray([row, row, row, row]))
+	var data2 := data1.replace("1", "2")
+	var s := '<?xml version="1.0" encoding="UTF-8"?>\n'
+	s += '<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="4" height="4" tilewidth="16" tileheight="16" infinite="0" nextlayerid="10" nextobjectid="3">\n'
+	s += ' <tileset firstgid="1" name="t" tilewidth="16" tileheight="16" tilecount="32" columns="8"><image source="%s" width="128" height="64"/></tileset>\n' % ProjectSettings.globalize_path(FIX + "tiles.png")
+	s += ' <layer id="1" name="Ground" width="4" height="4"><data encoding="csv">\n' + data1 + '\n</data></layer>\n'
+	s += ' <objectgroup id="2" name="Things"><object id="1" name="Low" x="8" y="8"><point/></object></objectgroup>\n'
+	s += ' <group id="3" name="upper">\n'
+	s += '  <layer id="4" name="Ground" width="4" height="4"><data encoding="csv">\n' + data2 + '\n</data></layer>\n'
+	s += '  <objectgroup id="5" name="Things"><object id="2" name="High" x="8" y="8"><point/></object></objectgroup>\n'
+	s += ' </group>\n'
+	s += ' <group id="6" name="a"><group id="7" name="b">\n'
+	s += '  <layer id="8" name="Deep" width="4" height="4"><data encoding="csv">\n' + data1 + '\n</data></layer>\n'
+	s += ' </group></group>\n</map>\n'
+	var path := OUT + "groups.tmx"
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_string(s)
+	f.close()
+	return path
+
+
+func test_group_paths() -> void:
+	var s := streamer_for(load_map(write_groups_map()))
+	s.load_all()
+	var low: TileMapLayer = s.get_layer("Ground")
+	var high: TileMapLayer = s.get_layer("upper/Ground")
+	check(low != null and low.get_cell_atlas_coords(Vector2i(0, 0)) == Vector2i(0, 0), "groups.tmx: get_layer(\"Ground\") is the top-level layer, as before")
+	check(high != null and high != low and high.get_cell_atlas_coords(Vector2i(0, 0)) == Vector2i(1, 0), "groups.tmx: get_layer(\"upper/Ground\") is the layer inside the group")
+	check(high != null and String(high.get_parent().name) == "upper", "groups.tmx: upper/Ground's parent is the group's node")
+	var deep: TileMapLayer = s.get_layer("a/b/Deep")
+	check(deep != null and deep == s.get_layer("Deep"), "groups.tmx: a/b/Deep two groups deep, and by its bare name")
+	check(s.get_layer("b/Deep") == null and s.get_layer("upper/Nope") == null and s.get_layer("Ground/upper") == null, "groups.tmx: a path that is not a layer's gives null")
+	var things: Node2D = s.get_object_layer("Things")
+	var upper_things: Node2D = s.get_object_layer("upper/Things")
+	check(things != null and things.get_node_or_null("Low") != null, "groups.tmx: get_object_layer(\"Things\") is the top-level layer")
+	check(upper_things != null and upper_things.get_node_or_null("High") != null, "groups.tmx: get_object_layer(\"upper/Things\") is the group's")
+	check(s.get_loaded_chunks("upper/Ground").size() == 1, "groups.tmx: get_loaded_chunks takes a path")
+	check(s.get_error_count() == 0 and s.get_warning_count() == 0, "groups.tmx: no error or warning")
+	s.free()
+
+
+func test_tile_info() -> void:
+	var s := streamer_for(load_map(FIX + "tile_info.tmx", FIX + "tile_info.tiled-project"))
+	s.load_all()
+	var props: Node2D = s.get_object_layer("Props")
+	var bush: Node = props.get_node_or_null("BushA") if props != null else null
+	var info: Dictionary = bush.get("imported") if bush != null else {}
+	var tile: Dictionary = info.get("tile", {})
+	check(tile.get("gid") == 6 and tile.get("region") == Rect2(80, 0, 16, 16) and tile.get("properties", {}).get("slashable") == true,
+		"tile_info.tmx: a streamed tile object's _tiled_import gets info.tile (%s)" % [tile.keys()])
+	check(bush != null and bush.get("slashable") == true, "tile_info.tmx: the tile's slashable reaches the streamed bush")
 	s.free()
 
 

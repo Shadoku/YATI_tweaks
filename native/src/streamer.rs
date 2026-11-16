@@ -219,6 +219,8 @@ struct Src {
 /// One Tiled tile layer of a streamed map.
 struct TileLayer {
     name: GString,
+    /// Its Tiled path: the enclosing groups' names and its own, joined by `/`.
+    path: String,
     node: Gd<TileMapLayer>,
     ysort: bool,
     /// The layer's index in `Map::all_layers()`.
@@ -236,6 +238,8 @@ struct TileLayer {
 /// One Tiled object layer of a streamed map.
 struct ObjLayer {
     name: GString,
+    /// Its Tiled path: the enclosing groups' names and its own, joined by `/`.
+    path: String,
     node: Gd<Node2D>,
     idx: usize,
     /// `draworder="index"` on an orthogonal map: children kept in the layer's object order.
@@ -598,7 +602,8 @@ impl TiledStreamer {
             .sum::<usize>() as i64
     }
 
-    /// The loaded chunks of a tile layer (of the first map that has a layer of that name).
+    /// The loaded chunks of a tile layer (of the first map that has a layer of that name or
+    /// path, as `get_layer`).
     #[func]
     fn get_loaded_chunks(&self, layer_name: GString) -> Array<Vector2i> {
         let mut out = Array::new();
@@ -621,17 +626,23 @@ impl TiledStreamer {
     }
 
     /// The `TileMapLayer` of a Tiled tile layer by name (the first map's that has one), or null.
+    /// A name with `/` is a path through group layers (`"upper/Background"`: the layer
+    /// `Background` of the top-level group `upper`), by the layers' Tiled names.
     #[func]
     fn get_layer(&self, name: GString) -> Option<Gd<TileMapLayer>> {
         self.find_layer(&name).map(|t| t.node.clone())
     }
 
-    /// The node of a Tiled object layer by name (the first map's that has one), or null.
+    /// The node of a Tiled object layer by name (the first map's that has one), or null. A name
+    /// with `/` is a path through group layers, as for `get_layer`.
     #[func]
     fn get_object_layer(&self, name: GString) -> Option<Gd<Node2D>> {
-        self.live()
-            .flat_map(|m| m.objs.iter())
-            .find(|o| o.name == name)
+        let path = name.to_string();
+        let objs = || self.live().flat_map(|m| m.objs.iter());
+        path.contains('/')
+            .then(|| objs().find(|o| o.path == path))
+            .flatten()
+            .or_else(|| objs().find(|o| o.name == name))
             .map(|o| o.node.clone())
     }
 
@@ -751,10 +762,15 @@ impl TiledStreamer {
         })
     }
 
+    /// A tile layer by name, or by its path when the name holds a `/` (else by name: a layer
+    /// whose own name holds one).
     fn find_layer(&self, name: &GString) -> Option<&TileLayer> {
-        self.live()
-            .flat_map(|m| m.tiles.iter())
-            .find(|t| &t.name == name)
+        let path = name.to_string();
+        let tiles = || self.live().flat_map(|m| m.tiles.iter());
+        path.contains('/')
+            .then(|| tiles().find(|t| t.path == path))
+            .flatten()
+            .or_else(|| tiles().find(|t| &t.name == name))
     }
 
     /// Forgets every map's tree and state (the map, world, options or chunk size changed).
@@ -1389,6 +1405,8 @@ impl TiledStreamer {
         } = skel;
         let all = map.all_layers();
         let index_of = |k: usize| all.iter().position(|l| layer_key(l) == k);
+        let paths = layer_paths(map.layers.as_deref().unwrap_or(&[]));
+        let path_of = |k: usize| paths.get(&k).cloned().unwrap_or_default();
         let orientation = map.orientation.as_deref().unwrap_or("orthogonal");
         let iso = orientation == "isometric";
         let sorted = iso || orientation == "staggered";
@@ -1436,6 +1454,7 @@ impl TiledStreamer {
             }
             tiles.push(TileLayer {
                 name: GString::from(node.get_name().to_string().as_str()),
+                path: path_of(k),
                 ysort: node.is_y_sort_enabled(),
                 node,
                 idx,
@@ -1464,6 +1483,7 @@ impl TiledStreamer {
             let ordered = !sorted && l.draworder.as_deref() == Some("index");
             objs.push(ObjLayer {
                 name: GString::from(node.get_name().to_string().as_str()),
+                path: path_of(k),
                 node,
                 idx,
                 ordered,
@@ -1962,6 +1982,26 @@ fn despawn_objects(
     diag.errors += d.errors;
     diag.warnings += d.warnings;
     Some(predicted)
+}
+
+/// The Tiled path of every layer (`layer_key` -> the enclosing groups' names and its own,
+/// joined by `/`).
+fn layer_paths(layers: &[tiled_core::Layer]) -> HashMap<usize, String> {
+    fn walk(layers: &[tiled_core::Layer], prefix: &str, out: &mut HashMap<usize, String>) {
+        for l in layers {
+            let name = l.name.as_deref().unwrap_or("");
+            let path = if prefix.is_empty() {
+                name.to_string()
+            } else {
+                format!("{prefix}/{name}")
+            };
+            walk(l.layers.as_deref().unwrap_or(&[]), &path, out);
+            out.insert(layer_key(l), path);
+        }
+    }
+    let mut out = HashMap::new();
+    walk(layers, "", &mut out);
+    out
 }
 
 #[cfg(test)]

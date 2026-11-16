@@ -1,0 +1,125 @@
+{
+  "height": 12,
+  "infinite": false,
+  "layers": [
+    {
+      "id": 1,
+      "name": "Props",
+      "objects": [
+        {
+          "gid": 6,
+          "height": 16,
+          "id": 1,
+          "name": "BushA",
+          "width": 16,
+          "x": 32,
+          "y": 48
+        },
+        {
+          "gid": 3221225478,
+          "height": 32,
+          "id": 2,
+          "name": "BushB",
+          "properties": [
+            {
+              "name": "hp",
+              "type": "int",
+              "value": 7
+            },
+            {
+              "name": "sound",
+              "value": "snip"
+            }
+          ],
+          "width": 32,
+          "x": 64,
+          "y": 96
+        },
+        {
+          "class": "Pot",
+          "gid": 6,
+          "height": 16,
+          "id": 3,
+          "name": "PotC",
+          "width": 16,
+          "x": 96,
+          "y": 48
+        },
+        {
+          "gid": 10,
+          "height": 16,
+          "id": 4,
+          "name": "Torch",
+          "width": 16,
+          "x": 16,
+          "y": 112
+        },
+        {
+          "gid": 33,
+          "height": 48,
+          "id": 5,
+          "name": "Picture",
+          "width": 32,
+          "x": 80,
+          "y": 128
+        }
+      ],
+      "type": "objectgroup"
+    }
+  ],
+  "nextlayerid": 2,
+  "nextobjectid": 6,
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "tiledversion": "1.12.0",
+  "tileheight": 16,
+  "tilesets": [
+    {
+      "firstgid": 1,
+      "source": "tile_info.tsx"
+    },
+    {
+      "columns": 0,
+      "firstgid": 33,
+      "grid": {
+        "height": 1,
+        "orientation": "orthogonal",
+        "width": 1
+      },
+      "name": "pictures",
+      "tilecount": 1,
+      "tileheight": 48,
+      "tiles": [
+        {
+          "class": "Bush",
+          "id": 0,
+          "image": "big.png",
+          "imageheight": 48,
+          "imagewidth": 32,
+          "properties": [
+            {
+              "name": "hp",
+              "type": "int",
+              "value": 9
+            },
+            {
+              "name": "godot_scene",
+              "type": "file",
+              "value": "tile_probe.tscn"
+            },
+            {
+              "name": "slashable",
+              "type": "bool",
+              "value": false
+            }
+          ]
+        }
+      ],
+      "tilewidth": 32
+    }
+  ],
+  "tilewidth": 16,
+  "type": "map",
+  "version": "1.10",
+  "width": 8
+}

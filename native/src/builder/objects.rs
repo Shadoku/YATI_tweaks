@@ -24,7 +24,7 @@ use tiled_core::{Object, Point, Text};
 const PI: f64 = std::f64::consts::PI;
 
 /// `ALIGNMENT_UNIT_OFFSETS`.
-fn alignment_unit(a: &str) -> Option<Vector2> {
+pub(super) fn alignment_unit(a: &str) -> Option<Vector2> {
     Some(match a {
         "bottomleft" => Vector2::new(0.5, -0.5),
         "bottom" => Vector2::new(0.0, -0.5),
@@ -339,6 +339,7 @@ impl Build<'_> {
         offset: Vector2,
     ) {
         self.merge_custom_types(&mut obj);
+        self.cur_tile = None;
         let o = &obj.o;
         let id = o.id.unwrap_or(0);
         let x = f(o.x, offset.x as f64);
@@ -572,12 +573,36 @@ impl Build<'_> {
                 td = d;
             }
 
+            // What _tiled_import(info) gets as info.tile for the node(s) of this object
+            let group = ts.group_index(source_id, tile_coords);
+            self.cur_tile = Some(super::refs::TileRef {
+                source: src.clone(),
+                coords: tile_coords,
+                data: td.clone(),
+                gid,
+                flip_h,
+                flip_v,
+                flip_d: raw_gid & 0x2000_0000 != 0,
+                scale: sprite.get_scale(),
+                alignment: alignment.clone(),
+                offset: tile_offset,
+                anchor: Vector2::new(x as f32, y as f32),
+                drawn: Vector2::new(f(o.width, 0.0) as f32, f(o.height, 0.0) as f32),
+                shapes: (group > 0)
+                    .then(|| self.built.object_groups.get(&group).cloned())
+                    .flatten(),
+            });
+
             let obj_is_instance = gtype == GType::Instance && o.text.is_none();
             let mut tile_class = String::new();
             let tile_has_node_type = td.has_meta("godot_node_type");
             if td.has_meta("class") {
                 tile_class = td.get_meta("class").stringify().to_string();
-                class = tile_class.clone();
+                // The object's own class wins (Tiled shows the tile's class only for an object
+                // without one)
+                if class.is_empty() {
+                    class = tile_class.clone();
+                }
             }
             if tile_has_node_type {
                 tile_class = td.get_meta("godot_node_type").stringify().to_string();
@@ -934,7 +959,10 @@ impl Build<'_> {
             if lname == "godot_node_type" {
                 continue;
             }
-            if lname == "class" && !self.opts.add_class_as_metadata {
+            // The tile's class is the object's only when the object has none
+            if lname == "class"
+                && (!self.opts.add_class_as_metadata || !obj.o.class_name().is_empty())
+            {
                 continue;
             }
             let v = td.get_meta(&m);

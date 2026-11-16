@@ -581,6 +581,26 @@ An instance keeps the object's name (else the scene file's name), position, rota
 instance also its size as `scale` and the `res_alignment` property. It gets the class as metadata and the object's
 custom properties like any node.
 
+**Tile objects.** A tile object's class is its own, else its tile's (the class set on the tile in the tileset): the
+`class` metadata, like the scene lookup above, takes the object's own class when it has one (in 3.1 the tile's class
+replaced it in the metadata). Its custom properties are the object's own and its tile's (the tileset's
+`<tile>` properties, with the project's class members of the tile's class): a property set only on the tile reaches
+every object of that tile exactly as an object property would (assigned to an export of that name with
+[assign_node_properties](#assign_node_properties), else metadata, and in `info.properties` of the hook), and the
+object's property of the same name wins. Set `slashable = true` once on the bush tile of a shared `.tsx`, and every
+placed bush gets it.
+
+**Where a tile object's instance sits.** The instance is placed at the object's position as Tiled saves it, which for
+a tile object is its anchor: the bottom-left corner on an orthogonal map with the tileset's default object
+alignment (`objectalignment` names another corner or the centre; isometric maps anchor at the bottom centre). Its
+`scale` is the object's size over the tile's size (a 32 × 32 object of a 16 × 16 tile: `(2, 2)`); its rotation the
+object's, about the anchor. Nothing of the tile is drawn: the scene draws it from `info.tile` (below). A scene that
+wants to be unscaled sets `scale = Vector2.ONE` in its hook and uses `info.tile.drawn_size`. To draw the tile as
+Tiled does, add a `Sprite2D` with `texture = tile.texture`, `region_enabled = true`, `region_rect = tile.region`,
+`centered = false`, `position = tile.top_left` (in the instance's own, scaled, coordinates), `flip_h = tile.flip_h`,
+`flip_v = tile.flip_v`: it then covers `info.tile.rect`. A flipped tile object's sprite flips in place (the importer's
+own sprite does so with `flip_h`/`flip_v`); a flipped scene must flip what it draws itself.
+
 **Node properties.** With [assign_node_properties](#assign_node_properties) (the default) a custom property whose
 name is a property of the node is assigned to it: `hp` (int) of an object of class `Enemy` lands in the
 scene's `@export var hp: int`, not in metadata. Property names are compared exactly (Godot's are case-sensitive);
@@ -616,10 +636,49 @@ func _tiled_import(info: Dictionary) -> void:
 	# info.rect: Rect2(x, y, width, height) in map pixels, as Tiled saves it
 	# info.shape: Rect2 from (0, 0), or a PackedVector2Array (polygon, polyline) in object coordinates
 	# info.shape_type: "rectangle", "ellipse", "capsule", "point", "polygon", "polyline", "tile" or "text"
+	# info.tile: a tile object's tile (below); absent for other objects
 	max_hp = info.properties.get("hp", max_hp)
 ```
 
-The node is not in the scene tree yet (`_ready` has not run); the hook sees the imported tree only.
+The node is not in the scene tree yet (`_ready` has not run); the hook sees the imported tree only. `info.class` is
+the object's own class (`""` when only its tile has one: that is `info.tile.class`). `info.rect` is the object's
+rectangle exactly as Tiled saves it, so for a tile object `rect.position` is its anchor: on an orthogonal map with
+the default alignment the **bottom**-left corner, the tile covering `rect.position.y - rect.size.y` to
+`rect.position.y` (`info.tile.rect` gives the covered area top-left first). `info.shape` is `Rect2(0, 0, w, h)` for a
+tile object too.
+
+**`info.tile`**, for a node made for a tile object (a scene instance, or the sprite or body of a tile object with a
+`godot_script` that has the hook), a Dictionary:
+
+| Key | Type | Meaning |
+|-----|------|---------|
+| `texture` | Texture2D | The texture the importer draws the tile from: the tileset's image for an atlas tileset, the tile's own image for an image collection tile; for an animated tile under [animation_mode](#animation_mode) `strip`, the strip image the importer made of its frames |
+| `region` | Rect2 | The tile's rectangle in `texture` (frame 0 of an animated tile; the whole image, or the tile's sub-rectangle, for a collection tile) |
+| `flip_h`, `flip_v` | bool | The object's horizontal and vertical flip flags (its gid's) |
+| `flip_d` | bool | The gid's diagonal flag. Tiled sets it on tiles of tile layers, not on tile objects (they rotate instead), so it is `false` for a tile object Tiled saved |
+| `gid` | int | The tile's gid in the map, without the flip flags |
+| `tile_id` | int | The tile's local id in its tileset |
+| `tileset` | String | The tileset's name |
+| `tileset_source` | String | The map's `source` of an external tileset as saved (relative to the map, e.g. `"../tilesets/overworld.tsx"`), `""` for an embedded one |
+| `size` | Vector2 | The tile's size in pixels, unscaled |
+| `drawn_size` | Vector2 | The object's size in Tiled (`info.rect.size`) |
+| `scale` | Vector2 | The scale the importer applied to the instance (or sprite): `drawn_size / size` |
+| `alignment` | String | The object alignment that anchors it: the tileset's `objectalignment`, else `bottomleft` (orthogonal) or `bottom` |
+| `top_left` | Vector2 | The tile image's top-left corner relative to the node's origin (the anchor), in tile pixels: `(0, -16)` for a 16 × 16 tile anchored bottom-left; in the node's own coordinates, which `scale` scales |
+| `offset` | Vector2 | The tileset's tile offset (`tileoffset`), in map pixels: Tiled draws the tile shifted by it; not applied to the instance's position |
+| `rect` | Rect2 | The area the object covers in map pixels, top-left first: the anchor, the alignment and `drawn_size`, before rotation (Tiled's pixel coordinates; on an isometric map not screen pixels) |
+| `class` | String | The tile's own class in the tileset (`""` for none) |
+| `properties` | Dictionary | The tile's own custom properties in the tileset (with its class's project members), as the importer typed them (`{"slashable": true, "hp": 3}`); `info.properties` holds them merged with the object's |
+| `shapes` | Array | The tile's collision objects (its `<objectgroup>`), each `{"type": "rectangle", "ellipse", "capsule", "point", "polygon" or "polyline", "name", "position": Vector2, "size": Vector2, "rotation": float (degrees), "points": PackedVector2Array}`, in the tile's pixels from its top-left corner as Tiled saves them: not flipped, scaled or transposed; `points` relative to `position` (polygon, polyline), empty otherwise |
+| `animation` | Array | An animated tile's frames, `{"region": Rect2, "duration": float (seconds)}` each, regions into `texture` (the strip's, or the atlas's with [animation_mode](#animation_mode) `atlas`); `[]` for a tile that is not animated |
+
+Example, a 16 × 16 bush tile (tile 5 of `props`, from `tile_info.tsx`) placed unflipped at `x = 32, y = 48`:
+`info.rect == Rect2(32, 48, 16, 16)`, `info.tile == {"gid": 6, "tile_id": 5, "tileset": "props", "tileset_source":
+"tile_info.tsx", "texture": <tiles.png>, "region": Rect2(80, 0, 16, 16), "flip_h": false, "flip_v": false, "flip_d":
+false, "size": Vector2(16, 16), "drawn_size": Vector2(16, 16), "scale": Vector2(1, 1), "alignment": "bottomleft",
+"top_left": Vector2(0, -16), "offset": Vector2(0, 0), "rect": Rect2(32, 32, 16, 16), "class": "Bush", "properties":
+{"hp": 3, "slashable": true, "sound": "rustle"}, "shapes": [{"type": "rectangle", "name": "Trunk", "position":
+Vector2(2, 4), "size": Vector2(12, 10), "rotation": 0.0, "points": []}, ...], "animation": []}`.
 
 ## Object references
 

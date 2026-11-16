@@ -159,8 +159,11 @@ build_state! {
     nodes_by_id: HashMap<i64, Gd<Node>>,
     /// Object properties waiting for every node to exist (`resolve_object_refs`).
     pending_refs: Vec<refs::PendingRef>,
-    /// Object nodes with a script, and their objects: `_tiled_import` candidates (F1).
-    hooks: Vec<(Gd<Node>, Obj)>,
+    /// Object nodes with a script, their objects and, for a tile object, its tile:
+    /// `_tiled_import` candidates (F1).
+    hooks: Vec<(Gd<Node>, Obj, Option<refs::TileRef>)>,
+    /// The tile of the tile object being created (`info.tile` of its nodes' hook), else `None`.
+    cur_tile: Option<refs::TileRef>,
     /// Scripts attached by `godot_script` properties so far (a node gets a script only so,
     /// or from its scene).
     scripts_set: u64,
@@ -264,6 +267,7 @@ impl<'m> Build<'m> {
             nodes_by_id: HashMap::new(),
             pending_refs: Vec::new(),
             hooks: Vec::new(),
+            cur_tile: None,
             scripts_set: 0,
             prop_info: HashMap::new(),
             skel: None,

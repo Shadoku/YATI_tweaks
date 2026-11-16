@@ -2162,6 +2162,191 @@ func test_new_tiled_import_hook() -> bool:
 	return done()
 
 
+const PROBE_SCENE := "res://test/fixtures/tile_probe.tscn"
+const TILE_SCENES := {"Bush": PROBE_SCENE, "Pot": ENEMY_SCENE}
+
+
+func _tile_info(n: Node, msg: String) -> Dictionary:
+	if n == null: return {}
+	var info: Dictionary = n.get("imported")
+	if not check(info.get("tile") is Dictionary, msg + ": info.tile missing (keys " + str(info.keys()) + ")"): return {}
+	return info["tile"]
+
+
+func test_new_tile_object_info() -> bool:
+	# A tile object whose class (its own, else its tile's) maps to a scene: _tiled_import(info) also
+	# gets info.tile, what the scene needs to draw and behave like the tile: the texture and region
+	# the importer drew, ids, flips, sizes, where the tile sits relative to the node's origin (the
+	# object's anchor, Tiled's bottom-left corner), the tile's class, properties, collision shapes
+	# and animation frames. info.rect stays the object's rectangle as Tiled saves it (y at the
+	# bottom for a tile object); info.tile.rect is the area it covers, top-left first.
+	var imp := _new_importer({"class_scenes": TILE_SCENES})
+	var n := _import_with(imp, "tile_info.tmx")
+	if n == null: return done()
+	eq(imp.get("last_error_count"), 0, "errors")
+	eq(imp.get("last_warning_count"), 0, "warnings")
+	var a := need(n, "BushA")
+	if _is_scene(a, PROBE_SCENE, "BushA (the tile's class Bush)"):
+		eq((a as Node2D).position, Vector2(32, 48), "BushA position (the bottom-left anchor)")
+		eq((a as Node2D).scale, Vector2.ONE, "BushA scale")
+		eq(a.get("hook_calls"), 1, "BushA _tiled_import calls")
+		var info: Dictionary = a.get("imported")
+		eq(info.get("shape_type"), "tile", "BushA shape_type")
+		eq(info.get("rect"), Rect2(32, 48, 16, 16), "BushA info.rect (as saved: y is the bottom)")
+		eq(info.get("shape"), Rect2(0, 0, 16, 16), "BushA info.shape")
+		eq(info.get("class"), "", "BushA info.class (the object's own)")
+		var t := _tile_info(a, "BushA")
+		if not t.is_empty():
+			eq(t.get("gid"), 6, "BushA tile.gid")
+			eq(t.get("tile_id"), 5, "BushA tile.tile_id")
+			eq(t.get("tileset"), "props", "BushA tile.tileset")
+			eq(t.get("tileset_source"), "tile_info.tsx", "BushA tile.tileset_source")
+			var tex: Variant = t.get("texture")
+			if is_type(tex, "Texture2D", "BushA tile.texture"):
+				eq((tex as Texture2D).get_size(), Vector2(128, 64), "BushA tile.texture size (the atlas)")
+			eq(t.get("region"), Rect2(80, 0, 16, 16), "BushA tile.region")
+			eq(t.get("flip_h"), false, "BushA tile.flip_h")
+			eq(t.get("flip_v"), false, "BushA tile.flip_v")
+			eq(t.get("flip_d"), false, "BushA tile.flip_d")
+			eq(t.get("size"), Vector2(16, 16), "BushA tile.size")
+			eq(t.get("drawn_size"), Vector2(16, 16), "BushA tile.drawn_size")
+			eq(t.get("scale"), Vector2.ONE, "BushA tile.scale")
+			eq(t.get("alignment"), "bottomleft", "BushA tile.alignment")
+			eq(t.get("top_left"), Vector2(0, -16), "BushA tile.top_left")
+			eq(t.get("offset"), Vector2.ZERO, "BushA tile.offset")
+			eq(t.get("rect"), Rect2(32, 32, 16, 16), "BushA tile.rect (top-left first)")
+			eq(t.get("class"), "Bush", "BushA tile.class")
+			eq(t.get("properties"), {"hp": 3, "slashable": true, "sound": "rustle"}, "BushA tile.properties")
+			eq(t.get("animation"), [], "BushA tile.animation")
+			var shapes: Array = t.get("shapes", [])
+			if eq(shapes.size(), 3, "BushA tile.shapes"):
+				eq(shapes[0], {"type": "rectangle", "name": "Trunk", "position": Vector2(2, 4), "size": Vector2(12, 10), "rotation": 0.0, "points": PackedVector2Array()}, "BushA shape 0")
+				eq(shapes[1].get("type"), "polygon", "BushA shape 1 type")
+				eq(shapes[1].get("name"), "Leaf", "BushA shape 1 name")
+				eq(shapes[1].get("position"), Vector2(8, 0), "BushA shape 1 position")
+				eq(shapes[1].get("points"), PackedVector2Array([Vector2(0, 0), Vector2(4, 6), Vector2(-4, 6)]), "BushA shape 1 points")
+				eq(shapes[2].get("type"), "ellipse", "BushA shape 2 type")
+				eq(shapes[2].get("position"), Vector2(0, 8), "BushA shape 2 position")
+				eq(shapes[2].get("size"), Vector2(16, 8), "BushA shape 2 size")
+				eq(shapes[2].get("rotation"), 15.0, "BushA shape 2 rotation")
+	var b := need(n, "BushB")
+	if _is_scene(b, PROBE_SCENE, "BushB"):
+		eq((b as Node2D).position, Vector2(64, 96), "BushB position")
+		eq((b as Node2D).scale, Vector2(2, 2), "BushB scale (32x32 object of a 16x16 tile, as before)")
+		eq((b.get("imported") as Dictionary).get("rect"), Rect2(64, 96, 32, 32), "BushB info.rect")
+		var t := _tile_info(b, "BushB")
+		if not t.is_empty():
+			eq(t.get("gid"), 6, "BushB tile.gid (without the flip flags)")
+			eq(t.get("flip_h"), true, "BushB tile.flip_h")
+			eq(t.get("flip_v"), true, "BushB tile.flip_v")
+			eq(t.get("size"), Vector2(16, 16), "BushB tile.size")
+			eq(t.get("drawn_size"), Vector2(32, 32), "BushB tile.drawn_size")
+			eq(t.get("scale"), Vector2(2, 2), "BushB tile.scale")
+			eq(t.get("top_left"), Vector2(0, -16), "BushB tile.top_left (unscaled)")
+			eq(t.get("rect"), Rect2(64, 64, 32, 32), "BushB tile.rect")
+			eq(t.get("properties"), {"hp": 3, "slashable": true, "sound": "rustle"}, "BushB tile.properties (the tile's own)")
+	var c := need(n, "PotC")
+	if _is_scene(c, ENEMY_SCENE, "PotC (its own class Pot wins over the tile's Bush)"):
+		meta(c, "class", "Pot")
+		eq((c.get("imported") as Dictionary).get("class"), "Pot", "PotC info.class")
+		var t := _tile_info(c, "PotC")
+		if not t.is_empty():
+			eq(t.get("class"), "Bush", "PotC tile.class")
+		eq(c.get("hp"), 3, "PotC.hp (a property set only on the tile)")
+	var torch := need(n, "Torch")
+	if _is_scene(torch, PROBE_SCENE, "Torch (an animated tile)"):
+		var t := _tile_info(torch, "Torch")
+		if not t.is_empty():
+			eq(t.get("gid"), 10, "Torch tile.gid")
+			eq(t.get("tile_id"), 9, "Torch tile.tile_id")
+			var frames: Array = t.get("animation", [])
+			if eq(frames.size(), 2, "Torch tile.animation"):
+				eq(frames[0].get("duration"), 0.1, "Torch frame 0 duration")
+				eq(frames[1].get("duration"), 0.25, "Torch frame 1 duration")
+				eq((frames[0].get("region") as Rect2).size, Vector2(16, 16), "Torch frame 0 size")
+				eq(frames[0].get("region"), t.get("region"), "Torch tile.region is frame 0's")
+				check(frames[0].get("region") != frames[1].get("region"), "Torch frames share a region")
+			eq(t.get("properties"), {"sound": "crackle"}, "Torch tile.properties")
+	var pic := need(n, "Picture")
+	if _is_scene(pic, PROBE_SCENE, "Picture (an image collection tile)"):
+		eq(pic.get("hp"), 9, "Picture.hp (its tile's)")
+		var t := _tile_info(pic, "Picture")
+		if not t.is_empty():
+			eq(t.get("gid"), 33, "Picture tile.gid")
+			eq(t.get("tile_id"), 0, "Picture tile.tile_id")
+			eq(t.get("tileset"), "pictures", "Picture tile.tileset")
+			eq(t.get("tileset_source"), "", "Picture tile.tileset_source (embedded)")
+			var tex: Variant = t.get("texture")
+			if is_type(tex, "Texture2D", "Picture tile.texture"):
+				eq((tex as Texture2D).get_size(), Vector2(32, 48), "Picture tile.texture size (the image)")
+			eq(t.get("region"), Rect2(0, 0, 32, 48), "Picture tile.region (the whole image)")
+			eq(t.get("size"), Vector2(32, 48), "Picture tile.size")
+			eq(t.get("top_left"), Vector2(0, -48), "Picture tile.top_left")
+			eq(t.get("rect"), Rect2(80, 80, 32, 48), "Picture tile.rect")
+			eq(t.get("shapes"), [], "Picture tile.shapes")
+	# Godot's own animation in the atlas: the frames' regions are the atlas tiles'
+	var at := _import("tile_info.tmx", {"class_scenes": TILE_SCENES, "animation_mode": "atlas"})
+	if at:
+		var t := _tile_info(need(at, "Torch"), "Torch (atlas)")
+		if not t.is_empty():
+			var frames: Array = t.get("animation", [])
+			if eq(frames.size(), 2, "Torch (atlas) tile.animation"):
+				eq(frames[0].get("region"), Rect2(16, 16, 16, 16), "Torch (atlas) frame 0 region")
+				eq(frames[1].get("region"), Rect2(32, 16, 16, 16), "Torch (atlas) frame 1 region")
+			var tex: Variant = t.get("texture")
+			if is_type(tex, "Texture2D", "Torch (atlas) tile.texture"):
+				eq((tex as Texture2D).get_size(), Vector2(128, 64), "Torch (atlas) tile.texture size")
+	return done()
+
+
+func test_new_tile_object_properties() -> bool:
+	# A property set only on the tile (in its tileset) reaches the node of every tile object as an
+	# object-level one would: an export of that name with assign_node_properties, else metadata;
+	# the object's own property of the same name wins. With the project file the class Bush maps
+	# to its scene by its godot_scene member (scope tile), and the tile's slashable overrides the
+	# member's default.
+	var n := _import("tile_info.tmx", {"class_scenes": TILE_SCENES})
+	if n == null: return done()
+	var a := need(n, "BushA")
+	if _is_scene(a, PROBE_SCENE, "BushA"):
+		eq(a.get("slashable"), true, "BushA.slashable (the tile's)")
+		eq(a.get("hp"), 3, "BushA.hp (the tile's)")
+		meta(a, "sound", "rustle")
+		check(not a.has_meta("slashable"), "BushA: slashable also metadata")
+		var props: Dictionary = (a.get("imported") as Dictionary).get("properties", {})
+		eq(props.get("slashable"), true, "BushA info.properties slashable")
+		eq(props.get("hp"), 3, "BushA info.properties hp")
+	var b := need(n, "BushB")
+	if _is_scene(b, PROBE_SCENE, "BushB"):
+		eq(b.get("hp"), 7, "BushB.hp (the object's over the tile's)")
+		eq(b.get("slashable"), true, "BushB.slashable (the tile's)")
+		meta(b, "sound", "snip")
+		var props: Dictionary = (b.get("imported") as Dictionary).get("properties", {})
+		eq(props.get("hp"), 7, "BushB info.properties hp")
+		eq(props.get("sound"), "snip", "BushB info.properties sound")
+	var off := _import("tile_info.tmx", {"class_scenes": TILE_SCENES, "assign_node_properties": false})
+	if off:
+		var oa := need(off, "BushA")
+		if _is_scene(oa, PROBE_SCENE, "BushA (assign_node_properties off)"):
+			eq(oa.get("slashable"), false, "BushA.slashable untouched")
+			meta(oa, "slashable", true)
+			meta(oa, "hp", 3)
+		var ob := need(off, "BushB")
+		if ob: meta(ob, "hp", 7)
+	var p := _import("tile_info.tmx", {}, "tile_info.tiled-project")
+	if p:
+		var pa := need(p, "BushA")
+		if _is_scene(pa, PROBE_SCENE, "BushA (project: Bush's godot_scene member)"):
+			eq(pa.get("slashable"), true, "BushA.slashable (project)")
+			eq(pa.get("hp"), 3, "BushA.hp (project)")
+			check(not pa.has_meta("godot_scene"), "BushA (project): godot_scene as metadata")
+			var t := _tile_info(pa, "BushA (project)")
+			if not t.is_empty():
+				eq(t.get("class"), "Bush", "BushA (project) tile.class")
+				eq(t.get("properties", {}).get("slashable"), true, "BushA (project) tile.properties slashable")
+	return done()
+
+
 func _write(path: String, text: String) -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path.get_base_dir()))
 	var f := FileAccess.open(path, FileAccess.WRITE)

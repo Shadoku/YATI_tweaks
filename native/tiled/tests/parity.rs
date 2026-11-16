@@ -51,6 +51,8 @@ fn every_map_matches_the_runtime_dictionary() {
         "world/area_0_0.tmx",
         "world/area_0_1.tmj",
         "world/area_1_0.tmx",
+        // A tile object's info.tile (shared tileset, image collection, flips)
+        "tile_info.tmx",
     ] {
         map_parity(name, None, &format!("{}.json", name.replace('/', "_")));
     }
@@ -78,11 +80,16 @@ fn maps_with_custom_types_match() {
         Some("masks.tiled-project"),
         "masks.tmx+masks.json",
     );
+    map_parity(
+        "tile_info.tmx",
+        Some("tile_info.tiled-project"),
+        "tile_info.tmx+tile_info.json",
+    );
 }
 
 #[test]
 fn every_tileset_matches() {
-    for name in ["terrain.tsx", "iso.tsx", "json_tiles.tsj"] {
+    for name in ["terrain.tsx", "iso.tsx", "json_tiles.tsj", "tile_info.tsx"] {
         let t = Tileset::parse(&bytes(name), &fixture(name)).unwrap();
         assert_parity(name, &t.to_value(), &expected(&format!("{name}.json")));
     }

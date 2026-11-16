@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- info.tile of tile objects mapped to scenes: the shared tileset's bush tile (its class Bush, its
+     properties reaching every placed bush), one flipped and drawn at twice its size with properties of
+     its own, one whose own class Pot wins over the tile's, an animated tile, and an image collection
+     tile (big.png, 32 x 48). -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="8" height="12" tilewidth="16" tileheight="16" infinite="0" nextlayerid="2" nextobjectid="6">
+ <tileset firstgid="1" source="tile_info.tsx"/>
+ <tileset firstgid="33" name="pictures" tilewidth="32" tileheight="48" tilecount="1" columns="0">
+  <grid orientation="orthogonal" width="1" height="1"/>
+  <tile id="0" class="Bush">
+   <properties>
+    <property name="hp" type="int" value="9"/>
+   </properties>
+   <image source="big.png" width="32" height="48"/>
+  </tile>
+ </tileset>
+ <objectgroup id="1" name="Props">
+  <object id="1" name="BushA" gid="6" x="32" y="48" width="16" height="16"/>
+  <object id="2" name="BushB" gid="3221225478" x="64" y="96" width="32" height="32">
+   <properties>
+    <property name="hp" type="int" value="7"/>
+    <property name="sound" value="snip"/>
+   </properties>
+  </object>
+  <object id="3" name="PotC" class="Pot" gid="6" x="96" y="48" width="16" height="16"/>
+  <object id="4" name="Torch" gid="10" x="16" y="112" width="16" height="16"/>
+  <object id="5" name="Picture" gid="33" x="80" y="128" width="32" height="48"/>
+ </objectgroup>
+</map>

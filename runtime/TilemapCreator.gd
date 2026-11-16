@@ -116,7 +116,9 @@ var _property_info_cache: Dictionary = {}	# class -> script (or null) -> {proper
 var _class_scenes: Dictionary = {}			# lower case Tiled class -> scene path
 var _read_godot_scene: bool = true			# a custom class's 'godot_scene' member maps it to a scene
 var _assign_node_properties: bool = true	# custom properties set a node property of the same name
-var _object_nodes: Array = []				# [node, object dictionary] of every object node (import hooks)
+var _object_nodes: Array = []				# [node, object dictionary, tile ref] of every object node (import hooks)
+var _tile_ref: Dictionary = {}				# the tile of the tile object being created (get_tile_import_info), else {}
+var _tileset_infos: Dictionary = {}			# firstgid -> {"name", "source"} of the map's tilesets
 var _ct: CustomTypes = null
 var _base_dictionary: Dictionary
 
@@ -309,6 +311,8 @@ func reset_import_state() -> void:
 	_pending_object_refs.clear()
 	_property_info_cache.clear()
 	_object_nodes.clear()
+	_tile_ref = {}
+	_tileset_infos = {}
 
 
 func create(source_file: String):
@@ -355,6 +359,7 @@ func create(source_file: String):
 		if _atlas_sources != null:
 			_atlas_sources.sort_custom(custom_compare)
 		_object_groups = tileset_creator.get_registered_object_groups()
+		_tileset_infos = tileset_creator.get_tileset_infos()
 	# gid lookups depend on _atlas_sources / _first_gids, which are final from here on
 	_atlas_index_cache.clear()
 	_first_gid_index_cache.clear()
@@ -1158,7 +1163,8 @@ func convert_metadata_to_obj_properties(td: TileData, obj: Dictionary) -> void:
 		var meta_name_lower: String = String(meta_name).to_lower()
 		if meta_name_lower == GODOT_NODE_TYPE_PROPERTY:
 			continue
-		if meta_name_lower == CLASS_INTERNAL and not _add_class_as_metadata:
+		# The tile's class is the object's only when the object has none
+		if meta_name_lower == CLASS_INTERNAL and (not _add_class_as_metadata or get_class_string(obj, false) != ""):
 			continue
 		var meta_val = td.get_meta(meta_name)
 		var meta_type = typeof(meta_val)
@@ -1255,6 +1261,7 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 	var obj_height = obj.get("height", 0.0)
 	var obj_visible = obj.get("visible", true)
 	var obj_name = obj.get("name", "")
+	_tile_ref = {}
 
 	if _ct != null:
 		_ct.merge_custom_properties(obj, "object")
@@ -1457,13 +1464,26 @@ func create_object(obj: Dictionary, layer_node: Node, tileset: TileSet, offset: 
 				obj_sprite.scale = Vector2(scale_x, scale_y)
 			td = gid_source.get_tile_data(Vector2i.ZERO, 0)
 
+		# What _tiled_import(info) gets as info.tile for the node(s) of this object
+		_tile_ref = {
+			"source": gid_source, "coords": tile_coords, "data": td, "gid": gid,
+			"flip_h": flippedH, "flip_v": flippedV, "flip_d": (int_id & FLIPPED_DIAGONALLY_FLAG) > 0,
+			"scale": obj_sprite.scale, "alignment": _current_object_alignment, "offset": tile_offset,
+			"x": float(obj_x), "y": float(obj_y),
+			"width": float(obj.get("width", 0.0)), "height": float(obj.get("height", 0.0)),
+			# The tile's collision objects (the internal custom data layer is gone at the end)
+			"group": get_object_group(td.get_custom_data(CUSTOM_DATA_INTERNAL)),
+		}
+
 		# Tile objects may already have been classified as instance in the tileset
 		var obj_is_instance = godot_type == _godot_type.INSTANCE and not obj.has("template") and not obj.has("text")
 		var tile_class = ""
 		var tile_has_node_type: bool = td.has_meta(GODOT_NODE_TYPE_PROPERTY)
 		if td.has_meta(CLASS_INTERNAL):
 			tile_class = td.get_meta(CLASS_INTERNAL)
-			class_string = tile_class
+			# The object's own class wins (Tiled shows the tile's class only for an object without one)
+			if class_string == "":
+				class_string = tile_class
 		if tile_has_node_type:
 			tile_class = td.get_meta(GODOT_NODE_TYPE_PROPERTY)
 		# No scene for the object's own class: the tile's class may have one (F1)
@@ -2426,7 +2446,7 @@ func get_object_polygon(obj_id: int):
 # carries the id). The first node registered for an id stands for the object.
 func register_object_node(obj_id, node: Node, set_id_meta: bool = true, obj: Dictionary = {}) -> void:
 	if not obj.is_empty():
-		_object_nodes.append([node, obj])
+		_object_nodes.append([node, obj, _tile_ref])
 	var id := int(obj_id)
 	if id == 0: return
 	if not _nodes_by_object_id.has(id):
@@ -2448,7 +2468,7 @@ func finish_import(root: Node) -> void:
 	for entry in nodes:
 		var node = entry[0]
 		if is_instance_valid(node) and node.get_script() != null and node.has_method(IMPORT_HOOK_METHOD):
-			node.call(IMPORT_HOOK_METHOD, get_import_info(node, entry[1]))
+			node.call(IMPORT_HOOK_METHOD, get_import_info(node, entry[1], entry[2]))
 	_nodes_by_object_id.clear()
 	_property_info_cache.clear()
 
@@ -2457,8 +2477,9 @@ func finish_import(root: Node) -> void:
 # importer typed them ({name: value}; an object property a NodePath from the node), its rect in
 # map pixels (Rect2(x, y, width, height), as Tiled saves it) and its shape in object coordinates
 # (Rect2 from (0, 0), or a PackedVector2Array for a polygon or polyline), shape_type one of
-# "rectangle", "ellipse", "capsule", "point", "polygon", "polyline", "tile", "text".
-func get_import_info(node: Node, obj: Dictionary) -> Dictionary:
+# "rectangle", "ellipse", "capsule", "point", "polygon", "polyline", "tile", "text"; a tile object's
+# also "tile" (get_tile_import_info).
+func get_import_info(node: Node, obj: Dictionary, tile_ref: Dictionary = {}) -> Dictionary:
 	var w := float(obj.get("width", 0.0))
 	var h := float(obj.get("height", 0.0))
 	var shape: Variant = Rect2(0.0, 0.0, w, h)
@@ -2479,7 +2500,7 @@ func get_import_info(node: Node, obj: Dictionary) -> Dictionary:
 		var pname := str(prop.get("name", ""))
 		if pname == "": continue
 		props[pname] = get_import_info_value(node, str(prop.get("type", "string")), prop.get("value", ""))
-	return {
+	var info := {
 		"id": int(obj.get("id", 0)),
 		"name": str(obj.get("name", "")),
 		"class": get_class_string(obj, false),
@@ -2487,6 +2508,87 @@ func get_import_info(node: Node, obj: Dictionary) -> Dictionary:
 		"rect": Rect2(float(obj.get("x", 0.0)), float(obj.get("y", 0.0)), w, h),
 		"shape": shape,
 		"shape_type": shape_type,
+	}
+	if not tile_ref.is_empty():
+		info["tile"] = get_tile_import_info(tile_ref)
+	return info
+
+
+# info.tile of a tile object (Reference.md, "The _tiled_import hook"): the tile as the importer drew
+# it (texture and region of the source it used, an animation strip's with animation_mode "strip"),
+# its ids, sizes, where it sits relative to the node's origin, its own class, properties, collision
+# shapes (in the tile's pixels, unflipped, unscaled) and animation frames.
+func get_tile_import_info(ref: Dictionary) -> Dictionary:
+	var source: TileSetAtlasSource = ref["source"]
+	var coords: Vector2i = ref["coords"]
+	var td: TileData = ref["data"]
+	var gid: int = ref["gid"]
+	var first_gid: int = _first_gids[get_first_gid_index(gid)] if not _first_gids.is_empty() else 0
+	var ts_info: Dictionary = _tileset_infos.get(first_gid, {})
+	var size := Vector2(source.texture_region_size)
+	var drawn := Vector2(ref["width"], ref["height"])
+	var unit: Vector2 = ALIGNMENT_UNIT_OFFSETS.get(ref["alignment"], ALIGNMENT_UNIT_OFFSETS["bottomleft"])
+	var corner: Vector2 = unit - Vector2(0.5, 0.5)
+	var props := {}
+	for m in td.get_meta_list():
+		if String(m) == CLASS_INTERNAL: continue
+		props[String(m)] = td.get_meta(m)
+	var frames := []
+	var frame_count := source.get_tile_animation_frames_count(coords)
+	if frame_count > 1:
+		for i in range(frame_count):
+			frames.append({"region": Rect2(source.get_tile_texture_region(coords, i)), "duration": source.get_tile_animation_frame_duration(coords, i)})
+	var shapes := []
+	var group = ref["group"]
+	if group is Dictionary:
+		for o in group.get("objects", []):
+			shapes.append(get_tile_shape_info(o))
+	return {
+		"gid": gid,
+		"tile_id": gid - first_gid,
+		"tileset": str(ts_info.get("name", "")),
+		"tileset_source": str(ts_info.get("source", "")),
+		"texture": source.texture,
+		"region": Rect2(source.get_tile_texture_region(coords, 0)),
+		"flip_h": ref["flip_h"],
+		"flip_v": ref["flip_v"],
+		"flip_d": ref["flip_d"],
+		"size": size,
+		"drawn_size": drawn,
+		"scale": ref["scale"],
+		"alignment": ref["alignment"],
+		"top_left": corner * size,
+		"offset": Vector2(ref["offset"]),
+		"rect": Rect2(Vector2(ref["x"], ref["y"]) + corner * drawn, drawn),
+		"class": str(td.get_meta(CLASS_INTERNAL, "")),
+		"properties": props,
+		"shapes": shapes,
+		"animation": frames,
+	}
+
+
+# One collision object of a tile (its objectgroup) as info.tile.shapes holds it: in the tile's
+# pixels from its top-left corner, as Tiled saves it (not flipped, scaled or transposed).
+static func get_tile_shape_info(o: Dictionary) -> Dictionary:
+	var type := "rectangle"
+	var points := PackedVector2Array()
+	if o.get("point", false):
+		type = "point"
+	elif o.get("ellipse", false):
+		type = "ellipse"
+	elif o.get("capsule", false):
+		type = "capsule"
+	elif o.has("polygon") or o.has("polyline"):
+		type = "polygon" if o.has("polygon") else "polyline"
+		for pt in o[type]:
+			points.append(Vector2(float(pt["x"]), float(pt["y"])))
+	return {
+		"type": type,
+		"name": str(o.get("name", "")),
+		"position": Vector2(float(o.get("x", 0.0)), float(o.get("y", 0.0))),
+		"size": Vector2(float(o.get("width", 0.0)), float(o.get("height", 0.0))),
+		"rotation": float(o.get("rotation", 0.0)),
+		"points": points,
 	}
 
 
