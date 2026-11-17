@@ -793,6 +793,24 @@ impl Creator {
             for (i, f) in item.frames.iter().enumerate() {
                 strip_src.set_tile_animation_frame_duration(Vector2i::ZERO, i as i32, f.1);
             }
+            // The way between an animated tile and its strip, for games that change cells at run
+            // time: the strip names the tile it animates, the tile's source maps the tile's coords
+            // to the strip.
+            strip_src.set_meta(
+                "animated_tile",
+                &Vector3i::new(base_id, base_coords.x, base_coords.y).to_variant(),
+            );
+            let mut base_src = base_src;
+            let mut strips = if base_src.has_meta("animation_strips") {
+                base_src
+                    .get_meta("animation_strips")
+                    .try_to::<VarDictionary>()
+                    .unwrap_or_default()
+            } else {
+                VarDictionary::new()
+            };
+            strips.set(&base_coords.to_variant(), &strip_id.to_variant());
+            base_src.set_meta("animation_strips", &strips.to_variant());
             if let Some(&g) = self.internal.get(&(base_id, base_coords.x, base_coords.y)) {
                 self.internal.insert((strip_id, 0, 0), g);
             }

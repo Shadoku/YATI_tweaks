@@ -56,6 +56,7 @@ func main() -> void:
 	await test_y_sorted()
 	await test_group_paths()
 	await test_tile_info()
+	await test_strip_metadata()
 	await test_world()
 	await test_make_streamer()
 	await test_no_leaks()
@@ -392,6 +393,21 @@ func test_tile_info() -> void:
 	check(tile.get("gid") == 6 and tile.get("region") == Rect2(80, 0, 16, 16) and tile.get("properties", {}).get("slashable") == true,
 		"tile_info.tmx: a streamed tile object's _tiled_import gets info.tile (%s)" % [tile.keys()])
 	check(bush != null and bush.get("slashable") == true, "tile_info.tmx: the tile's slashable reaches the streamed bush")
+	s.free()
+
+
+## The streamer's layers use a TileSet of its cache, so a strip source names its animated tile
+## and the atlas maps the tile to the strip (terrain.tsx's tile 4, atlas (4, 0) of source 0), on the
+## streamed infinite.tmx.
+func test_strip_metadata() -> void:
+	var s := streamer_for(load_map(FIX + "infinite.tmx"))
+	s.load_all()
+	var l: TileMapLayer = s.find_children("*", "TileMapLayer", true, false)[0] if not s.find_children("*", "TileMapLayer", true, false).is_empty() else null
+	var ts: TileSet = l.tile_set if l != null else null
+	var strips: Dictionary = ts.get_source(0).get_meta("animation_strips", {}) if ts != null and ts.has_source(0) else {}
+	var sid: int = strips.get(Vector2i(4, 0), -1)
+	check(sid > 0 and ts.has_source(sid) and ts.get_source(sid).get_meta("animated_tile", "missing") == Vector3i(0, 4, 0),
+		"infinite.tmx streamed: source 0's animation_strips {(4, 0): strip} and the strip's animated_tile (%s)" % [strips])
 	s.free()
 
 

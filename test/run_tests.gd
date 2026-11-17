@@ -1662,6 +1662,55 @@ func test_new_animation_strip_tile_data() -> bool:
 	return done()
 
 
+func test_new_animation_strip_metadata() -> bool:
+	# A strip source names the tile it animates (metadata animated_tile = Vector3i(source id,
+	# atlas x, atlas y)), and the source the tile came from maps each animated tile's coords to
+	# its strip (metadata animation_strips = {Vector2i: strip source id}): a game that changes
+	# cells at run time can go from a cell's strip to its tile and from a tile to its strip.
+	var l := layer(_import("animations.tmx"), "Tiles")
+	if l == null: return done()
+	var ts := l.tile_set
+	# Cells (0, 0), (1, 0), (2, 0): atlas tiles 0, 8 and 16 of source 0 (8 columns)
+	var expect := {Vector2i(0, 0): Vector2i(0, 0), Vector2i(1, 0): Vector2i(0, 1), Vector2i(2, 0): Vector2i(0, 2)}
+	var strips := {}
+	for cell_coords: Vector2i in expect:
+		var sid := l.get_cell_source_id(cell_coords)
+		var src := atlas(ts, sid)
+		if src == null: continue
+		var tile: Vector2i = expect[cell_coords]
+		check(sid != 0, "cell %s: not a strip source" % cell_coords)
+		eq(src.get_meta("animated_tile", "missing"), Vector3i(0, tile.x, tile.y), "cell %s: strip's animated_tile" % cell_coords)
+		strips[tile] = sid
+	var base := atlas(ts, 0)
+	if base: eq(base.get_meta("animation_strips", "missing"), strips, "source 0: animation_strips")
+	check(base == null or not base.has_meta("animated_tile"), "source 0: an atlas has no animated_tile")
+	# Cell (3, 0): an image collection tile animated; its own source is the one it came from
+	var strip_id := l.get_cell_source_id(Vector2i(3, 0))
+	var pic := atlas(ts, strip_id)
+	if pic and check(pic.has_meta("animated_tile"), "collection strip: no animated_tile"):
+		var t: Vector3i = pic.get_meta("animated_tile")
+		eq(Vector2i(t.y, t.z), Vector2i.ZERO, "collection strip: the tile's coords")
+		var from := atlas(ts, t.x)
+		if from:
+			check(not from.has_meta("animated_tile") and t.x != strip_id, "collection strip: animated_tile names the collection tile's own source")
+			eq(from.get_meta("animation_strips", "missing"), {Vector2i.ZERO: strip_id}, "collection tile's source: animation_strips")
+	# Sources nothing animates carry neither
+	for i in range(ts.get_source_count()):
+		var s := ts.get_source(ts.get_source_id(i))
+		if s.has_meta("animation_strips"):
+			for c: Vector2i in s.get_meta("animation_strips"):
+				var target := ts.get_source(int(s.get_meta("animation_strips")[c]))
+				eq(target.get_meta("animated_tile", "missing"), Vector3i(ts.get_source_id(i), c.x, c.y), "source %d: strip %s points back" % [ts.get_source_id(i), c])
+	# animation_mode "atlas": tile 0 still falls back to a strip, which is linked the same way
+	var a := layer(_import("animations.tmx", {"animation_mode": "atlas"}), "Tiles")
+	if a:
+		var src := atlas(a.tile_set, a.get_cell_source_id(Vector2i(0, 0)))
+		if src: eq(src.get_meta("animated_tile", "missing"), Vector3i(0, 0, 0), "atlas mode: the fallback strip's animated_tile")
+		var b := atlas(a.tile_set, 0)
+		if b: eq(b.get_meta("animation_strips", "missing"), {Vector2i(0, 0): a.get_cell_source_id(Vector2i(0, 0))}, "atlas mode: animation_strips holds only the fallback strip")
+	return done()
+
+
 func test_new_animated_tile_object() -> bool:
 	# B9c: a tile object of an animated tile was a static Sprite2D; now an AnimatedSprite2D
 	# (one looping animation "default", autoplay) in both animation modes.

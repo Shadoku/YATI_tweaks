@@ -588,6 +588,12 @@ func create_animation_strips() -> void:
 		strip_source.set_tile_animation_frames_count(Vector2i.ZERO, frames.size())
 		for i in range(frames.size()):
 			strip_source.set_tile_animation_frame_duration(Vector2i.ZERO, i, get_frame_duration(frames[i]))
+		# The way between an animated tile and its strip, for games that change cells at run time:
+		# the strip names the tile it animates, the tile's source maps the tile's coords to the strip
+		strip_source.set_meta("animated_tile", Vector3i(source_id_of(_tileset, base_source), base[1].x, base[1].y))
+		var strips: Dictionary = base_source.get_meta("animation_strips", {})
+		strips[base[1]] = strip_id
+		base_source.set_meta("animation_strips", strips)
 
 		if _atlas_sources == null:
 			_atlas_sources = []
@@ -603,6 +609,15 @@ func create_animation_strips() -> void:
 		atlas_source_item["isStrip"] = true
 		_atlas_sources.push_back(atlas_source_item)
 	_pending_strips.clear()
+
+
+# The id a source has in a TileSet (-1 if it is not there)
+static func source_id_of(tileset: TileSet, source: TileSetSource) -> int:
+	for i in range(tileset.get_source_count()):
+		var id := tileset.get_source_id(i)
+		if tileset.get_source(id) == source:
+			return id
+	return -1
 
 
 # Copies everything stored in a TileData (collision, navigation and occlusion polygons, custom data,

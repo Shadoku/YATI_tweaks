@@ -126,7 +126,7 @@ in pixels), `map_size_tiles`, `tile_size` and `orientation`. `WorldLoader.gd`:
 | `custom_data_prefix` | `"data_"` | tile properties with this prefix become TileSet custom data layers |
 | `save_tileset_to` | `""` | save the map's TileSet to this path (the import then builds its own) |
 | `parallax_mode` | `"parallax2d"` | parallax layers wrapped in a `Parallax2D` where they are; `"legacy"`: one ParallaxBackground |
-| `animation_mode` | `"strip"` | each animated tile gets an atlas of its frames; `"atlas"`: animate in the tileset's atlas |
+| `animation_mode` | `"strip"` | each animated tile gets an atlas of its frames (metadata `animated_tile` on the strip, `animation_strips` on the tile's source: Reference.md); `"atlas"`: animate in the tileset's atlas |
 | `always_wrap_root` | `false` | a single-layer map returns a `Node2D` root too (recommended) |
 | `unknown_class_fallback` | `"staticbody"` | what an object of an unknown class becomes (`"area"`, `"node2d"`, ...) |
 | `warn_unknown_classes` | `true` | warn once per import about each unknown class; off for a game that handles its classes itself |

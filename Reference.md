@@ -125,7 +125,17 @@ any order.
   That tile carries all data of the animated tile (collision, navigation and occlusion polygons, custom data,
   metadata, terrain, texture origin, material, probability), and every cell or tile object of the animated
   tile uses it. The strip sources get the source ids after those of the tilesets. The tileset's own atlas is
-  left without animations, so the frame tiles can be placed on their own.
+  left without animations, so the frame tiles can be placed on their own. Two metadata entries link a tile and
+  its strip, for a game that changes cells at run time (from a cell's strip to the tile it shows, from a tile
+  to the strip that animates it):
+
+  | Metadata | On | Type | Value |
+  |---|---|---|---|
+  | `animated_tile` | each strip source | `Vector3i` | the tile the strip animates: `(source id, atlas x, atlas y)` of the source it came from (an image collection tile's own source, coordinates `(0, 0)`) |
+  | `animation_strips` | the source an animated tile came from | `Dictionary` | `Vector2i` atlas coordinates of each of its animated tiles → that tile's strip source id |
+
+  Sources without animated tiles have no `animation_strips`. With `"atlas"` the strips it falls back to are
+  linked the same way.
 - `"atlas"`: as before 3.1, the animation is set on the tile in the tileset's atlas. Only animations whose
   frames start with the tile and follow it at equal steps in a row or column, with room for all of them, can
   be shown; any other animation is skipped as a whole with a warning. An animation that does not start with

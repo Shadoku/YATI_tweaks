@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Both importers, `animation_mode = "strip"`: each strip source has the metadata `animated_tile`, a `Vector3i` of
+  the tile it animates (source id, atlas x, atlas y), and the source the tile came from has `animation_strips`, a
+  `Dictionary` of each animated tile's `Vector2i` atlas coordinates to its strip's source id, so a game that changes
+  cells at run time can go from a cell's strip to its tile and back (Reference.md, `animation_mode`). Nothing else
+  changes. The metadata is on the TileSet the shared cache keeps, so `import()`, `import_async()` and
+  `TiledStreamer` all get it. Test `test_new_animation_strip_metadata`, checks in `test/test_async.gd` and
+  `test/test_stream.gd`. Native library: needs one built from this commit or later.
 - Both importers, the `_tiled_import(info)` hook: a node made for a tile object (a scene instance from its own
   class or its tile's, or a tile object's sprite or body with a `godot_script`) gets `info.tile`, what a scene needs
   to draw and behave like its tile: `texture` and `region` (what the importer draws: the tileset's image, a

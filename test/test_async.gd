@@ -83,6 +83,7 @@ func main() -> void:
 	await test_second_import_skips_tilesets()
 	await test_exclusive_shared_cache()
 	await test_project_in_key()
+	await test_strip_metadata_from_the_cache()
 	await test_cancel_leaks_nothing()
 	await test_signals()
 	await test_small_and_zip_equal_sync()
@@ -423,6 +424,61 @@ func test_project_in_key() -> void:
 	var c: Node = imp.import(FIX + "objects.tmx")
 	c.free()
 	check(int(shared().call("get_created_count")) > created, "same map without the project: a TileSet of its own")
+
+
+## terrain.tsx's tile 4 (atlas coords (4, 0) of source 0) is animated, so with the default
+## animation_mode "strip" it gets a strip source: the strip names its tile (animated_tile) and
+## source 0 maps the tile to the strip (animation_strips). Checks both on a map's TileSet.
+func strip_linked(ts: TileSet, what: String) -> void:
+	if not check(ts != null and ts.has_source(0), what + ": a TileSet with source 0"):
+		return
+	var strips: Dictionary = ts.get_source(0).get_meta("animation_strips", {})
+	var sid: int = strips.get(Vector2i(4, 0), -1)
+	check(strips.size() == 1 and sid > 0 and ts.has_source(sid), what + ": source 0's animation_strips maps (4, 0) to a strip (%s)" % [strips])
+	if sid > 0 and ts.has_source(sid):
+		check(ts.get_source(sid).get_meta("animated_tile", "missing") == Vector3i(0, 4, 0), what + ": the strip's animated_tile is Vector3i(0, 4, 0)")
+
+
+func first_tile_set(n: Node) -> TileSet:
+	if n == null:
+		return null
+	var layers := n.find_children("*", "TileMapLayer", true, false)
+	return (layers[0] as TileMapLayer).tile_set if not layers.is_empty() else null
+
+
+## The strip metadata is on the TileSet the cache keeps, so every way a map gets one has it: a
+## first import() and import_async(), a second live tree (the exclusive shared cache builds it
+## again), a TileSet reused after its tree was freed, a second map on the same tileset
+## (encodings.tmx and infinite.tmx use terrain.tsx alone), and a cache used directly
+## (tileset_for, non-exclusive: two maps sharing one TileSet by reference).
+func test_strip_metadata_from_the_cache() -> void:
+	cold_caches()
+	var imp: Object = ImporterScript.new()
+	var a: Node = imp.import(FIX + "encodings.tmx")
+	strip_linked(first_tile_set(a), "strip metadata: import()")
+	var b: Node = await imp.import_async(FIX + "infinite.tmx")
+	strip_linked(first_tile_set(b), "strip metadata: import_async() of a second map while the first lives")
+	check(first_tile_set(a) != first_tile_set(b), "strip metadata: the exclusive cache built a second TileSet")
+	var created: int = shared().call("get_created_count")
+	a.free()
+	var c: Node = await imp.import_async(FIX + "legacy_xml.tmx")
+	check(int(shared().call("get_created_count")) == created, "strip metadata: a third map reuses a freed tree's TileSet")
+	strip_linked(first_tile_set(c), "strip metadata: the reused TileSet")
+	b.free()
+	c.free()
+	# A map with more tilesets: terrain.tsx is source 0 there too, with the others after it
+	var d: Node = imp.import(FIX + "tilesets.tmx")
+	strip_linked(first_tile_set(d), "strip metadata: tilesets.tmx")
+	d.free()
+	var tilesets: RefCounted = ClassDB.instantiate("TiledTileSets")
+	var m1: RefCounted = ClassDB.instantiate("TiledMap")
+	m1.call("load", FIX + "encodings.tmx", "")
+	var m2: RefCounted = ClassDB.instantiate("TiledMap")
+	m2.call("load", FIX + "background.tmx", "")
+	var ts1: TileSet = tilesets.call("tileset_for", m1, null)
+	var ts2: TileSet = tilesets.call("tileset_for", m2, null)
+	check(ts1 == ts2, "strip metadata: two maps on terrain.tsx share one TileSet (tileset_for)")
+	strip_linked(ts2, "strip metadata: tileset_for of the second map")
 
 
 ## Cancelling or dropping a load mid-parse or with texture loads in flight leaves nothing behind.
