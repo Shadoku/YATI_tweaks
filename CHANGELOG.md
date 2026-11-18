@@ -100,6 +100,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to the committed one, the save hook's findings, and the no-project case. Skipped without a Tiled; CI
   installs one.
 
+- Tiled extension, project rules: the project property `yati_rules_exclude` (a folder, map or glob relative to the
+  project file, or a JSON array of them) leaves maps out of the two kinds that look across the project, for template
+  maps copied to start a new map: `object_in_project` and `unique_name` neither read an excluded map (its objects'
+  names are no clash and no target; *Pick* does not offer them, *Follow* does not find them) nor check its objects
+  when it is saved; the other kinds still do. A mistake in the property is a warning on save. README, "Leaving maps
+  out"; tests in `rules_project.test.mjs` and `rules_project_glue.test.mjs`.
+
 ### Changed
 - F2, both importers: an unset object reference (id 0, Tiled's "no object": an object property left empty, a
   class member's default the object does not override, a list item of 0) resolves to an empty `NodePath()`

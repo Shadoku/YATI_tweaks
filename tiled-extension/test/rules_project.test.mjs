@@ -8,7 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
 	parseRules, rulesForClass, ruleLabel, parseMapObjects, checkRules, checkWorld, parseWorld, projectMapFiles, projectObjects,
-	projectObjectChoices,
+	projectObjectChoices, findProjectObject, parseRulesExclude, isExcluded,
 } from "../yati-godot/lib/rules.mjs";
 import { io, tempDir } from "./helpers/node_io.mjs";
 
@@ -258,6 +258,88 @@ test("the pick list: every named object of the target classes in the project, by
 		"maps/town.tmx: town_start (PlayerSpawn)",
 	]);
 	assert.deepEqual([choices[0].name, path.basename(choices[0].file), choices[0].id], ["cellar_up", "cellar.tmj", 1]);
+});
+
+test("yati_rules_exclude parses: one folder, map or glob, or a JSON array of them; its mistakes are named", () => {
+	assert.deepEqual(parseRulesExclude(undefined), { exclude: [], problems: [] });
+	assert.deepEqual(parseRulesExclude("  "), { exclude: [], problems: [] });
+	assert.deepEqual(parseRulesExclude(" maps/templates "), { exclude: ["maps/templates"], problems: [] });
+	assert.deepEqual(parseRulesExclude("[\"maps/templates\", \"maps/**/_*.tmx\"]"), { exclude: ["maps/templates", "maps/**/_*.tmx"], problems: [] });
+	const bad = parseRulesExclude("[\"maps/templates\", 3, \"\"]");
+	assert.deepEqual(bad.exclude, ["maps/templates"]);
+	assert.deepEqual(bad.problems, [
+		"yati_rules_exclude, item 2: 3 is not a folder, map or glob (a non-empty string).",
+		"yati_rules_exclude, item 3: \"\" is not a folder, map or glob (a non-empty string).",
+	]);
+	assert.match(parseRulesExclude("[oops").problems[0], /^yati_rules_exclude is not valid JSON \(.*\); it is a folder, map or glob, or a JSON array of them\.$/);
+	// What a path names: the map, or a folder above it; a glob matches the map or a folder above it.
+	const dir = "/p";
+	assert.equal(isExcluded("/p/maps/templates/house.tmx", ["maps/templates"], dir), true);
+	assert.equal(isExcluded("/p/maps/templates/deep/house.tmx", ["maps/templates/"], dir), true);
+	assert.equal(isExcluded("/p/maps/templates_old/house.tmx", ["maps/templates"], dir), false);
+	assert.equal(isExcluded("/p/maps/town.tmx", ["maps/town.tmx"], dir), true);
+	assert.equal(isExcluded("/p/maps/coast/_draft.tmx", ["maps/**/_*.tmx"], dir), true);
+	assert.equal(isExcluded("/p/maps/a/templates/x.tmj", ["maps/*/templates"], dir), true);
+	assert.equal(isExcluded("/p/maps/a/b/templates/x.tmj", ["maps/*/templates"], dir), false);
+	assert.equal(isExcluded("/p/maps/town.tmx", [], dir), false);
+	assert.equal(isExcluded("/p/maps/town.tmx", undefined, dir), false);
+});
+
+test("yati_rules_exclude: an excluded map is neither found nor counted by the rules that look across the project, nor checked by them; the other rules still check it", () => {
+	const root = threeMaps();
+	// A template map with copies of real names, and a warp to nowhere
+	fs.mkdirSync(path.join(root, "maps", "templates"), { recursive: true });
+	fs.writeFileSync(path.join(root, "maps", "templates", "house.tmx"), tmx([
+		{ id: 1, name: "town_start", cls: "PlayerSpawn" }, { id: 2, name: "door", cls: "Warp", to: "placeholder" },
+	]));
+	const rules = parseRules(JSON.stringify(GAME_RULES)).rules;
+	const rel = (list) => list.map((p) => path.relative(root, p).split(path.sep).join("/"));
+	const ctx = context(root);
+	assert.deepEqual(rel(projectMapFiles("", root, ctx.projectFolders, ctx.listDir)),
+		["maps/cellar/cellar.tmj", "maps/coast/coast.tmx", "maps/templates/house.tmx", "maps/town.tmx"]);
+	assert.deepEqual(rel(projectMapFiles("", root, ctx.projectFolders, ctx.listDir, ["maps/templates"])),
+		["maps/cellar/cellar.tmj", "maps/coast/coast.tmx", "maps/town.tmx"]);
+	// Inside a rule's maps too
+	assert.deepEqual(rel(projectMapFiles("maps/**/*.tmx", root, ctx.projectFolders, ctx.listDir, ["maps/templates"])), ["maps/coast/coast.tmx", "maps/town.tmx"]);
+	const town = path.join(root, "maps", "town.tmx");
+	const townModel = model(town, [{ id: 1, name: "town_start", cls: "PlayerSpawn" }, { id: 2, name: "to_door", cls: "Warp", to: "door" }]);
+	// Without the exclusion the template's copy of town_start clashes, and its door is a target
+	assert.deepEqual(checkRules(townModel, rules, context(root)).map(brief), ["error rule-duplicate-name #1"]);
+	assert.match(checkRules(townModel, rules, context(root))[0].text, /also used by maps\/templates\/house\.tmx \(id 1, class PlayerSpawn\)/);
+	// Excluded: no clash, and the door is no target
+	const excluded = Object.assign(context(root), { exclude: ["maps/templates"] });
+	const f = checkRules(townModel, rules, excluded);
+	assert.deepEqual(f.map(brief), ["error rule-missing-object #2"]);
+	assert.match(f[0].text, /to names 'door', but no map of the project has an object of that name/);
+	assert.equal(excluded.counts.mapObjects, 2, "the excluded map is not read");
+	// The template saved: the two kinds that look across the project leave it alone; a rule of
+	// another kind still checks its objects.
+	const house = path.join(root, "maps", "templates", "house.tmx");
+	const houseModel = model(house, [
+		{ id: 1, name: "town_start", cls: "PlayerSpawn" }, { id: 2, name: "door", cls: "Warp", to: "placeholder" }, { id: 3, cls: "Warp" },
+	]);
+	assert.deepEqual(checkRules(houseModel, rules, context(root)).map(brief),
+		["error rule-duplicate-name #1", "error rule-missing-object #2", "error rule-required #3"]);
+	const withLocal = parseRules(JSON.stringify(GAME_RULES.concat([{ "class": "Warp", member: "to", kind: "object_in_map", required: true }]))).rules;
+	assert.deepEqual(checkRules(houseModel, withLocal, Object.assign(context(root), { exclude: ["maps/templates"] })).map(brief),
+		["error rule-missing-object #2", "error rule-required #3"]);
+	// A glob does as well
+	assert.deepEqual(checkRules(townModel, rules, Object.assign(context(root), { exclude: ["maps/**/house.tmx"] })).map(brief), ["error rule-missing-object #2"]);
+	// Pick offers nothing from an excluded map, the open one included; Follow finds nothing there
+	const rule = rules[1];
+	const houseObjects = [{ id: 1, name: "town_start", className: "PlayerSpawn" }, { id: 2, name: "door", className: "Warp" }];
+	const labels = (c) => projectObjectChoices(rule, c, house, houseObjects).map((x) => x.label);
+	assert.deepEqual(labels(context(root)).filter((l) => l.indexOf("templates") >= 0), ["maps/templates/house.tmx: door (Warp)", "maps/templates/house.tmx: town_start (PlayerSpawn)"]);
+	assert.deepEqual(labels(Object.assign(context(root), { exclude: ["maps/templates"] })), [
+		"maps/cellar/cellar.tmj: cellar_up (Warp)", "maps/coast/coast.tmx: beach (PlayerSpawn)", "maps/town.tmx: to_cellar (Warp)", "maps/town.tmx: town_start (PlayerSpawn)",
+	]);
+	assert.deepEqual(findProjectObject(rule, "door", Object.assign(context(root), { exclude: ["maps/templates"] }), town, []), []);
+	// A world's rule does not find an excluded map's objects either
+	const worldFile = path.join(root, "maps", "game.world");
+	const worldRules = parseRules(JSON.stringify([{ world: "maps/game.world", member: "start_spawn", kind: "object_in_project" }])).rules;
+	const world = parseWorld(JSON.stringify({ maps: [], properties: [{ name: "start_spawn", type: "string", value: "door" }] }), worldFile);
+	assert.deepEqual(checkWorld(worldFile, world, worldRules, context(root)), []);
+	assert.deepEqual(checkWorld(worldFile, world, worldRules, Object.assign(context(root), { exclude: ["maps/templates"] })).map(brief), ["error rule-missing-object #0"]);
 });
 
 test("a project of 300 maps: a save's check stays fast, every map read once", () => {

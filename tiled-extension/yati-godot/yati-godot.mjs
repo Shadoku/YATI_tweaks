@@ -35,7 +35,7 @@ import { syncDefinitions, sceneClassDefinitions } from "./lib/types.mjs";
 import { applyDefinitions, patchProjectText, mergeFixups, storageTypeValue } from "./lib/apply.mjs";
 import { validateMap, validateTileset, templateReferences, contextFromTypes, maskFamily, withClassMembers } from "./lib/validate.mjs";
 import {
-	parseRules, rulesForClass, worldRules, ruleLabel, findMember, memberText, memberPath, isMapFile, readTable, keyPreview,
+	parseRules, parseRulesExclude, rulesForClass, worldRules, ruleLabel, findMember, memberText, memberPath, isMapFile, readTable, keyPreview,
 	parseMapObjects, parseWorld, worldContains, checkRules, checkWorld, objectNames, newFilePath, openCommands, MAP_FILTER,
 	projectObjectChoices, findProjectObject,
 } from "./lib/rules.mjs";
@@ -933,8 +933,9 @@ function findLayer(layers, id) {
 function ruleFindings(api, s, model, vctx) {
 	const parsed = parseRules(s.rulesRaw);
 	const out = [];
-	for (let i = 0; i < parsed.problems.length; i++)
-		out.push({ severity: "warning", code: "rule-config", text: parsed.problems[i], objectId: 0, layerId: 0 });
+	const problems = parsed.problems.concat(parseRulesExclude(s.rulesExcludeRaw).problems);
+	for (let i = 0; i < problems.length; i++)
+		out.push({ severity: "warning", code: "rule-config", text: problems[i], objectId: 0, layerId: 0 });
 	if (parsed.rules.length === 0)
 		return out;
 	const ctx = ruleContext(api, s, vctx.classes, model);
@@ -969,6 +970,7 @@ function ruleContext(api, s, classes, savingModel) {
 	return {
 		projectFile: s.projectFile,
 		projectFolders: projectFolders(api, s),
+		exclude: parseRulesExclude(s.rulesExcludeRaw).exclude,
 		godotProject: s.godotProject,
 		classes: classes,
 		fileExists: function (p) { return api.File.exists(p); },
@@ -1070,6 +1072,7 @@ function selectedForRules(api, title) {
 		return null;
 	}
 	const parsed = parseRules(s.rulesRaw);
+	parsed.problems = parsed.problems.concat(parseRulesExclude(s.rulesExcludeRaw).problems);
 	for (let i = 0; i < parsed.problems.length; i++)
 		t.log("YATI: " + parsed.problems[i]);
 	if (parsed.rules.length === 0) {

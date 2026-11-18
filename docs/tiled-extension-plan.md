@@ -370,7 +370,7 @@ through the `.tiled-project` file, the maps and (for the check) the Godot binary
   findings on `sample/rules/maps/portals/clash.tmx` (`real_tiled.test.mjs`, the map read through the tmx format and
   given its file name through a `Proxy`). **For the editor** (README checklist 14 and 15): Pick's list, the undo step
   and Follow.
-- 2026-11-15, open items noted for later (asked for by a game that uses the rules; the second done 2026-11-18, below):
+- 2026-11-15, open items noted for later (asked for by a game that uses the rules; both done 2026-11-18, below):
   - **An `exclude` for the project-wide rules.** `object_in_project` and `unique_name` take a `maps` folder or glob
     but cannot leave a folder out. A game that keeps template maps under `maps/templates/` (copied to start a new
     map, never loaded) has their placeholder names counted for uniqueness and offered by Pick. Wanted: an
@@ -379,7 +379,18 @@ through the `.tiled-project` file, the maps and (for the check) the Godot binary
     (seen: `<objectgroup ... y="-1">`). Tiled 1.12 neither shows nor edits them, and both importers apply them as
     a pixel offset, so every object of the layer sits off by that much. Wanted: the importers ignore them as Tiled
     does (or warn once), and the extension's save-time validation reports them.
-- 2026-11-18, **a layer's old `x` / `y` attributes done** (branch `claude/exclude-and-layer-xy`):
+- 2026-11-18, **both open items done** (branch `claude/exclude-and-layer-xy`, one commit each):
+  - **`yati_rules_exclude`**, a project property (a folder, map or glob relative to the project file, as a rule's
+    `maps` takes them, or a JSON array of them), chosen over an `exclude` field per rule: template maps are a
+    property of the project, not of one rule, and the game's two rules would each have repeated it. A map is left out
+    when a path is the map or a folder above it, or a glob matches either. Meaning: `object_in_project` and
+    `unique_name` neither read an excluded map (its names are no clash and no target, also inside a rule's `maps`;
+    *Pick* does not offer its objects, *Follow* does not find them) nor check an excluded map's objects when it is
+    saved (a template is compared with nothing); the other kinds still check it, and a world's rules. A mistake in
+    the property is a `rule-config` warning on save, like one in `yati_rules`. `lib/rules.mjs`
+    (`parseRulesExclude`, `isExcluded`, `projectMapFiles(..., exclude)`, `checkRules`, `projectObjectChoices`),
+    `lib/settings.mjs` (`rulesExcludeRaw`), the glue's rule context; README "Leaving maps out"; tests in
+    `rules_project.test.mjs` and `rules_project_glue.test.mjs`. No new API member.
   - **A layer's `x` / `y`**, both importers, as Tiled 1.12.0 draws them, checked with its own renderer
     (`tmxrasterizer` of the AppImage, headless) rather than taken from the TMX reference: an object layer's and a
     group's are ignored (both formats); a **tile layer's are honoured**, as a shift of its cells in tiles (both

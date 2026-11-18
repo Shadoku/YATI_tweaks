@@ -14,6 +14,7 @@ export const SETTING_NAMES = {
 	generated: "yati_generated",
 	fixups: "yati_fixups",
 	rules: "yati_rules",
+	rulesExclude: "yati_rules_exclude",
 	openCommand: "yati_open_command",
 };
 
@@ -233,6 +234,7 @@ export function readSettings(getProperty, projectFile) {
 		importOptionWarnings: options.warnings,
 		validate: validate,
 		rulesRaw: str(SETTING_NAMES.rules),
+		rulesExcludeRaw: str(SETTING_NAMES.rulesExclude),
 		openCommand: str(SETTING_NAMES.openCommand),
 		generated: parseGenerated(getProperty(SETTING_NAMES.generated)),
 		fixups: parseFixups(getProperty(SETTING_NAMES.fixups)),

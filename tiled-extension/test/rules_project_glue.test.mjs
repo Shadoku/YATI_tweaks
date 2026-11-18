@@ -80,6 +80,50 @@ test("save hook: the project's folders from Project.folders; a map changed on di
 	assert.match(t.fake.out.issues[0].text, /to names 'from_town', but no map of the project has an object of that name/);
 });
 
+test("save hook: yati_rules_exclude leaves a folder of template maps out of the rules that look across the project", () => {
+	// A template map beside the real ones: a copy of east.tmx's names and a placeholder target
+	const exclude = (value) => ({ edit: (json) => {
+		json.properties.push({ name: "yati_rules_exclude", propertytype: "", type: "string", value: value });
+	} });
+	const template = (s) => {
+		fs.mkdirSync(path.join(s.maps, "templates"), { recursive: true });
+		fs.writeFileSync(path.join(s.maps, "templates", "room.tmx"), fs.readFileSync(path.join(s.maps, "portals", "east.tmx"), "utf8"));
+	};
+	const plain = make();
+	template(plain);
+	plain.fake.emitAboutToBeSaved(plain.open("portals/east.tmx"));
+	assert.deepEqual(issueTexts(plain).map((t) => t.replace(/: the name .*also used by /, ": ")).map((t) => t.replace(/;.*$/, "")), [
+		"error YATI: east.tmx: Object 'east_gate' (id 1, layer Objects): maps/portals/clash.tmx (id 1, class portal), maps/templates/room.tmx (id 1, class portal)",
+		"error YATI: east.tmx: Object 'east_start' (id 2, layer Objects): maps/templates/room.tmx (id 2, class player_spawn)",
+	]);
+	const s = make(exclude("maps/templates"));
+	template(s);
+	s.fake.emitAboutToBeSaved(s.open("portals/east.tmx"));
+	assert.deepEqual(issueTexts(s), [
+		"error YATI: east.tmx: Object 'east_gate' (id 1, layer Objects): the name 'east_gate' is also used by maps/portals/clash.tmx (id 1, class portal); the project's rules (yati_rules) want the names of portal and player_spawn objects unique across the project.",
+	]);
+	// The template itself saved: nothing from those two kinds
+	s.fake.out.issues.length = 0;
+	s.fake.emitAboutToBeSaved(s.open("templates/room.tmx"));
+	assert.deepEqual(issueTexts(s), []);
+	// Pick from a real map offers nothing of the template's
+	const east = s.open("portals/east.tmx");
+	s.fake.select(east, [1]);
+	let seen = null;
+	s.fake.answers.dialogs.push((d) => { seen = d; d.button("Cancel").click(); });
+	s.fake.trigger(ACTIONS.pick);
+	assert.ok(seen !== null && seen.field("Object").items.length > 0);
+	assert.deepEqual(seen.field("Object").items.filter((i) => i.indexOf("templates") >= 0), []);
+	// A JSON list, and its mistakes as warnings on save
+	const t = make(exclude("[\"maps/templates\", 7]"));
+	template(t);
+	t.fake.emitAboutToBeSaved(t.open("portals/east.tmx"));
+	assert.deepEqual(issueTexts(t).map((x) => x.replace(/: the name .*$/, "")), [
+		"warning YATI: east.tmx: yati_rules_exclude, item 2: 7 is not a folder, map or glob (a non-empty string).",
+		"error YATI: east.tmx: Object 'east_gate' (id 1, layer Objects)",
+	]);
+});
+
 test("pick: an object_in_project member offers every named target of the project by map and sets the one member", () => {
 	const s = make();
 	const east = s.open("portals/east.tmx");

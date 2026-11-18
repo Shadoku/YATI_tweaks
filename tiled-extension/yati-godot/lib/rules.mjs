@@ -27,6 +27,12 @@
 // Tiled stores file properties), a class's default relative to the project file, res:// to the
 // Godot project.
 //
+// The project property yati_rules_exclude (a folder, map or glob relative to the project file, or a
+// JSON array of them) leaves maps out of the two kinds that look across the project: an excluded
+// map's objects are neither found nor counted by them (nor offered by Pick or found by Follow), and
+// when an excluded map is saved those two kinds do not check its objects; the other kinds still do.
+// For template maps, copied to start a new map and never loaded by the game.
+//
 // Written for Qt's JavaScript engine (ECMAScript 2016) as well as Node.
 
 import { joinPath, dirName, baseName, stem, cleanPath, relativePath } from "./settings.mjs";
@@ -186,6 +192,61 @@ function parseRule(v, index) {
 	if (kind === "file" && rule.folder !== "" && rule.template === "")
 		return fail("\"folder\" is where the template's copies go; give \"template\" too.");
 	return { rule: rule, problem: "" };
+}
+
+// yati_rules_exclude's text as {exclude: [paths], problems}: one folder, map or glob (relative to the
+// project file), or a JSON array of them ("[...]"). Unset or empty: none.
+export function parseRulesExclude(raw) {
+	const out = { exclude: [], problems: [] };
+	const text = raw === undefined || raw === null ? "" : String(raw).trim();
+	if (text === "")
+		return out;
+	if (text.charAt(0) !== "[") {
+		out.exclude.push(text);
+		return out;
+	}
+	let list;
+	try {
+		list = JSON.parse(text);
+	} catch (e) {
+		out.problems.push("yati_rules_exclude is not valid JSON (" + (e && e.message ? e.message : String(e)) + "); it is a folder, map or glob, or a JSON array of them.");
+		return out;
+	}
+	for (let i = 0; i < list.length; i++) {
+		if (typeof list[i] === "string" && list[i].trim() !== "")
+			out.exclude.push(list[i].trim());
+		else
+			out.problems.push("yati_rules_exclude, item " + (i + 1) + ": " + JSON.stringify(list[i]) + " is not a folder, map or glob (a non-empty string).");
+	}
+	return out;
+}
+
+// Whether a map is excluded (yati_rules_exclude): one of the paths, relative to projectDir, is the
+// map or one of its folders, or a glob (as a rule's `maps` takes: `*` and `?` within a folder, `**`
+// across folders) matches the map or one of its folders.
+export function isExcluded(file, exclude, projectDir) {
+	if (!exclude || exclude.length === 0 || !file)
+		return false;
+	const candidates = [];
+	let p = cleanPath(file);
+	for (;;) {
+		candidates.push(p);
+		const up = dirName(p);
+		if (up === p || up === ".")
+			break;
+		p = up;
+	}
+	for (let i = 0; i < exclude.length; i++) {
+		const target = joinPath(projectDir, exclude[i]);
+		if (/[*?]/.test(target)) {
+			const re = globRegex(target);
+			if (candidates.some(function (c) { return re.test(c); }))
+				return true;
+		} else if (candidates.indexOf(target) >= 0) {
+			return true;
+		}
+	}
+	return false;
 }
 
 function compile(pattern) {
@@ -672,13 +733,17 @@ export function checkRules(map, rules, ctx) {
 	const env = environment(ctx);
 	const mapFile = map.fileName || "";
 	env.skipFile = mapFile !== "" ? cleanPath(mapFile) : "";	// the saved map: its model, not its file
+	// An excluded map (yati_rules_exclude) is outside the rules that look across the project
+	const excluded = isExcluded(mapFile, ctx.exclude, env.projectDir);
 	const sameMap = map.objects.map(function (o) {
 		return { id: o.id, name: o.name, className: o.className !== "" ? o.className : (o.tileClassName || "") };
 	});
 	for (let i = 0; i < map.objects.length; i++) {
 		const o = map.objects[i];
 		const cls = o.className !== "" ? o.className : (o.tileClassName || "");
-		const applying = rulesForClass(rules, cls);
+		const applying = rulesForClass(rules, cls).filter(function (r) {
+			return !excluded || (r.kind !== "unique_name" && r.kind !== "object_in_project");
+		});
 		if (applying.length === 0)
 			continue;
 		const props = withClassMembers(o.properties || [], ctx.classes ? ctx.classes[cls] : undefined);
@@ -733,12 +798,13 @@ function environment(ctx) {
 		mapObjects: mapObjects,
 		unreadable: [],
 		skipFile: "",
-		// The objects of the project's maps (the rule's `maps`, else the project's folders) by name,
-		// built once per check and `maps` value; the maps that could not be read reported once.
+		// The objects of the project's maps (the rule's `maps`, else the project's folders; the
+		// excluded ones left out) by name, built once per check and `maps` value; the maps that could
+		// not be read reported once.
 		projectIndex: function (rule) {
 			const key = rule.maps;
 			if (indexes[key] === undefined) {
-				const all = projectMapFiles(key, projectDir, ctx.projectFolders || [], ctx.listDir || function () { return null; });
+				const all = projectMapFiles(key, projectDir, ctx.projectFolders || [], ctx.listDir || function () { return null; }, ctx.exclude);
 				const files = all.filter(function (f) { return f !== env.skipFile; });
 				indexes[key] = projectObjects(files, mapObjects);
 				indexes[key].holdsSkipped = files.length < all.length;
@@ -959,16 +1025,17 @@ function checkUniqueName(rule, o, cls, holder, env, report) {
 // The map files (.tmx, .tmj) a rule looks across, sorted, each once: under each of the project's
 // folders (absolute paths, as Tiled's Project.folders gives them) when `spec` is empty; else `spec`,
 // relative to the project's directory: a map file, a folder (every map under it), or a glob where
-// `*` and `?` stay within a folder and `**` spans folders. Hidden folders are skipped.
+// `*` and `?` stay within a folder and `**` spans folders. Hidden folders are skipped, and so are
+// the maps `exclude` (yati_rules_exclude's paths, isExcluded) names, also inside `spec`.
 // listDir(dir) -> {dirs: [names], files: [names]} or null.
-export function projectMapFiles(spec, projectDir, folders, listDir) {
+export function projectMapFiles(spec, projectDir, folders, listDir, exclude) {
 	const isMap = function (name) { return isMapFile(name); };
 	const seen = {};
 	const out = [];
 	const add = function (list) {
 		for (let i = 0; i < list.length; i++) {
 			const p = cleanPath(list[i]);
-			if (!seen[p]) {
+			if (!seen[p] && !isExcluded(p, exclude, projectDir)) {
 				seen[p] = true;
 				out.push(p);
 			}
@@ -1045,11 +1112,11 @@ export function projectObjects(files, mapObjects) {
 // What "Pick map and object" offers for an object_in_project rule: every named object of the rule's
 // classes in the project's maps, the map `currentFile` as `currentObjects` hold it ([{id, name,
 // className}], an open map's objects), sorted by map then name: [{label: "maps/town.tmx: gate
-// (Warp)", name, file, id}].
+// (Warp)", name, file, id}]. The excluded maps (ctx.exclude) offer nothing, the current one neither.
 export function projectObjectChoices(rule, ctx, currentFile, currentObjects) {
 	const projectDir = ctx.projectFile ? dirName(ctx.projectFile) : "";
-	const files = projectMapFiles(rule.maps, projectDir, ctx.projectFolders || [], ctx.listDir);
-	const here = currentFile ? cleanPath(currentFile) : "";
+	const files = projectMapFiles(rule.maps, projectDir, ctx.projectFolders || [], ctx.listDir, ctx.exclude);
+	const here = currentFile && !isExcluded(currentFile, ctx.exclude, projectDir) ? cleanPath(currentFile) : "";
 	const out = [];
 	const push = function (file, o) {
 		if (o.name !== "" && ofClasses(o, rule.targetClasses))

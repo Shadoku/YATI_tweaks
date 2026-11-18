@@ -54,7 +54,7 @@ are saved in the `.tiled-project` and shared with everyone who opens it. So the 
 open project: without one (Tiled starts without a project unless its session restores one; see
 *Project > Recent Projects*) the actions say so, and a saved map or tileset is validated without
 the project's custom types. *YATI: Configure…* is one dialog with a field for each of the first
-five (`yati_rules` and `yati_open_command` are set in *Project > Project Properties*); the other actions open it for you when the Godot project is not set. Paths are relative to
+five (`yati_rules`, `yati_rules_exclude` and `yati_open_command` are set in *Project > Project Properties*); the other actions open it for you when the Godot project is not set. Paths are relative to
 the project file unless they are absolute.
 
 | Property | Default | Meaning |
@@ -65,6 +65,7 @@ the project file unless they are absolute.
 | `yati_import_options` | (none) | options for the check, as `name=value` pairs, e.g. `warn_unknown_classes=false assign_node_properties=false` ([Runtime.md's options](../Runtime.md#options); `class_scenes`, a Dictionary, cannot be given here) |
 | `yati_validate` | `true` | `false` turns the validation on save off (the rules' checks too) |
 | `yati_rules` | (none) | what class members refer to, a JSON array: see [Rules](#rules) |
+| `yati_rules_exclude` | (none) | maps the rules that look across the project leave out (template maps): a folder, map or glob, or a JSON array of them; see [Leaving maps out](#leaving-maps-out) |
 | `yati_open_command` | (the system's: `xdg-open`, `open`, or `cmd /c start`) | the command *YATI: Open or create file…* opens a file with, the file appended, e.g. `code -r`; it must return at once (a launcher), since Tiled waits for it |
 | `yati_generated` | (written by the extension) | which types and class members the extension made: `{"Type": ["member", ...]}` |
 | `yati_fixups` | (written by the extension) | what it wrote into the project file past the API, and how many times (see [What the API cannot set](#what-the-api-cannot-set)) |
@@ -233,6 +234,34 @@ files on each save, and a file whose text has not changed since the last save is
 In a project of 300 maps of 51 objects each, the first save in a session took about 0.33 s in Tiled
 1.12.0 (reading and parsing every map) and each later save about 0.07 s; under Node the check of
 the same project takes about 60 ms. A map that cannot be read is a warning, and the rules skip it.
+
+### Leaving maps out
+
+Maps that are not part of the game, such as template maps copied to start a new map, hold
+placeholder names: a second `PlayerSpawn` named `start` in a template is a clash with the real one,
+and its warps' targets are offered by *Pick*. The project property `yati_rules_exclude` (a string)
+leaves such maps out of `object_in_project` and `unique_name`. It is a folder, a map or a glob
+(as `maps` takes them), relative to the project file, or a JSON array of them:
+
+```
+maps/templates
+["maps/templates", "maps/**/_draft_*.tmx"]
+```
+
+A map is left out when one of them is the map itself or a folder above it, or a glob matches the map
+or a folder above it (`"maps/*/templates"` leaves out every `templates` folder one level under
+`maps`). A map left out:
+
+- is not read by those two kinds: its objects' names are no clash for `unique_name` and no target for
+  `object_in_project`, and *Pick* does not offer them nor *Follow* find them, also when a rule's
+  `maps` would include it;
+- is not checked by those two kinds when it is saved (its objects are compared with nothing), and
+  *Pick* on one of its objects offers the other maps' objects only;
+- is still checked by the other kinds (`map`, `object_in_map`, `file`, `key`) when it is saved, and
+  by a world's rules.
+
+A mistake in the property (invalid JSON, an item that is not a string) is a warning on every save,
+like a mistake in `yati_rules`.
 
 Paths in a rule (`world`, `template`, `folder`, `table`, `maps`) are relative to the project file. Values
 are read as Tiled stores them: a file member relative to its map (a class's default relative to the
@@ -453,6 +482,6 @@ fallback message runs), so the reload is the next run. Without a Tiled the test 
 | `yati-godot/lib/rules.mjs` | the project's rules: parsed, checked on a map and a world; maps read from their files; the CSV table; the actions' helpers |
 | `yati-godot/lib/check_output.mjs` | the check's command line and output |
 | `test/rules.test.mjs`, `test/rules_glue.test.mjs` | the rules under Node, and in the glue against the fake (on `sample/rules/`) |
-| `test/rules_project.test.mjs`, `test/rules_project_glue.test.mjs` | the rules that look across the project (`object_in_project`, `unique_name`, the project's maps, a 300-map project's cost) under Node, and in the glue against the fake (on `sample/rules/maps/portals/`) |
+| `test/rules_project.test.mjs`, `test/rules_project_glue.test.mjs` | the rules that look across the project (`object_in_project`, `unique_name`, the project's maps, `yati_rules_exclude`, a 300-map project's cost) under Node, and in the glue against the fake (on `sample/rules/maps/portals/`) |
 | `test/real_tiled.test.mjs` | the sample inside a real Tiled, headless (skipped without one), the rules sample's save hook among it |
 | `test/helpers/real_tiled_harness.mjs` | runs inside Tiled under `--evaluate`: the actions and the save hook, the dialogs stubbed |
