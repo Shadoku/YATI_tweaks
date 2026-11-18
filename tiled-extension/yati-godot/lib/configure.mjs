@@ -91,6 +91,18 @@ export const FIELDS = [
 			"Saved as " + SETTING_NAMES.importOptions + ".",
 	},
 	{
+		key: "checkScene", property: SETTING_NAMES.checkScene, kind: "text",
+		label: "Game check scene",
+		placeholder: "res://... .tscn  (empty: only the importer's check)",
+		tooltip: "A scene of the Godot project that checks a map by the game's own rules, run by Check map in Godot\n" +
+			"after the importer's check as\n" +
+			"  <godot binary> --headless --path <Godot project> <scene> -- --tiled <map>\n" +
+			"It prints one line per problem, YATI_CHECK error|warning <object id or -> <text>, and a last line\n" +
+			"YATI_CHECK result <errors> <warnings> <nodes> <cells> <ms>; each problem becomes an Issue that\n" +
+			"selects its object. Empty: only the importer's check runs.\n\n" +
+			"Saved as " + SETTING_NAMES.checkScene + ".",
+	},
+	{
 		key: "validate", property: SETTING_NAMES.validate, kind: "bool",
 		label: "Validate maps and tilesets on save",
 		placeholder: "",
@@ -232,6 +244,7 @@ export function initialValues(settings) {
 		godotBinary: settings.godotBinaryRaw,
 		scenesDir: settings.scenesDirRaw === "" ? "" : settings.scenesDir,
 		importOptions: settings.importOptionsRaw,
+		checkScene: settings.checkScene,
 		validate: settings.validate,
 	};
 }
@@ -401,6 +414,18 @@ export function validateConfiguration(values, settings, io) {
 			warnings.push("Import options: " + parsed.warnings[i]);
 	}
 
+	// The game's check scene: a res:// scene that exists in the Godot project (judged by its form only
+	// while the project is wrong).
+	const checkScene = String(values.checkScene === undefined || values.checkScene === null ? "" : values.checkScene).trim();
+	if (checkScene !== "") {
+		if (checkScene.indexOf("res://") !== 0)
+			errors.push("Game check scene: '" + checkScene + "' is no res:// path (a scene of the Godot project, e.g. res://tools/check_maps.tscn).");
+		else if (!/\.(tscn|scn)$/i.test(checkScene))
+			errors.push("Game check scene: '" + checkScene + "' is no scene (.tscn or .scn).");
+		else if (godotDir !== "" && project.ok && !io.exists(godotToLocal(godotDir, checkScene)))
+			errors.push("Game check scene: " + checkScene + " does not exist in the Godot project (" + godotToLocal(godotDir, checkScene) + ").");
+	}
+
 	const validate = values.validate !== false && String(values.validate).toLowerCase() !== "false";
 
 	const out = {
@@ -415,6 +440,7 @@ export function validateConfiguration(values, settings, io) {
 		stored[SETTING_NAMES.godotBinary] = binaryText;
 		stored[SETTING_NAMES.scenesDir] = scenesStored;
 		stored[SETTING_NAMES.importOptions] = optionsText;
+		stored[SETTING_NAMES.checkScene] = checkScene;
 		stored[SETTING_NAMES.validate] = validate;
 		out.stored = stored;
 	}
@@ -429,6 +455,7 @@ export function configuredLines(validation) {
 		"Godot binary: " + r.godotBinary,
 		"Scenes scanned under: " + r.scenesDir,
 		"Import options: " + (validation.stored[SETTING_NAMES.importOptions] !== "" ? validation.stored[SETTING_NAMES.importOptions] : "(none)"),
+		"Game check scene: " + (validation.stored[SETTING_NAMES.checkScene] !== "" ? validation.stored[SETTING_NAMES.checkScene] : "(none)"),
 		"Validate on save: " + (r.validate ? "yes" : "no"),
 	];
 	return lines.concat(validation.warnings);

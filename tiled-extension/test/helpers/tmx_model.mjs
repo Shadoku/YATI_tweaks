@@ -99,13 +99,18 @@ export function tmxModel(fileName, enums) {
 	const dir = path.dirname(fileName);
 	const root = parseXml(fs.readFileSync(fileName, "utf8"));
 	const tilesets = childrenNamed(root, "tileset").map((ts) => ({ firstgid: Number(ts.attrs.firstgid || 1), el: ts, dir: dir }));
-	const model = { kind: "map", fileName: fileName, properties: readProps(root, dir, enums), layers: [], objects: [], templates: [] };
-	const walk = (el, prefix) => {
+	const model = { kind: "map", fileName: fileName, className: root.attrs.class || "", properties: readProps(root, dir, enums), layers: [], objects: [], templates: [] };
+	const KINDS = { objectgroup: "object", group: "group", layer: "tile", imagelayer: "image" };
+	const walk = (el, prefix, parentId) => {
 		for (const c of el.children) {
 			if (c.name !== "objectgroup" && c.name !== "group" && c.name !== "layer" && c.name !== "imagelayer")
 				continue;
 			const p = prefix + (c.attrs.name || "");
-			model.layers.push({ id: Number(c.attrs.id || 0), name: c.attrs.name || "", path: p, className: c.attrs.class || "", properties: readProps(c, dir, enums) });
+			const layerId = Number(c.attrs.id || 0);
+			model.layers.push({
+				id: layerId, name: c.attrs.name || "", path: p, className: c.attrs.class || "", properties: readProps(c, dir, enums),
+				type: KINDS[c.name], parentId: parentId, offsetX: Number(c.attrs.offsetx || 0), offsetY: Number(c.attrs.offsety || 0),
+			});
 			if (c.name === "objectgroup") {
 				for (const o of childrenNamed(c, "object")) {
 					let cls = o.attrs.class || o.attrs.type || "";
@@ -138,6 +143,12 @@ export function tmxModel(fileName, enums) {
 						id: Number(o.attrs.id || 0),
 						name: name,
 						layerPath: p,
+						layerId: layerId,
+						x: Number(o.attrs.x || 0),
+						y: Number(o.attrs.y || 0),
+						width: Number(o.attrs.width || 0),
+						height: Number(o.attrs.height || 0),
+						isTile: gid > 0 || tile !== null,
 						className: cls,
 						tileClassName: tile ? tile.className : "",
 						properties: merge([tileProps, tplProps, readProps(o, dir, enums)]),
@@ -145,10 +156,10 @@ export function tmxModel(fileName, enums) {
 				}
 			}
 			if (c.name === "group")
-				walk(c, p + "/");
+				walk(c, p + "/", layerId);
 		}
 	};
-	walk(root, "");
+	walk(root, "", 0);
 	return model;
 }
 

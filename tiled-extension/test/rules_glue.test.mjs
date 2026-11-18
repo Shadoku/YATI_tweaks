@@ -85,7 +85,7 @@ test("save hook: the world's rules when the saved map is one of its maps; the ru
 	]) });
 	t.fake.emitAboutToBeSaved(t.open("broken.tmx"));
 	assert.deepEqual(t.fake.out.issues.map((i) => i.severity + " " + i.text.replace(t.root, "<root>")), [
-		"warning YATI: broken.tmx: yati_rules, rule 2: \"kind\" is \"keys\"; it is one of map, object_in_map, object_in_project, unique_name, file, key.",
+		"warning YATI: broken.tmx: yati_rules, rule 2: \"kind\" is \"keys\"; it is one of map, object_in_map, object_in_project, unique_name, file, key, layer_in_map, counterpart.",
 		"error YATI: broken.tmx: Object 'misspelt' (id 7, layer Objects): text is 'SIGN_WELCOM', shaped like a key, but strings.csv has no such key (did you mean SIGN_WELCOME, SIGN_WELL?).",
 		"warning YATI: broken.tmx: yati_rules names the world <root>/maps/none.world, which does not exist.",
 	]);
@@ -190,7 +190,7 @@ test("follow: the target map opened, the object selected and centred; a missing 
 	assert.match(s.fake.out.alerts.pop(), /^YATI: Follow reference: Object 'nowhere' \(id 1, class warp\) has no to_map\.$/);
 	s.fake.select(broken, [7]);
 	s.fake.trigger(ACTIONS.follow);
-	assert.match(s.fake.out.alerts.pop(), /no rule of kind object_in_map, object_in_project or map applies to class 'sign'/);
+	assert.match(s.fake.out.alerts.pop(), /no rule of kind object_in_map, object_in_project, layer_in_map or map applies to class 'sign'/);
 });
 
 test("follow: an object_in_map rule without a map member looks in the same map; a map rule opens its map", () => {

@@ -1,0 +1,5 @@
+<sequences>
+	<sequence name="on_enter">
+		<prompt key="MAP_HOUSE"/>
+	</sequence>
+</sequences>

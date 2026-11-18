@@ -110,7 +110,7 @@ test("object_in_project and unique_name parse; their mistakes are named", () => 
 		["{\"class\": \"a\", \"kind\": \"unique_name\", \"member\": \"m\"}", /unique_name checks the objects' own names; it takes no "member"/],
 		["{\"world\": \"w.world\", \"kind\": \"unique_name\"}", /unique_name applies to objects: give "class"/],
 		["{\"class\": \"a\", \"kind\": \"unique_name\", \"targetClass\": \"b\"}", /unknown field "targetClass" for kind unique_name/],
-		["{\"class\": \"a\", \"member\": \"m\", \"kind\": \"object_in_project\", \"map\": \"x\"}", /unknown field "map" for kind object_in_project/],
+		["{\"class\": \"a\", \"member\": \"m\", \"kind\": \"object_in_project\", \"map\": \"x\"}", /"map" is true \(the rule checks the map's own properties\); kind object_in_project has no member that names a map\./],
 		["{\"class\": \"a\", \"member\": \"m\", \"kind\": \"object_in_project\", \"targetClass\": []}", /"targetClass" is a class name or a list of class names/],
 		["{\"class\": \"a\", \"member\": \"m\", \"kind\": \"object_in_project\", \"targetClass\": [3]}", /"targetClass" is a class name or a list of class names/],
 		["{\"class\": \"a\", \"member\": \"m\", \"kind\": \"object_in_project\", \"maps\": 1}", /"maps" is a string/],
@@ -123,7 +123,7 @@ test("object_in_project and unique_name parse; their mistakes are named", () => 
 	}
 	assert.match(parseRules("[{\"class\": \"a\", \"kind\": \"map\"}]").problems[0], /"kind" is|"member" \(the member's name\) is missing/);
 	assert.match(parseRules("[{\"class\": \"a\", \"member\": \"m\", \"kind\": \"nope\"}]").problems[0],
-		/it is one of map, object_in_map, object_in_project, unique_name, file, key\./);
+		/it is one of map, object_in_map, object_in_project, unique_name, file, key, layer_in_map, counterpart\./);
 });
 
 test("the project's maps: its folders, .tmx and .tmj, hidden folders and other files left out; a rule's maps folder or glob", () => {

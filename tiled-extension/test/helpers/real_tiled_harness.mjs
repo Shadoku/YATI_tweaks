@@ -17,6 +17,10 @@
 // save-as:<map file> is save: with the asset's fileName that file (a map read through a format has
 // none, and headless Tiled cannot open one in the editor): the rules that look across the project
 // then take the map as the saved one, not as a stranger holding the same objects.
+// counterpart:<map file>:<object id> reads the map through Tiled's format (with that fileName), makes
+// the object's counterpart for the project's first counterpart rule as YATI: Create counterpart does
+// (new MapObject, ObjectGroup.addObject in Asset.macro), logs what the new object holds, and runs the
+// save hook on the map.
 // rules-set:<map file>:<object id>:<map member>=<map file>:<object member>=<name> reads the map
 // through Tiled's format, sets the two members as "Pick map and object" does (Asset.macro,
 // setProperty with tiled.filePath), logs what the object then holds, and runs the save hook on it.
@@ -24,9 +28,10 @@
 // with "HARNESS ", "ALERT ", "CONFIRM ", "PROMPT ", "ISSUE " and "YATI".
 //
 // Under Node (node --test runs every file under test/) this file does nothing.
-import { install, ACTIONS, configureDialog, optionsDialog, currentSettings, setMapAndObject } from "../../yati-godot/yati-godot.mjs";
+import { install, ACTIONS, configureDialog, optionsDialog, currentSettings, setMapAndObject, makeCounterpart, classDefaults } from "../../yati-godot/yati-godot.mjs";
+import { parseRules } from "../../yati-godot/lib/rules.mjs";
 
-/* global tiled, TextFile, File, Process, Dialog, ClassPropertyType, StorageType */
+/* global tiled, TextFile, File, Process, Dialog, MapObject, ClassPropertyType, StorageType */
 if (typeof tiled !== "undefined" && typeof tiled.registerAction === "function")
 	main();
 
@@ -60,6 +65,7 @@ function main() {
 	const api = {
 		tiled: t, TextFile: TextFile, File: File, Process: Process,
 		Dialog: typeof Dialog !== "undefined" ? Dialog : null,
+		MapObject: typeof MapObject !== "undefined" ? MapObject : null,
 		ClassPropertyType: typeof ClassPropertyType !== "undefined" ? ClassPropertyType : null,
 		StorageType: typeof StorageType !== "undefined" ? StorageType : null,
 	};
@@ -88,6 +94,8 @@ function main() {
 			tiled.log("HARNESS save hook on " + file + " as that file");
 			for (let k = 0; k < saveHooks.length; k++)
 				saveHooks[k](asset);
+		} else if (step.indexOf("counterpart:") === 0) {
+			counterpartStep(api, step.substring(12), saveHooks);
 		} else if (step.indexOf("rules-set:") === 0) {
 			rulesSetStep(api, step.substring(10), saveHooks);
 		} else if (step.indexOf("options:") === 0) {
@@ -164,6 +172,53 @@ function rulesSetStep(api, spec, saveHooks) {
 	setMapAndObject(api, map, object, m[0], m[1], o[0], o[1]);
 	const v = object.property(m[0]);
 	tiled.log("HARNESS rules-set: " + m[0] + " localFile '" + (v && v.localFile) + "', " + o[0] + " '" + object.property(o[0]) + "'");
+	for (let k = 0; k < saveHooks.length; k++)
+		saveHooks[k](map);
+}
+
+// A map read through Tiled's format, its fileName the file (the rules read files beside it).
+function readAs(file) {
+	const read = tiled.mapFormat("tmx").read(file);
+	return new Proxy(read, { get: function (target, key) {
+		if (key === "fileName")
+			return file;
+		const v = target[key];
+		return typeof v === "function" ? v.bind(target) : v;
+	} });
+}
+
+function findObjectIn(layers, id) {
+	for (let i = 0; i < layers.length; i++) {
+		const l = layers[i];
+		if (l.isObjectLayer) {
+			for (let k = 0; k < l.objects.length; k++) {
+				if (l.objects[k].id === id)
+					return l.objects[k];
+			}
+		}
+		if (l.isGroupLayer) {
+			const o = findObjectIn(l.layers, id);
+			if (o !== null)
+				return o;
+		}
+	}
+	return null;
+}
+
+function counterpartStep(api, spec, saveHooks) {
+	const parts = spec.split(":");
+	const map = readAs(parts[0]);
+	const object = findObjectIn(map.layers, Number(parts[1]));
+	const rules = parseRules(tiled.project.property("yati_rules")).rules.filter(function (r) { return r.kind === "counterpart"; });
+	const result = makeCounterpart(api, map, object, rules[0], classDefaults(api));
+	tiled.log("HARNESS counterpart: error '" + result.error + "', existing " + result.existing + ", message '" + result.message + "'");
+	if (result.object) {
+		const o = result.object;
+		const d = o.property("direction");
+		tiled.log("HARNESS counterpart object: id " + o.id + ", name '" + o.name + "', class '" + o.className + "', layer '" + o.layer.name +
+			"' in '" + (o.layer.parentLayer ? o.layer.parentLayer.name : "") + "', at " + o.x + "," + o.y + " size " + o.width + "x" + o.height +
+			", target '" + o.property("target") + "', direction " + (d && d.typeName ? d.typeName + "." + tiled.project.findTypeByName(d.typeName).nameOf(d) : "'" + d + "'"));
+	}
 	for (let k = 0; k < saveHooks.length; k++)
 		saveHooks[k](map);
 }

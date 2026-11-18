@@ -50,7 +50,7 @@ const brief = (f) => f.severity + " " + f.code + " #" + f.objectId;
 test("the sample's rules parse into normalized rules", () => {
 	const parsed = parseRules(sampleRules());
 	assert.deepEqual(parsed.problems, []);
-	assert.equal(parsed.rules.length, 9);		// the last two the portals' (rules_project_glue.test.mjs)
+	assert.equal(parsed.rules.length, 13);		// 8 and 9 the portals' (rules_project_glue.test.mjs), the last four the levels' and the map's (rules_map.test.mjs)
 	const spawn = parsed.rules[1];
 	assert.deepEqual([spawn.index, spawn.kind, spawn.member, spawn.classes, spawn.map, spawn.targetClass, spawn.required, spawn.severity],
 		[2, "object_in_map", "to_spawn", ["warp"], "to_map", "player_spawn", true, "error"]);
@@ -81,13 +81,13 @@ test("a rule with a mistake is left out and named", () => {
 	assert.match(problems("[{")[0], /^yati_rules is not valid JSON/);
 	assert.match(problems("{}")[0], /must be a JSON array/);
 	const cases = [
-		["{\"class\": \"a\", \"member\": \"m\"}", /rule 1: "kind" is missing; it is one of map, object_in_map, object_in_project, unique_name, file, key\./],
+		["{\"class\": \"a\", \"member\": \"m\"}", /rule 1: "kind" is missing; it is one of map, object_in_map, object_in_project, unique_name, file, key, layer_in_map, counterpart\./],
 		["{\"class\": \"a\", \"member\": \"m\", \"kind\": \"maps\"}", /"kind" is "maps"/],
 		["{\"class\": \"a\", \"member\": \"m\", \"kind\": \"map\", \"requird\": true}", /unknown field "requird" for kind map/],
 		["{\"class\": \"a\", \"member\": \"m\", \"kind\": \"map\", \"template\": \"x\"}", /unknown field "template" for kind map/],
 		["{\"class\": \"a\", \"kind\": \"map\"}", /"member" \(the member's name\) is missing/],
-		["{\"member\": \"m\", \"kind\": \"map\"}", /give either "class" .* or "world"/],
-		["{\"class\": \"a\", \"world\": \"w.world\", \"member\": \"m\", \"kind\": \"map\"}", /give either "class"/],
+		["{\"member\": \"m\", \"kind\": \"map\"}", /give one of "class" .*, "world" .* or "map": true/],
+		["{\"class\": \"a\", \"world\": \"w.world\", \"member\": \"m\", \"kind\": \"map\"}", /give one of "class"/],
 		["{\"class\": [], \"member\": \"m\", \"kind\": \"map\"}", /"class" is a class name, a list of class names, or "\*"/],
 		["{\"class\": \"a\", \"member\": \"m\", \"kind\": \"map\", \"required\": \"yes\"}", /"required" is true or false/],
 		["{\"class\": \"a\", \"member\": \"m\", \"kind\": \"map\", \"severity\": \"info\"}", /"severity" is "error" or "warning"/],
@@ -271,7 +271,7 @@ test("the CSV table and the key preview", () => {
 	assert.deepEqual(parseCsv("\uFEFFa,b"), [["a", "b"]]);
 	const table = readTable(fs.readFileSync(path.join(RULES_DIR, "text", "strings.csv"), "utf8"));
 	assert.deepEqual(table.header, ["keys", "en", "de"]);
-	assert.deepEqual(Object.keys(table.rows), ["SIGN_WELCOME", "SIGN_WELL", "NOTICE_READ"]);
+	assert.deepEqual(Object.keys(table.rows), ["SIGN_WELCOME", "SIGN_WELL", "NOTICE_READ", "MAP_HOUSE"]);
 	assert.equal(table.rows.NOTICE_READ[1], "\"Closed until spring,\" it says.");
 	const rule = parseRules(sampleRules()).rules[4];
 	assert.deepEqual(keyPreview(rule, "SIGN_WELL", table, "strings.csv"), {

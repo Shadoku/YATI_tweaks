@@ -1,0 +1,8 @@
+Initialize godot-rust (API v4.7.stable.official, runtime v4.7.2.stable.official, safeguards balanced)
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+YATI_CHECK error - map: display_name MAP_GOOD is not a key of the text table
+YATI_CHECK error 5 object 5 "sign" (Sign): text SIGN_HELLO is not a key of the text table
+YATI_CHECK error 1 object 1 "start" (PlayerSpawn): the name 'start' is also object 318 in res://content/maps/overworld/coast/overworld_1x1.tmx; arrival names are unique across the maps
+YATI_CHECK error 2 object 2 "door" (Warp): to 'arrival' names no arrival point (a Warp or PlayerSpawn under the maps)
+YATI_CHECK result 4 0 0 0 433

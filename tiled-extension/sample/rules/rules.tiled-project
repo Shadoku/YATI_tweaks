@@ -11,7 +11,7 @@
             "name": "yati_rules",
             "propertytype": "",
             "type": "string",
-            "value": "[\n  {\"class\": \"warp\", \"member\": \"to_map\", \"kind\": \"map\", \"required\": true},\n  {\"class\": \"warp\", \"member\": \"to_spawn\", \"kind\": \"object_in_map\", \"map\": \"to_map\", \"targetClass\": \"player_spawn\", \"required\": true},\n  {\"class\": \"trigger\", \"member\": \"sequence\", \"kind\": \"file\", \"required\": true,\n   \"contains\": [\n     {\"pattern\": \"<sequence\\\\s+name=.on_enter.\", \"label\": \"section named on_enter\"},\n     {\"pattern\": \"<sequence\\\\s+name=.on_leave.\", \"label\": \"section named on_leave\"}],\n   \"template\": \"templates/trigger.xml\", \"folder\": \"sequences\"},\n  {\"class\": \"interactable\", \"member\": \"sequence\", \"kind\": \"file\", \"required\": true,\n   \"contains\": [{\"pattern\": \"<sequence\\\\s+name=.on_interact.\", \"label\": \"section named on_interact\"}],\n   \"template\": \"templates/interactable.xml\", \"folder\": \"sequences\"},\n  {\"class\": [\"sign\", \"interactable\"], \"member\": \"text\", \"kind\": \"key\", \"table\": \"text/strings.csv\"},\n  {\"world\": \"maps/game.world\", \"member\": \"start_map\", \"kind\": \"map\", \"required\": true},\n  {\"world\": \"maps/game.world\", \"member\": \"start_spawn\", \"kind\": \"object_in_map\", \"map\": \"start_map\", \"targetClass\": \"player_spawn\", \"required\": true},\n  {\"class\": [\"portal\", \"player_spawn\"], \"kind\": \"unique_name\", \"required\": true},\n  {\"class\": \"portal\", \"member\": \"to\", \"kind\": \"object_in_project\", \"targetClass\": [\"portal\", \"player_spawn\"]}\n]"
+            "value": "[\n  {\"class\": \"warp\", \"member\": \"to_map\", \"kind\": \"map\", \"required\": true},\n  {\"class\": \"warp\", \"member\": \"to_spawn\", \"kind\": \"object_in_map\", \"map\": \"to_map\", \"targetClass\": \"player_spawn\", \"required\": true},\n  {\"class\": \"trigger\", \"member\": \"sequence\", \"kind\": \"file\", \"required\": true,\n   \"contains\": [\n     {\"pattern\": \"<sequence\\\\s+name=.on_enter.\", \"label\": \"section named on_enter\"},\n     {\"pattern\": \"<sequence\\\\s+name=.on_leave.\", \"label\": \"section named on_leave\"}],\n   \"template\": \"templates/trigger.xml\", \"folder\": \"sequences\"},\n  {\"class\": \"interactable\", \"member\": \"sequence\", \"kind\": \"file\", \"required\": true,\n   \"contains\": [{\"pattern\": \"<sequence\\\\s+name=.on_interact.\", \"label\": \"section named on_interact\"}],\n   \"template\": \"templates/interactable.xml\", \"folder\": \"sequences\"},\n  {\"class\": [\"sign\", \"interactable\"], \"member\": \"text\", \"kind\": \"key\", \"table\": \"text/strings.csv\"},\n  {\"world\": \"maps/game.world\", \"member\": \"start_map\", \"kind\": \"map\", \"required\": true},\n  {\"world\": \"maps/game.world\", \"member\": \"start_spawn\", \"kind\": \"object_in_map\", \"map\": \"start_map\", \"targetClass\": \"player_spawn\", \"required\": true},\n  {\"class\": [\"portal\", \"player_spawn\"], \"kind\": \"unique_name\", \"required\": true},\n  {\"class\": \"portal\", \"member\": \"to\", \"kind\": \"object_in_project\", \"targetClass\": [\"portal\", \"player_spawn\"]},\n  {\"class\": \"stairs\", \"member\": \"target\", \"kind\": \"layer_in_map\", \"targetClass\": \"level\", \"layerType\": \"group\", \"required\": true},\n  {\"class\": \"stairs\", \"member\": \"target\", \"kind\": \"counterpart\", \"targetClass\": \"level\",\n   \"swap\": {\"direction\": {\"UP\": \"DOWN\", \"DOWN\": \"UP\", \"LEFT\": \"RIGHT\", \"RIGHT\": \"LEFT\"}}},\n  {\"map\": true, \"member\": \"sequence\", \"kind\": \"file\",\n   \"contains\": [{\"pattern\": \"<sequence\\\\s+name=.on_(enter|leave).\", \"label\": \"section named on_enter or on_leave\"}],\n   \"template\": \"templates/trigger.xml\", \"folder\": \"sequences\"},\n  {\"map\": true, \"member\": \"display_name\", \"kind\": \"key\", \"table\": \"text/strings.csv\"}\n]"
         }
     ],
     "propertyTypes": [
@@ -131,6 +131,55 @@
                 "property",
                 "object",
                 "tile"
+            ]
+        },
+        {
+            "id": 7,
+            "name": "facing",
+            "storageType": "string",
+            "type": "enum",
+            "values": [
+                "UP",
+                "RIGHT",
+                "DOWN",
+                "LEFT"
+            ],
+            "valuesAsFlags": false
+        },
+        {
+            "color": "#ff85c1e9",
+            "drawFill": true,
+            "id": 8,
+            "members": [
+                {
+                    "name": "direction",
+                    "propertyType": "facing",
+                    "type": "string",
+                    "value": "UP"
+                },
+                {
+                    "name": "target",
+                    "type": "string",
+                    "value": ""
+                }
+            ],
+            "name": "stairs",
+            "type": "class",
+            "useAs": [
+                "property",
+                "object",
+                "tile"
+            ]
+        },
+        {
+            "color": "#ffa4a4a4",
+            "drawFill": true,
+            "id": 9,
+            "members": [],
+            "name": "level",
+            "type": "class",
+            "useAs": [
+                "layer"
             ]
         }
     ]

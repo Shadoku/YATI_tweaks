@@ -71,6 +71,10 @@ test("settings: defaults and relative paths", () => {
 	// The rules (parsed by lib/rules.mjs) and the command that opens files, as written.
 	assert.equal(s.rulesRaw, "");
 	assert.equal(s.openCommand, "");
+	// The game's check scene, as written (a res:// path), trimmed.
+	assert.equal(s.checkScene, "");
+	assert.equal(readSettings(props({ yati_check_scene: " res://tools/check_maps.tscn " }), "/p.tiled-project").checkScene, "res://tools/check_maps.tscn");
+	assert.equal(SETTING_NAMES.checkScene, "yati_check_scene");
 	const r = readSettings(props({ yati_rules: " [] ", yati_open_command: "code -r" }), "/p.tiled-project");
 	assert.equal(r.rulesRaw, "[]");
 	assert.equal(r.openCommand, "code -r");

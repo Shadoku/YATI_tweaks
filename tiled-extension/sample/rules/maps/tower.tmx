@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The rules sample's map of level mistakes (rules_map.test.mjs, rules_map_glue.test.mjs, the
+     README's checklist): the map's own sequence lacks on_enter and on_leave, its display name is
+     a misspelt key; 'lone' has no other half on 'first', 'roof' names no layer, 'floorish' names
+     a tile layer, and 'same' and 'same_up' face the same way. 'up' and 'down' are a good pair.
+     'decor' (no class, an offset) holds an image layer. -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="16" height="16" tilewidth="16" tileheight="16" infinite="0" nextlayerid="9" nextobjectid="8">
+ <properties>
+  <property name="display_name" value="MAP_HOUS"/>
+  <property name="sequence" type="file" value="../sequences/notice.xml"/>
+ </properties>
+ <group id="1" name="ground" class="level">
+  <objectgroup id="2" name="Objects">
+   <object id="1" name="up" class="stairs" x="64" y="64" width="32" height="32">
+    <properties>
+     <property name="target" value="first"/>
+    </properties>
+   </object>
+   <object id="2" name="lone" class="stairs" x="160" y="64" width="32" height="32">
+    <properties>
+     <property name="target" value="first"/>
+    </properties>
+   </object>
+   <object id="3" name="roof" class="stairs" x="16" y="160" width="32" height="32">
+    <properties>
+     <property name="target" value="roof"/>
+    </properties>
+   </object>
+   <object id="5" name="floorish" class="stairs" x="112" y="160" width="32" height="32">
+    <properties>
+     <property name="target" value="Floor"/>
+    </properties>
+   </object>
+   <object id="6" name="same" class="stairs" x="64" y="208" width="32" height="32">
+    <properties>
+     <property name="direction" propertytype="facing" value="LEFT"/>
+     <property name="target" value="first"/>
+    </properties>
+   </object>
+  </objectgroup>
+ </group>
+ <group id="3" name="first" class="level" offsetx="0" offsety="0">
+  <objectgroup id="4" name="Objects">
+   <object id="4" name="down" class="stairs" x="64" y="64" width="32" height="32">
+    <properties>
+     <property name="direction" propertytype="facing" value="DOWN"/>
+     <property name="target" value="ground"/>
+    </properties>
+   </object>
+   <object id="7" name="same_up" class="stairs" x="72" y="216" width="16" height="16">
+    <properties>
+     <property name="direction" propertytype="facing" value="LEFT"/>
+     <property name="target" value="ground"/>
+    </properties>
+   </object>
+  </objectgroup>
+ </group>
+ <group id="7" name="decor" offsetx="8" offsety="4">
+  <imagelayer id="8" name="Backdrop"/>
+ </group>
+ <layer id="5" name="Floor" width="16" height="16">
+  <data encoding="csv">
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+</data>
+ </layer>
+</map>

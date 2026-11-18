@@ -32,6 +32,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path of Tiled layer names through group layers (`"upper/Background"`, `"a/b/Deep"`); a bare name finds the first
   layer of that name as before (also inside groups). A layer inside a group could not be told from a top-level layer
   of the same name. Native library: needs one built from this commit or later.
+- Tiled extension, *Check map in Godot*: the setting `yati_check_scene` (a `res://` scene; a field of *YATI:
+  Configure…*, refused when it is no scene of the Godot project). When set, the action also runs `<godot> --headless
+  --path <project> <scene> -- --tiled <map>` after the importer's check and reads its `YATI_CHECK` lines into
+  Issues with the same parser (`sceneCheckArguments()`, `summarizeScene()` in `lib/check_output.mjs`); without
+  `check_map.gd` the scene runs alone. Fixtures captured from a game's check scene.
+- Tiled extension, project rules: the kind `layer_in_map` (the value names a layer of the same map, of class
+  `targetClass` and kind `layerType`: group, tile, object or image); *Pick map and object…* offers the map's
+  layers, *Follow reference* makes the named one the current layer. The scope `"map": true` in place of `class` or
+  `world`: the rule checks the map's own properties (with its class's defaults); with no object selected, *Pick*,
+  *Follow*, *Open or create file…* (a new file named after the map) and *Show text* act on those rules. The kind
+  `counterpart`: the member names a group layer holding an object of the same class overlapping this one, whose
+  member names this object's group layer and whose `swap` members are swapped (for stairs between two floors);
+  the action *YATI: Create counterpart* makes the missing twin in one undo step (`new MapObject`,
+  `ObjectGroup.addObject`). The map model reads each layer's kind, group and offset and each object's rectangle
+  (`Layer.isTileLayer`, `isImageLayer`, `offset`, `MapObject.width`, `height`). `sample/rules/maps/house.tmx`
+  and `tower.tmx`, `test/rules_map*.test.mjs`, a real-Tiled test of the save hook and the counterpart.
 - Tiled extension, project rules: two kinds that look across every map of the project. `object_in_project`: the
   value names exactly one object, of one of the classes `targetClass` (a name or a list), in any map of the project
   (`.tmx` and `.tmj` under the project's folders, `Project.folders`, or under a rule's `maps` folder or glob); none

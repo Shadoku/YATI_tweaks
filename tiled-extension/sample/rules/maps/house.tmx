@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The rules sample's map with levels: every reference fine. Two group layers of class level, a
+     pair of stairs between them (each half naming the other's level, the directions opposite), and
+     the map's own properties (a sequence with on_enter, a display name that is a key). -->
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="16" height="16" tilewidth="16" tileheight="16" infinite="0" nextlayerid="5" nextobjectid="3">
+ <properties>
+  <property name="display_name" value="MAP_HOUSE"/>
+  <property name="sequence" type="file" value="../sequences/house.xml"/>
+ </properties>
+ <group id="1" name="lower" class="level">
+  <objectgroup id="2" name="Objects">
+   <object id="1" name="up" class="stairs" x="64" y="64" width="32" height="32">
+    <properties>
+     <property name="target" value="upper"/>
+    </properties>
+   </object>
+  </objectgroup>
+ </group>
+ <group id="3" name="upper" class="level">
+  <objectgroup id="4" name="Objects">
+   <object id="2" name="down" class="stairs" x="64" y="64" width="32" height="32">
+    <properties>
+     <property name="direction" propertytype="facing" value="DOWN"/>
+     <property name="target" value="lower"/>
+    </properties>
+   </object>
+  </objectgroup>
+ </group>
+</map>

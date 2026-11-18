@@ -21,6 +21,15 @@
 //                  what "Open or create file" copies and where it puts the copy
 //   key            when the value matches `keyPattern` (default UPPER_SNAKE_CASE with an underscore),
 //                  it must be a key of the CSV file `table` (its first column); else it is plain text
+//   layer_in_map   the value is the name of a layer of the same map (at any depth), of class
+//                  `targetClass` and kind `layerType` (group, tile, object, image) when given
+//   counterpart    the value names a group layer of the same map (of class `targetClass` when given),
+//                  and that layer holds an object of the same class overlapping this one whose member
+//                  names this object's own group layer (the innermost of that class it lies in), and
+//                  whose members in `swap` ({member: {value: counterpart's value}}) are swapped
+//
+// A rule with `"map": true` in place of `class` or `world` checks the map's own properties (any
+// kind but unique_name and counterpart; an object_in_map rule of the map looks in the same map).
 //
 // and optionally `required` (an empty value is a finding) and `severity` ("error", the default, or
 // "warning"). Paths in a rule are relative to the project file; values relative to the map (as
@@ -39,14 +48,17 @@ import { joinPath, dirName, baseName, stem, cleanPath, relativePath } from "./se
 import { resolveFileValue, withClassMembers, describeObject } from "./validate.mjs";
 import { walkFiles } from "./scene_exports.mjs";
 
-export const RULE_KINDS = ["map", "object_in_map", "object_in_project", "unique_name", "file", "key"];
+export const RULE_KINDS = ["map", "object_in_map", "object_in_project", "unique_name", "file", "key", "layer_in_map", "counterpart"];
+
+// The kinds of layer a layer_in_map rule's `layerType` names (Tiled's tile, object, image and group layers).
+export const LAYER_TYPES = ["group", "tile", "object", "image"];
 
 // UPPER_SNAKE_CASE with at least one underscore (SIGN_WELCOME): "OK" or "HELP" stay plain text.
 export const DEFAULT_KEY_PATTERN = "^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$";
 
 export const MAP_FILTER = "Tiled maps (*.tmx *.tmj)";
 
-const COMMON_FIELDS = ["kind", "member", "class", "world", "required", "severity"];
+const COMMON_FIELDS = ["kind", "member", "class", "world", "map", "required", "severity"];
 const KIND_FIELDS = {
 	map: [],
 	object_in_map: ["map", "targetClass"],
@@ -54,6 +66,8 @@ const KIND_FIELDS = {
 	unique_name: ["maps"],
 	file: ["contains", "template", "folder"],
 	key: ["table", "keyPattern"],
+	layer_in_map: ["targetClass", "layerType"],
+	counterpart: ["targetClass", "swap"],
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -102,23 +116,35 @@ function parseRule(v, index) {
 	const kind = v.kind;
 	if (RULE_KINDS.indexOf(kind) < 0)
 		return fail("\"kind\" is " + (kind === undefined ? "missing" : JSON.stringify(kind)) + "; it is one of " + RULE_KINDS.join(", ") + ".");
-	const allowed = COMMON_FIELDS.concat(KIND_FIELDS[kind]);
+	const allowed = COMMON_FIELDS.concat(KIND_FIELDS[kind].filter(function (f) { return COMMON_FIELDS.indexOf(f) < 0; }));
 	const keys = Object.keys(v);
 	for (let i = 0; i < keys.length; i++) {
 		if (allowed.indexOf(keys[i]) < 0)
 			return fail("unknown field \"" + keys[i] + "\" for kind " + kind + " (it takes " + allowed.join(", ") + ").");
 	}
+	// "map": true is the scope (the map's own properties); an object_in_map rule's string "map" is
+	// the member that names the map.
+	const mapScope = v.map === true;
+	if (v.map !== undefined && !mapScope && kind === "object_in_map" && typeof v.map !== "string")
+		return fail("\"map\" is a string (the member that names the map) or true (the map's own properties).");
+	if (v.map !== undefined && !mapScope && kind !== "object_in_map")
+		return fail("\"map\" is true (the rule checks the map's own properties); kind " + kind + " has no member that names a map.");
 	if (kind === "unique_name") {
 		if (v.member !== undefined)
 			return fail("unique_name checks the objects' own names; it takes no \"member\".");
-		if (v.world !== undefined)
-			return fail("unique_name applies to objects: give \"class\" (a class name or a list), not \"world\".");
+		if (v.world !== undefined || mapScope)
+			return fail("unique_name applies to objects: give \"class\" (a class name or a list), not \"" + (mapScope ? "map" : "world") + "\".");
 	} else if (typeof v.member !== "string" || v.member === "") {
 		return fail("\"member\" (the member's name) is missing.");
 	}
+	if (kind === "counterpart" && (v.world !== undefined || mapScope))
+		return fail("counterpart applies to objects: give \"class\" (a class name or a list).");
+	if (kind === "layer_in_map" && v.world !== undefined)
+		return fail("layer_in_map names a layer of the map: give \"class\" or \"map\": true, not \"world\".");
 	const rule = {
-		index: index, kind: kind, member: kind === "unique_name" ? "" : v.member, classes: [], world: "", required: v.required === true,
+		index: index, kind: kind, member: kind === "unique_name" ? "" : v.member, scope: "class", classes: [], world: "", required: v.required === true,
 		severity: "error", map: "", targetClass: "", targetClasses: [], maps: "", contains: [], template: "", folder: "", table: "", keyPattern: null,
+		layerType: "", swap: {},
 	};
 	if (v.required !== undefined && typeof v.required !== "boolean")
 		return fail("\"required\" is true or false.");
@@ -129,17 +155,20 @@ function parseRule(v, index) {
 	}
 	const hasClass = v["class"] !== undefined;
 	const hasWorld = v.world !== undefined;
-	if (hasClass === hasWorld)
-		return fail("give either \"class\" (the objects' class, a list of classes, or \"*\") or \"world\" (a .world file).");
+	if ((hasClass ? 1 : 0) + (hasWorld ? 1 : 0) + (mapScope ? 1 : 0) !== 1)
+		return fail("give one of \"class\" (the objects' class, a list of classes, or \"*\"), \"world\" (a .world file) or \"map\": true (the map's own properties).");
 	if (hasClass) {
 		const classes = typeof v["class"] === "string" ? [v["class"]] : v["class"];
 		if (!Array.isArray(classes) || classes.length === 0 || classes.some(function (c) { return typeof c !== "string" || c === ""; }))
 			return fail("\"class\" is a class name, a list of class names, or \"*\".");
 		rule.classes = classes.slice();
-	} else {
+	} else if (hasWorld) {
 		if (typeof v.world !== "string" || v.world === "")
 			return fail("\"world\" is the path of a .world file, relative to the project file.");
 		rule.world = v.world;
+		rule.scope = "world";
+	} else {
+		rule.scope = "map";
 	}
 	const str = function (name) {
 		if (v[name] === undefined)
@@ -149,7 +178,7 @@ function parseRule(v, index) {
 	const fields = KIND_FIELDS[kind];
 	for (let i = 0; i < fields.length; i++) {
 		const name = fields[i];
-		if (name === "contains" || name === "keyPattern" || (name === "targetClass" && kind === "object_in_project"))
+		if (name === "contains" || name === "keyPattern" || name === "swap" || (name === "targetClass" && kind === "object_in_project") || (name === "map" && mapScope))
 			continue;
 		const s = str(name);
 		if (s === null)
@@ -166,6 +195,29 @@ function parseRule(v, index) {
 	}
 	if (kind === "object_in_map" && rule.world !== "" && rule.map === "")
 		return fail("a world rule of kind object_in_map needs \"map\" (the world property that names the map).");
+	if (kind === "layer_in_map" && rule.layerType !== "" && LAYER_TYPES.indexOf(rule.layerType) < 0)
+		return fail("\"layerType\" is one of " + LAYER_TYPES.join(", ") + ".");
+	if (kind === "counterpart")
+		rule.layerType = "group";
+	if (kind === "counterpart" && v.swap !== undefined) {
+		const bad = fail("\"swap\" is {\"member\": {\"value\": \"its counterpart's value\", ...}, ...}.");
+		if (v.swap === null || typeof v.swap !== "object" || Array.isArray(v.swap))
+			return bad;
+		const members = Object.keys(v.swap);
+		for (let i = 0; i < members.length; i++) {
+			const table = v.swap[members[i]];
+			if (table === null || typeof table !== "object" || Array.isArray(table))
+				return bad;
+			const from = Object.keys(table);
+			for (let k = 0; k < from.length; k++) {
+				if (typeof table[from[k]] !== "string")
+					return bad;
+			}
+			if (members[i] === rule.member)
+				return fail("\"swap\" cannot name the member the rule checks (" + rule.member + "): the counterpart's " + rule.member + " names this object's layer.");
+			rule.swap[members[i]] = Object.assign({}, table);
+		}
+	}
 	if (kind === "file" && v.contains !== undefined) {
 		if (!Array.isArray(v.contains))
 			return fail("\"contains\" is a list of {\"pattern\": ..., \"label\": ...}.");
@@ -260,11 +312,18 @@ function compile(pattern) {
 // The rules for objects of class `cls` ("" matches only "*"), of one of `kinds` (all when omitted).
 export function rulesForClass(rules, cls, kinds) {
 	return rules.filter(function (r) {
-		if (r.world !== "")
+		if (r.scope !== "class")
 			return false;
 		if (kinds && kinds.indexOf(r.kind) < 0)
 			return false;
 		return r.classes.indexOf("*") >= 0 || (cls !== "" && r.classes.indexOf(cls) >= 0);
+	});
+}
+
+// The rules of the map's own properties ("map": true), of one of `kinds` (all when omitted).
+export function mapRulesOf(rules, kinds) {
+	return rules.filter(function (r) {
+		return r.scope === "map" && (!kinds || kinds.indexOf(r.kind) >= 0);
 	});
 }
 
@@ -292,6 +351,15 @@ export function worldRules(rules, projectDir) {
 
 // A rule in a list to choose from: "to_spawn (object in the map to_map names)".
 export function ruleLabel(r) {
+	const label = kindLabel(r);
+	return r.scope === "map" ? label.replace(/\)$/, "; the map's own property)") : label;
+}
+
+function kindLabel(r) {
+	if (r.kind === "layer_in_map")
+		return r.member + " (a " + (r.layerType !== "" ? r.layerType + " " : "") + "layer" + (r.targetClass !== "" ? " of class " + r.targetClass : "") + " in this map)";
+	if (r.kind === "counterpart")
+		return r.member + " (an object of the same class at the same place on the layer " + r.member + " names)";
 	if (r.kind === "object_in_project")
 		return r.member + " (an object" + (r.targetClasses.length > 0 ? " of class " + r.targetClasses.join(" or ") : "") + " in any map of the project)";
 	if (r.kind === "unique_name")
@@ -735,19 +803,32 @@ export function checkRules(map, rules, ctx) {
 	env.skipFile = mapFile !== "" ? cleanPath(mapFile) : "";	// the saved map: its model, not its file
 	// An excluded map (yati_rules_exclude) is outside the rules that look across the project
 	const excluded = isExcluded(mapFile, ctx.exclude, env.projectDir);
+	const notAcross = function (r) { return !excluded || (r.kind !== "unique_name" && r.kind !== "object_in_project"); };
 	const sameMap = map.objects.map(function (o) {
 		return { id: o.id, name: o.name, className: o.className !== "" ? o.className : (o.tileClassName || "") };
 	});
+	// The map's own properties first (the class of the map gives defaults, as an object's does).
+	const ownRules = mapRulesOf(rules).filter(notAcross);
+	if (ownRules.length > 0) {
+		const mapClass = map.className || "";
+		const holder = {
+			where: "Map properties", file: mapFile, sameMap: sameMap, mapRules: ownRules, model: map, object: null,
+			props: withClassMembers(map.properties || [], ctx.classes && mapClass !== "" ? ctx.classes[mapClass] : undefined),
+		};
+		for (let k = 0; k < ownRules.length; k++) {
+			checkMember(ownRules[k], holder, env, function (severity, code, text) {
+				findings.push({ severity: severity, code: code, text: text, objectId: 0, layerId: 0 });
+			});
+		}
+	}
 	for (let i = 0; i < map.objects.length; i++) {
 		const o = map.objects[i];
 		const cls = o.className !== "" ? o.className : (o.tileClassName || "");
-		const applying = rulesForClass(rules, cls).filter(function (r) {
-			return !excluded || (r.kind !== "unique_name" && r.kind !== "object_in_project");
-		});
+		const applying = rulesForClass(rules, cls).filter(notAcross);
 		if (applying.length === 0)
 			continue;
 		const props = withClassMembers(o.properties || [], ctx.classes ? ctx.classes[cls] : undefined);
-		const holder = { where: describeObject(o), file: mapFile, props: props, sameMap: sameMap, mapRules: applying };
+		const holder = { where: describeObject(o), file: mapFile, props: props, sameMap: sameMap, mapRules: applying, model: map, object: o };
 		const report = function (severity, code, text) {
 			findings.push({ severity: severity, code: code, text: text, objectId: o.id, layerId: 0 });
 		};
@@ -765,7 +846,7 @@ export function checkRules(map, rules, ctx) {
 export function checkWorld(worldFile, world, rules, ctx) {
 	const findings = [];
 	const env = environment(ctx);
-	const holder = { where: "World " + baseName(worldFile), file: worldFile, props: world.properties, sameMap: null, mapRules: rules };
+	const holder = { where: "World " + baseName(worldFile), file: worldFile, props: world.properties, sameMap: null, mapRules: rules, model: null, object: null };
 	for (let i = 0; i < rules.length; i++) {
 		checkMember(rules[i], holder, env, function (severity, code, text) {
 			findings.push({ severity: severity, code: code, text: text, objectId: 0, layerId: 0 });
@@ -860,6 +941,15 @@ function checkMember(rule, holder, env, report) {
 		checkObjectInProject(rule, text, holder, env, push);
 		return;
 	}
+	if (rule.kind === "layer_in_map") {
+		if (holder.model !== null && findLayers(holder.model.layers, rule, text).length === 0)
+			push("error", "rule-missing-layer", missingLayerText(rule, text, holder.model.layers));
+		return;
+	}
+	if (rule.kind === "counterpart") {
+		checkCounterpart(rule, holder, env, push);
+		return;
+	}
 	if (rule.kind === "file") {
 		const path = memberPath(prop, holder.file, ctx);
 		if (path === "")
@@ -905,6 +995,8 @@ function kindNoun(rule) {
 		return "an object's name";
 	if (rule.kind === "file")
 		return "a file";
+	if (rule.kind === "layer_in_map" || rule.kind === "counterpart")
+		return "a layer's name";
 	return "a text or key";
 }
 
@@ -1017,6 +1109,212 @@ function checkUniqueName(rule, o, cls, holder, env, report) {
 	report(severity("error"), "rule-duplicate-name", holder.where + ": the name '" + o.name + "' is also used by " +
 		others.map(function (x) { return placeLabel(x, env, true); }).join(", ") +
 		"; the project's rules (yati_rules) want the names of " + kinds + " objects unique across the project.");
+}
+
+// ---------------------------------------------------------------------------------------------
+// Layers of the same map: layer_in_map and counterpart
+//
+// A map model's layers are [{id, name, path, className, type ("group", "tile", "object", "image"),
+// parentId (0 at the top), offsetX, offsetY}] and its objects carry layerId, x, y, width, height and
+// isTile (a tile object, whose y is its bottom edge), as the glue reads them from Tiled.
+
+// The layers named `name` that a layer rule accepts (of its targetClass and layerType when given).
+export function findLayers(layers, rule, name) {
+	return layers.filter(function (l) { return l.name === name && layerFits(l, rule); });
+}
+
+function layerFits(l, rule) {
+	return (rule.layerType === "" || l.type === rule.layerType) && (rule.targetClass === "" || l.className === rule.targetClass);
+}
+
+// The names Pick offers for a layer rule: the layers it accepts, in the map's order, each once.
+export function layerChoices(layers, rule) {
+	const out = [];
+	for (let i = 0; i < layers.length; i++) {
+		if (layerFits(layers[i], rule) && out.indexOf(layers[i].name) < 0)
+			out.push(layers[i].name);
+	}
+	return out;
+}
+
+// "group layer" / "layer", and the class: what a layer rule wants, for messages.
+function layerNoun(rule, plural) {
+	return (rule.layerType !== "" ? rule.layerType + " " : "") + (plural ? "layers" : "layer");
+}
+
+// "names 'roof', but this map has no group layer of that name and class level (its group layers of
+// class level: ground, first; the layer 'roof' is a tile layer of class none)."
+function missingLayerText(rule, name, layers) {
+	const ofClass = rule.targetClass !== "" ? " of class " + rule.targetClass : "";
+	const choices = layerChoices(layers, rule);
+	const notes = ["its " + layerNoun(rule, true) + ofClass + ": " + (choices.length > 0 ? choices.join(", ") : "none")];
+	const named = layers.filter(function (l) { return l.name === name; });
+	if (named.length > 0)
+		notes.push("the layer '" + name + "' is " + (named[0].type === "image" || named[0].type === "object" ? "an " : "a ") + named[0].type + " layer of class " +
+			(named[0].className === "" ? "none" : named[0].className));
+	return "names '" + name + "', but this map has no " + layerNoun(rule, false) + " of that name" +
+		(rule.targetClass !== "" ? " and class " + rule.targetClass : "") + " (" + notes.join("; ") + ").";
+}
+
+function layerById(layers, id) {
+	for (let i = 0; i < layers.length; i++) {
+		if (layers[i].id === id)
+			return layers[i];
+	}
+	return null;
+}
+
+// Whether the layer `id` is the layer `ancestorId` or lies inside it.
+function layerWithin(layers, id, ancestorId) {
+	let l = layerById(layers, id);
+	while (l !== null) {
+		if (l.id === ancestorId)
+			return true;
+		l = l.parentId > 0 ? layerById(layers, l.parentId) : null;
+	}
+	return false;
+}
+
+// The innermost group layer an object lies in, of class `targetClass` when given; null for none.
+export function enclosingGroup(model, object, targetClass) {
+	const own = layerById(model.layers, object.layerId);
+	let l = own !== null && own.parentId > 0 ? layerById(model.layers, own.parentId) : null;
+	while (l !== null) {
+		if (l.type === "group" && (targetClass === "" || l.className === targetClass))
+			return l;
+		l = l.parentId > 0 ? layerById(model.layers, l.parentId) : null;
+	}
+	return null;
+}
+
+// The offset a layer is drawn at: its own and its groups'.
+function layerOffset(layers, id) {
+	const out = { x: 0, y: 0 };
+	let l = layerById(layers, id);
+	while (l !== null) {
+		out.x += l.offsetX || 0;
+		out.y += l.offsetY || 0;
+		l = l.parentId > 0 ? layerById(layers, l.parentId) : null;
+	}
+	return out;
+}
+
+// The rectangle an object covers as Tiled shows it, its layers' offsets included.
+function shownRect(model, o) {
+	const off = layerOffset(model.layers, o.layerId);
+	return { x: o.x + off.x, y: (o.isTile ? o.y - o.height : o.y) + off.y, width: o.width, height: o.height };
+}
+
+function overlaps(a, b) {
+	return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
+function objectClass(o) {
+	return o.className !== "" ? o.className : (o.tileClassName || "");
+}
+
+// What the counterpart of `object` must hold: its member naming the object's own layer, and each
+// member of `swap` swapped (a value the table does not list stays as it is). [{name, value,
+// propertyType}].
+function counterpartValues(rule, props, ownLayerName) {
+	const typeOf = function (name) {
+		const p = findMember(props, name);
+		return p !== null && p.propertyType ? p.propertyType : "";
+	};
+	const out = [{ name: rule.member, value: ownLayerName, propertyType: typeOf(rule.member) }];
+	const members = Object.keys(rule.swap);
+	for (let i = 0; i < members.length; i++) {
+		const value = memberText(findMember(props, members[i]));
+		const table = rule.swap[members[i]];
+		out.push({ name: members[i], value: Object.prototype.hasOwnProperty.call(table, value) ? table[value] : value, propertyType: typeOf(members[i]) });
+	}
+	return out;
+}
+
+function valuesText(values) {
+	const parts = values.map(function (v) { return v.name + " '" + v.value + "'"; });
+	return parts.length > 1 ? parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1] : parts[0];
+}
+
+// The object's counterpart and where it would go, as Create counterpart and the check need them:
+// {error ("" when it can be made, else why not, for a person), existing ({id, name, layerPath} of
+// an object that already is the counterpart, or null), groupId, groupName (the layer the member
+// names), layerId, layerName (the object layer inside it the counterpart goes to: one named as
+// the object's own, else the first), x, y (its position there, as Tiled stores it), values (the
+// members to set, counterpartValues)}. `classes`: validate's class defaults.
+export function counterpartPlan(rule, model, object, classes) {
+	const cls = objectClass(object);
+	const props = withClassMembers(object.properties || [], classes ? classes[cls] : undefined);
+	const out = { error: "", existing: null, groupId: 0, groupName: "", layerId: 0, layerName: "", x: 0, y: 0, values: [] };
+	const name = memberText(findMember(props, rule.member));
+	if (name === "") {
+		out.error = rule.member + " is not set: it names the layer the counterpart goes to.";
+		return out;
+	}
+	const groups = findLayers(model.layers, rule, name);
+	if (groups.length === 0) {
+		out.error = rule.member + " " + missingLayerText(rule, name, model.layers);
+		return out;
+	}
+	const group = groups[0];
+	const own = enclosingGroup(model, object, rule.targetClass);
+	if (own === null) {
+		out.error = "the object lies in no group layer" + (rule.targetClass !== "" ? " of class " + rule.targetClass : "") +
+			", so its counterpart's " + rule.member + " cannot name its layer.";
+		return out;
+	}
+	if (own.id === group.id) {
+		out.error = rule.member + " names the object's own layer '" + name + "'.";
+		return out;
+	}
+	out.groupId = group.id;
+	out.groupName = group.name;
+	out.values = counterpartValues(rule, props, own.name);
+	const found = findCounterpart(model, object, cls, group, out.values, classes);
+	if (found !== null)
+		out.existing = { id: found.id, name: found.name, layerPath: found.layerPath };
+	const ownLayer = layerById(model.layers, object.layerId);
+	const inside = model.layers.filter(function (l) { return l.type === "object" && l.id !== group.id && layerWithin(model.layers, l.id, group.id); });
+	const same = inside.filter(function (l) { return ownLayer !== null && l.name === ownLayer.name; });
+	const target = same.length > 0 ? same[0] : (inside.length > 0 ? inside[0] : null);
+	if (target === null) {
+		out.error = "the layer '" + name + "' holds no object layer to put the counterpart in; add one.";
+		return out;
+	}
+	out.layerId = target.id;
+	out.layerName = target.path;
+	const rect = shownRect(model, object);
+	const off = layerOffset(model.layers, target.id);
+	out.x = rect.x - off.x;
+	out.y = rect.y - off.y + (object.isTile ? object.height : 0);
+	return out;
+}
+
+// An object of class `cls` inside `group`, overlapping `object`, holding `values`; null for none.
+function findCounterpart(model, object, cls, group, values, classes) {
+	const rect = shownRect(model, object);
+	for (let i = 0; i < model.objects.length; i++) {
+		const c = model.objects[i];
+		if (c.id === object.id || objectClass(c) !== cls || !layerWithin(model.layers, c.layerId, group.id) || !overlaps(rect, shownRect(model, c)))
+			continue;
+		const props = withClassMembers(c.properties || [], classes ? classes[cls] : undefined);
+		const all = values.every(function (v) { return memberText(findMember(props, v.name)) === v.value; });
+		if (all)
+			return c;
+	}
+	return null;
+}
+
+// The check: a counterpart rule's finding, when the member names a group layer (layer_in_map's
+// own rule says when it does not), the object lies in a group of its own, and none matches.
+function checkCounterpart(rule, holder, env, push) {
+	if (holder.model === null || holder.object === null)
+		return;
+	const plan = counterpartPlan(rule, holder.model, holder.object, env.ctx.classes);
+	if (plan.groupId === 0 || plan.existing !== null)
+		return;
+	push("error", "rule-missing-counterpart", "names the layer '" + plan.groupName + "', which has no object of class " + objectClass(holder.object) +
+		" overlapping this one with " + valuesText(plan.values) + " (YATI: Create counterpart makes one).");
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1168,14 +1466,17 @@ export function objectNames(objects, targetClass) {
 
 // Where "Open or create file" puts a new copy of the rule's template for an object: in the rule's
 // folder (relative to the project file), else beside the map; named after the map and the object
-// ("town_well.xml", or "town_trigger_7.xml" for an unnamed object), with the template's suffix.
+// ("town_well.xml", or "town_trigger_7.xml" for an unnamed object), or the map alone for a rule of
+// the map's own properties (object null: "town.xml"), with the template's suffix.
 export function newFilePath(rule, object, mapFile, projectDir) {
 	const folder = rule.folder !== "" ? joinPath(projectDir, rule.folder) : dirName(mapFile);
 	const tpl = baseName(rule.template);
 	const dot = tpl.lastIndexOf(".");
 	const suffix = dot > 0 ? tpl.substring(dot) : "";
-	const own = object.name !== "" ? object.name : (object.className !== "" ? object.className : "object") + "_" + object.id;
-	const name = (stem(mapFile) + "_" + own).replace(/[^A-Za-z0-9_.-]+/g, "_");
+	let name = stem(mapFile);
+	if (object !== null)
+		name += "_" + (object.name !== "" ? object.name : (object.className !== "" ? object.className : "object") + "_" + object.id);
+	name = name.replace(/[^A-Za-z0-9_.-]+/g, "_");
 	return joinPath(folder, name + suffix);
 }
 

@@ -195,3 +195,25 @@ test("real Tiled: the portals' rules look across the project's folders (Project.
 		assert.match(issues[i], expected[i]);
 	has(lines, "HARNESS save hook on " + path.join(portals, "west.tmx") + " as that file");
 });
+
+test("real Tiled: levels and the map's own properties on save; a counterpart made through new MapObject and addObject", { skip: SKIP }, () => {
+	const root = tempDir("yati-real-tiled-levels-");
+	dirs.push(root);
+	copyDir(path.join(SAMPLE_DIR, "rules"), root);
+	const tower = path.join(root, "maps", "tower.tmx");
+	const lines = runTiled(path.join(root, "rules.tiled-project"), ["save-as:" + tower, "counterpart:" + tower + ":2", "counterpart:" + tower + ":1"]);
+	const issues = lines.filter((l) => l.indexOf("ISSUE ") === 0);
+	// Tiled's own layers (kinds, groups, offsets), rectangles and map properties: rules_map.test.mjs's
+	// seven findings; after the counterpart of 'lone' (id 2) six, none about it; the third step reads
+	// the map afresh (seven again) and finds the counterpart 'up' (id 1) has.
+	assert.equal(issues.length, 7 + 6 + 7, lines.join("\n"));
+	assert.match(issues[0], /^ISSUE error: YATI: tower\.tmx: Map properties: sequence names notice\.xml, which has no section named on_enter or on_leave\.$/);
+	assert.match(issues[1], /^ISSUE error: YATI: tower\.tmx: Map properties: display_name is 'MAP_HOUS', shaped like a key, but strings\.csv has no such key \(did you mean MAP_HOUSE\?\)\.$/);
+	assert.match(issues[2], /^ISSUE error: YATI: tower\.tmx: Object 'lone' \(id 2, layer ground\/Objects\): target names the layer 'first', which has no object of class stairs overlapping this one with target 'ground' and direction 'DOWN'/);
+	assert.match(issues[4], /^ISSUE error: YATI: tower\.tmx: Object 'floorish' \(id 5, layer ground\/Objects\): .*the layer 'Floor' is a tile layer of class none\)\.$/);
+	has(lines, "HARNESS counterpart: error '', existing false, message 'made its counterpart on layer first/Objects (target ground, direction DOWN).'");
+	has(lines, "HARNESS counterpart object: id 8, name 'lone', class 'stairs', layer 'Objects' in 'first', at 160,64 size 32x32, target 'ground', direction facing.DOWN");
+	assert.equal(issues.slice(7, 13).filter((l) => l.indexOf("'lone'") >= 0).length, 0, issues.slice(7).join("\n"));
+	some(lines, /^HARNESS counterpart: error '', existing true, message 'already has its counterpart: Object 'down' \(id 4, layer first\/Objects\), now selected\.'$/);
+	none(lines, /^ISSUE error: YATI: [^t]/);
+});

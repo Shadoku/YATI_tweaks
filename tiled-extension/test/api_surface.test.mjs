@@ -64,7 +64,7 @@ test("every member the extension touches is documented, and every documented one
 	for (const k of b.fake.used)
 		used.add(k);
 
-	// The rules (sample/rules/): the save hook with a world, and the four actions on a selected object.
+	// The rules (sample/rules/): the save hook with a world, and the actions on a selected object.
 	const c = run(rulesScenario({ fakeOptions: { process: () => ({ code: 0 }) } }));
 	c.fake.emitAboutToBeSaved(c.open("town.tmx"));
 	const broken = c.open("broken.tmx");
@@ -79,7 +79,17 @@ test("every member the extension touches is documented, and every documented one
 	c.fake.trigger(ACTIONS.openFile);
 	c.fake.select(broken, [7]);
 	c.fake.trigger(ACTIONS.text);
-	assert.deepEqual(c.fake.out.errors.filter((e) => e.indexOf("YATI: broken.tmx") !== 0), []);
+	// The level rules (maps/tower.tmx): the save hook, Pick and Follow on a layer, Create counterpart.
+	const tower = c.open("tower.tmx");
+	c.fake.emitAboutToBeSaved(tower);
+	c.fake.select(tower, [3]);
+	c.fake.answers.dialogs.push((d) => { d.button("OK").click(); });
+	c.fake.trigger(ACTIONS.pick);
+	c.fake.select(tower, [1]);
+	c.fake.trigger(ACTIONS.follow);
+	c.fake.select(tower, [2]);
+	c.fake.trigger(ACTIONS.counterpart);
+	assert.deepEqual(c.fake.out.errors.filter((e) => e.indexOf("YATI: broken.tmx") !== 0 && e.indexOf("YATI: tower.tmx") !== 0), []);
 	for (const k of c.fake.used)
 		used.add(k);
 

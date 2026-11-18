@@ -12,12 +12,13 @@ import { readSettings, SETTING_NAMES, IMPORT_OPTIONS, IMPORT_OPTION_VALUES } fro
 const props = (o) => (name) => o[name];
 const existing = (paths) => ({ exists: (p) => paths.indexOf(p) >= 0 });
 const PROJECT = "/g/tiled/game.tiled-project";
-const GAME = ["/g/game", "/g/game/project.godot", "/g/game/scenes", "/g/game/addons/x", "/g/tiled/tools/godot4", "/opt/elsewhere"];
+const GAME = ["/g/game", "/g/game/project.godot", "/g/game/tools/check.tscn", "/g/game/scenes", "/g/game/addons/x", "/g/tiled/tools/godot4", "/opt/elsewhere"];
 
 test("fields: one per setting, in the dialog's order, each naming its property in the tooltip", () => {
-	assert.deepEqual(FIELDS.map((f) => f.key), ["godotProject", "godotBinary", "scenesDir", "importOptions", "validate"]);
-	assert.deepEqual(FIELDS.map((f) => f.property), ["godot_project", "godot_binary", "godot_scenes_dir", "yati_import_options", "yati_validate"]);
-	assert.deepEqual(FIELDS.map((f) => f.kind), ["directory", "text", "directory", "text", "bool"]);
+	assert.deepEqual(FIELDS.map((f) => f.key), ["godotProject", "godotBinary", "scenesDir", "importOptions", "checkScene", "validate"]);
+	assert.deepEqual(FIELDS.map((f) => f.property), ["godot_project", "godot_binary", "godot_scenes_dir", "yati_import_options", "yati_check_scene", "yati_validate"]);
+	assert.deepEqual(FIELDS.map((f) => f.kind), ["directory", "text", "directory", "text", "text", "bool"]);
+	assert.match(fieldByKey("checkScene").tooltip, /-- --tiled <map>/);
 	for (const f of FIELDS) {
 		assert.ok(f.tooltip.indexOf("Saved as " + f.property) >= 0, f.key);
 		assert.ok(f.label.length > 0);
@@ -88,12 +89,12 @@ test("options text to values and back: the table's order, defaults left out, unk
 
 test("initial values: resolved folders, the binary and options as written, the scenes folder empty for the whole project", () => {
 	const empty = initialValues(readSettings(props({}), PROJECT));
-	assert.deepEqual(empty, { godotProject: "", godotBinary: "", scenesDir: "", importOptions: "", validate: true });
+	assert.deepEqual(empty, { godotProject: "", godotBinary: "", scenesDir: "", importOptions: "", checkScene: "", validate: true });
 	const set = initialValues(readSettings(props({
 		godot_project: "../game", godot_binary: "tools/godot4", godot_scenes_dir: "res://scenes",
-		yati_import_options: " warn_unknown_classes=false ", yati_validate: false,
+		yati_import_options: " warn_unknown_classes=false ", yati_validate: false, yati_check_scene: " res://tools/check.tscn ",
 	}), PROJECT));
-	assert.deepEqual(set, { godotProject: "/g/game", godotBinary: "tools/godot4", scenesDir: "/g/game/scenes", importOptions: "warn_unknown_classes=false", validate: false });
+	assert.deepEqual(set, { godotProject: "/g/game", godotBinary: "tools/godot4", scenesDir: "/g/game/scenes", importOptions: "warn_unknown_classes=false", checkScene: "res://tools/check.tscn", validate: false });
 	assert.equal(managedSummary(readSettings(props({}), PROJECT)), "No types made by the extension yet: run Sync Godot project and Import scenes as classes.");
 	const managed = readSettings(props({
 		yati_generated: "{\"Enemy\":[\"godot_scene\",\"hp\"],\"GodotPhysicsLayers\":[]}",
@@ -143,21 +144,22 @@ test("validation: errors for what cannot work, warnings for what may; what is st
 	const versions = { "/g/tiled/tools/godot4": { code: 0, output: "4.7.1.stable\n" }, godot: { code: -1, output: "" } };
 	const run = (values, godotVersion) => validateConfiguration(values, s, { exists: io.exists, godotVersion: godotVersion === undefined ? (b) => versions[b] || { code: 0, output: "?" } : godotVersion });
 
-	const nothing = run({ godotProject: "", godotBinary: "", scenesDir: "", importOptions: "", validate: true });
+	const nothing = run({ godotProject: "", godotBinary: "", scenesDir: "", importOptions: "", checkScene: "", validate: true });
 	assert.deepEqual(nothing.errors, ["Godot project: Choose the folder that holds project.godot."]);
 	assert.deepEqual(nothing.warnings, ["Godot binary: Could not start 'godot': Check map in Godot will not work until the Godot binary is a full path or a command on PATH."]);
 	assert.equal(nothing.stored, null);
 
-	const good = run({ godotProject: "/g/game", godotBinary: " tools/godot4 ", scenesDir: "/g/game/scenes", importOptions: " object_refs=both ", validate: true });
+	const good = run({ godotProject: "/g/game", godotBinary: " tools/godot4 ", scenesDir: "/g/game/scenes", importOptions: " object_refs=both ", checkScene: " res://tools/check.tscn ", validate: true });
 	assert.deepEqual(good.errors, []);
 	assert.deepEqual(good.warnings, []);
 	assert.deepEqual(good.stored, {
-		godot_project: "../game", godot_binary: "tools/godot4", godot_scenes_dir: "res://scenes", yati_import_options: "object_refs=both", yati_validate: true,
+		godot_project: "../game", godot_binary: "tools/godot4", godot_scenes_dir: "res://scenes", yati_import_options: "object_refs=both",
+		yati_check_scene: "res://tools/check.tscn", yati_validate: true,
 	});
 	assert.deepEqual(good.resolved, { godotProject: "/g/game", godotBinary: "/g/tiled/tools/godot4", scenesDir: "/g/game/scenes", validate: true });
 	assert.deepEqual(configuredLines(good), [
 		"Godot project: /g/game", "Godot binary: /g/tiled/tools/godot4", "Scenes scanned under: /g/game/scenes",
-		"Import options: object_refs=both", "Validate on save: yes",
+		"Import options: object_refs=both", "Game check scene: res://tools/check.tscn", "Validate on save: yes",
 	]);
 
 	// The scenes folder: the project itself is "", res:// typed in, relative to the Godot project, outside it.
@@ -169,20 +171,28 @@ test("validation: errors for what cannot work, warnings for what may; what is st
 	assert.deepEqual(outside.warnings, ["Scenes folder: '/opt/elsewhere' is outside the Godot project; scenes found there get absolute paths, which the game cannot load as res://."]);
 	assert.equal(outside.stored.godot_scenes_dir, "/opt/elsewhere");
 	assert.equal(outside.stored.yati_validate, false);
-	assert.equal(configuredLines(outside)[4], "Validate on save: no");
-	assert.equal(configuredLines(outside)[5], outside.warnings[0]);
+	assert.equal(configuredLines(outside)[4], "Game check scene: (none)");
+	assert.equal(configuredLines(outside)[5], "Validate on save: no");
+	assert.equal(configuredLines(outside)[6], outside.warnings[0]);
 
 	// Every error at once; a missing binary path is not run.
 	let ran = 0;
-	const bad = run({ godotProject: "/g/nope", godotBinary: "../nowhere/godot", scenesDir: "/g/game/none", importOptions: "add_id_as_metadata=maybe x", validate: true }, () => { ran++; return { code: 0, output: "4.7\n" }; });
+	const bad = run({ godotProject: "/g/nope", godotBinary: "../nowhere/godot", scenesDir: "/g/game/none", importOptions: "add_id_as_metadata=maybe x", checkScene: "tools/check.tscn", validate: true }, () => { ran++; return { code: 0, output: "4.7\n" }; });
 	assert.deepEqual(bad.errors, [
 		"Godot project: '/g/nope' does not exist.",
 		"Godot binary: '/g/nowhere/godot' does not exist.",
 		"Scenes folder: '/g/game/none' does not exist.",
 		"Import options: Option 'add_id_as_metadata' takes true or false, not 'maybe'.",
 		"Import options: Ignored in the import options: 'x' (expected name=value pairs).",
+		"Game check scene: 'tools/check.tscn' is no res:// path (a scene of the Godot project, e.g. res://tools/check_maps.tscn).",
 	]);
 	assert.equal(ran, 0);
+	// The check scene: a scene file of the Godot project; with no project it is judged by its form only.
+	const scene = (text, project) => run({ godotProject: project === undefined ? "/g/game" : project, godotBinary: "tools/godot4", scenesDir: "", importOptions: "", checkScene: text, validate: true });
+	assert.deepEqual(scene("res://tools/check.gd").errors, ["Game check scene: 'res://tools/check.gd' is no scene (.tscn or .scn)."]);
+	assert.deepEqual(scene("res://tools/none.tscn").errors, ["Game check scene: res://tools/none.tscn does not exist in the Godot project (/g/game/tools/none.tscn)."]);
+	assert.deepEqual(scene("res://tools/none.tscn", "").errors, ["Godot project: Choose the folder that holds project.godot."]);
+	assert.equal(scene("").stored.yati_check_scene, "");
 	// With no project, a relative scenes folder is not judged (it is relative to the project).
 	const noProject = run({ godotProject: "", godotBinary: "tools/godot4", scenesDir: "scenes", importOptions: "", validate: true });
 	assert.deepEqual(noProject.errors, ["Godot project: Choose the folder that holds project.godot."]);

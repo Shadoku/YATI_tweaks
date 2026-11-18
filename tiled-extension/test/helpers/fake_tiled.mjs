@@ -484,7 +484,14 @@ class FakeProject {
 // Maps (read from .tmx)
 
 class FakeMapObject {
+	// From a map file's <object>, or (map null, el a name) a new object as `new MapObject(name)` makes
+	// it: id 0 until a layer of a map takes it (ObjectGroup.addObject).
 	constructor(map, el, layer, fileDir) {
+		if (map === null) {
+			Object.assign(this, { _map: null, _layer: null, _id: 0, _name: typeof el === "string" ? el : "", _class: "", _x: 0, _y: 0, _width: 0, _height: 0,
+				_props: {}, _templateProps: {}, _tile: null });
+			return;
+		}
 		this._map = map;
 		this._layer = layer;
 		this._id = Number(el.attrs.id || 0);
@@ -492,6 +499,8 @@ class FakeMapObject {
 		this._class = el.attrs.class || el.attrs.type || "";
 		this._x = Number(el.attrs.x || 0);
 		this._y = Number(el.attrs.y || 0);
+		this._width = Number(el.attrs.width || 0);
+		this._height = Number(el.attrs.height || 0);
 		this._props = map._readProps(el, fileDir);
 		this._templateProps = {};
 		this._tile = null;
@@ -522,15 +531,51 @@ class FakeMapObject {
 	get id() { return this._id; }
 	get name() { return this._name; }
 	get className() { return this._class; }
+	set className(v) { this._class = String(v); this._changed("Change class"); }
 	get x() { return this._x; }
+	set x(v) { this._x = v; this._changed("Move object"); }
 	get y() { return this._y; }
-	get tile() { return this._tile === null ? null : this._map._fake._rec.wrap(this._tile, "Tile"); }
-	properties() { return this._map._apiProps(this._props); }
+	set y(v) { this._y = v; this._changed("Move object"); }
+	get width() { return this._width; }
+	set width(v) { this._width = v; this._changed("Resize object"); }
+	get height() { return this._height; }
+	set height(v) { this._height = v; this._changed("Resize object"); }
+	get tile() { return this._tile === null ? null : this._fakeOf()._rec.wrap(this._tile, "Tile"); }
+	set tile(v) { this._tile = v === null ? null : (v.__fake || v); this._changed("Change tile"); }
+	properties() { return this._apiProps(this._props); }
+	// A change to an object of a map: the map is modified, and a change outside a macro is a step of
+	// its own on the undo stack. An object no map holds yet changes nothing else.
+	_changed(text) {
+		if (this._map === null)
+			return;
+		this._map._modified = true;
+		if (this._map._macroDepth === 0)
+			this._map._undo.push(text);
+	}
+	_apiProps(raw) { return (this._map || new PropertyReader(this._fake))._apiProps(raw); }
+	_fakeOf() { return this._map !== null ? this._map._fake : this._fake; }
 	// TiledObject.setProperty on an object: a FilePath becomes a file property, a string a string
 	// one. The map is modified; a change outside a macro is a step of its own on the undo stack.
 	setProperty(name, value) {
-		let raw;
-		if (value && value.__filePath)
+		this._props[name] = rawFromScript(this._fakeOf(), value);
+		this._changed("Change property " + name);
+	}
+	resolvedProperties() {
+		const merged = Object.assign({}, this._tile ? this._tile._props : {}, this._templateProps, this._props);
+		return this._apiProps(merged);
+	}
+}
+
+// A value setProperty takes as the raw property it stores: a FilePath a file, a PropertyValue of an
+// enum its name (or number, stored as int), a string, bool or number as such.
+function rawFromScript(fake, value) {
+	let raw;
+	{
+		if (value && value.__propertyValue) {
+			const t = fake._project._types.find((x) => x._name === value.typeName);
+			raw = t._storage === 1 ? { type: "int", value: String(value.value), propertyType: value.typeName, dir: "" }
+				: { type: "string", value: t._export(value.value).value, propertyType: value.typeName, dir: "" };
+		} else if (value && value.__filePath)
 			raw = { type: "file", value: value.localFile, propertyType: "", dir: "" };
 		else if (typeof value === "string")
 			raw = { type: "string", value: value, propertyType: "", dir: "" };
@@ -540,15 +585,8 @@ class FakeMapObject {
 			raw = { type: Number.isInteger(value) ? "int" : "float", value: String(value), propertyType: "", dir: "" };
 		else
 			throw new Error("fake: cannot set " + JSON.stringify(value));
-		this._props[name] = raw;
-		this._map._modified = true;
-		if (this._map._macroDepth === 0)
-			this._map._undo.push("Change property " + name);
 	}
-	resolvedProperties() {
-		const merged = Object.assign({}, this._tile ? this._tile._props : {}, this._templateProps, this._props);
-		return this._map._apiProps(merged);
-	}
+	return raw;
 }
 
 class FakeTile {
@@ -569,6 +607,7 @@ class FakeLayer {
 		this._name = el.attrs.name || "";
 		this._class = el.attrs.class || "";
 		this._props = map._readProps(el, fileDir);
+		this._offset = { x: Number(el.attrs.offsetx || 0), y: Number(el.attrs.offsety || 0) };
 		this._objects = [];
 		this._layers = [];
 		if (kind === "objectgroup") {
@@ -583,6 +622,20 @@ class FakeLayer {
 	get className() { return this._class; }
 	get isObjectLayer() { return this._kind === "objectgroup"; }
 	get isGroupLayer() { return this._kind === "group"; }
+	get isTileLayer() { return this._kind === "layer"; }
+	get isImageLayer() { return this._kind === "imagelayer"; }
+	get offset() { return { x: this._offset.x, y: this._offset.y }; }
+	// ObjectGroup.addObject: the map gives the object its next id; an undoable step of its own.
+	addObject(o) {
+		const raw = o.__fake || o;
+		raw._map = this._map;
+		raw._layer = this;
+		raw._id = this._map._nextObjectId++;
+		this._objects.push(raw);
+		this._map._modified = true;
+		if (this._map._macroDepth === 0)
+			this._map._undo.push("Add Object");
+	}
 	get objects() { return this._objects.map((o) => this._map._fake._rec.wrap(o, "MapObject")); }
 	get layers() { return this._layers.map((l) => this._map._wrapLayer(l)); }
 	properties() { return this._map._apiProps(this._props); }
@@ -613,9 +666,19 @@ class FakeMap extends PropertyReader {
 		for (const ts of childrenNamed(root, "tileset"))
 			this._tilesets.push({ firstgid: Number(ts.attrs.firstgid || 1), el: ts, dir: dir });
 		this._props = this._readProps(root, dir);
+		this._class = root.attrs.class || "";
+		this._nextObjectId = Number(root.attrs.nextobjectid || 1);
 		this._layers = this._readLayers(root, dir);
 	}
 	get fileName() { return this._fileName; }
+	get className() { return this._class; }
+	// TiledObject.setProperty on the map: its own properties, as on an object.
+	setProperty(name, value) {
+		this._props[name] = rawFromScript(this._fake, value);
+		this._modified = true;
+		if (this._macroDepth === 0)
+			this._undo.push("Change property " + name);
+	}
 	get isTileMap() { return true; }
 	get isTileset() { return false; }
 	get modified() { return this._modified; }
@@ -645,7 +708,7 @@ class FakeMap extends PropertyReader {
 	}
 
 	_wrapLayer(l) {
-		const cls = l._kind === "objectgroup" ? "ObjectGroup" : (l._kind === "group" ? "GroupLayer" : "TileLayer");
+		const cls = l._kind === "objectgroup" ? "ObjectGroup" : (l._kind === "group" ? "GroupLayer" : (l._kind === "imagelayer" ? "ImageLayer" : "TileLayer"));
 		return this._fake._rec.wrap(l, cls);
 	}
 	_readLayers(el, dir) {
@@ -1098,6 +1161,14 @@ export function createFakeTiled(options) {
 	FakeDialog.Accepted = 1;
 	FakeDialog.Rejected = 0;
 
+	// new MapObject(name): an object no map holds yet (classes/MapObject.html#constructor).
+	class FakeNewMapObject extends FakeMapObject {
+		constructor(name) {
+			super(null, name === undefined ? "" : name);
+			this._fake = fake;
+		}
+	}
+
 	class FakeProcess {
 		constructor() {
 			this._out = "";
@@ -1121,6 +1192,7 @@ export function createFakeTiled(options) {
 		File: rec.wrap(fakeFileModule(), "File"),
 		Process: rec.wrapClass(FakeProcess, "Process"),
 		Dialog: rec.wrapClass(FakeDialog, "Dialog"),
+		MapObject: rec.wrapClass(FakeNewMapObject, "MapObject"),
 		ClassPropertyType: rec.wrap({ PropertyValueType: USAGE.PropertyValueType, MapObjectClass: USAGE.MapObjectClass, TileClass: USAGE.TileClass }, "ClassPropertyType"),
 		StorageType: rec.wrap({ StringValue: 0, IntValue: 1 }, "StorageType"),
 	};

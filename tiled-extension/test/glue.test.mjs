@@ -20,18 +20,20 @@ const configured = (extra) => [{ name: "godot_project", type: "string", value: "
 // For a project in maps/ with game.tiled-project's types (their paths are relative to maps/).
 const inMaps = (extra) => [{ name: "godot_project", type: "string", value: "../godot_project" }].concat(extra || []);
 
-test("install: eight actions in the Map menu after a separator, the save hook", () => {
+test("install: nine actions in the Map menu after a separator, the save hook", () => {
 	const s = make();
 	const out = s.fake.out;
 	assert.deepEqual(Object.keys(out.actions), [ACTIONS.configure, ACTIONS.sync, ACTIONS.scenes, ACTIONS.check,
-		ACTIONS.pick, ACTIONS.follow, ACTIONS.openFile, ACTIONS.text]);
+		ACTIONS.pick, ACTIONS.follow, ACTIONS.openFile, ACTIONS.text, ACTIONS.counterpart]);
 	assert.deepEqual(Object.values(out.actions).map((a) => a.text), [
 		"YATI: Configure…", "YATI: Sync Godot project…", "YATI: Import scenes as classes…", "YATI: Check map in Godot",
 		"YATI: Pick map and object…", "YATI: Follow reference", "YATI: Open or create file…", "YATI: Show text for selected object",
+		"YATI: Create counterpart",
 	]);
 	assert.deepEqual(Object.values(ACTION_TEXTS), Object.values(out.actions).map((a) => a.text));
 	assert.deepEqual(out.menus.Map, [{ separator: true }, { action: "YatiConfigure" }, { action: "YatiSyncGodotProject" }, { action: "YatiImportScenes" }, { action: "YatiCheckMap" },
-		{ action: "YatiPickMapObject" }, { action: "YatiFollowReference" }, { action: "YatiOpenOrCreateFile" }, { action: "YatiShowText" }]);
+		{ action: "YatiPickMapObject" }, { action: "YatiFollowReference" }, { action: "YatiOpenOrCreateFile" }, { action: "YatiShowText" },
+		{ action: "YatiCreateCounterpart" }]);
 });
 
 // A --version run that answers like Godot 4 for the check's fake process, the check output for the rest.
@@ -52,7 +54,7 @@ test("configure: one dialog with a field per setting, each with its tooltip; Can
 	assert.equal(seen.execs, 1);
 	assert.equal(seen.result, 0);		// closed without Save: rejected
 	assert.deepEqual(seen.widgets.filter((w) => ["file", "text", "check"].indexOf(w.kind) >= 0).map((w) => w.label),
-		["Godot project", "Godot binary", "Scenes folder", "Import options", "Validate maps and tilesets on save"]);
+		["Godot project", "Godot binary", "Scenes folder", "Import options", "Game check scene", "Validate maps and tilesets on save"]);
 	assert.deepEqual(seen.widgets.filter((w) => w.kind === "button").map((w) => w.label), ["Browse…", "Test", "Options…", "Save", "Cancel"]);
 	for (const w of seen.widgets.filter((x) => ["file", "text", "check", "button"].indexOf(x.kind) >= 0))
 		assert.ok(w.widget.toolTip.length > 20, w.label + " has a tooltip");
@@ -485,6 +487,56 @@ test("check: a Godot that does not start, a check that does not finish", () => {
 	assert.equal(u.fake.out.alerts[0], "Godot imported the map with 0 error(s) and 0 warning(s): 3 nodes, 0 cells, 1 ms.");
 });
 
+// The game's check scene: run after the importer's check with the same lines read into Issues.
+const SCENE_OUTPUT = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "fixtures", "check_output_scene_stairs.txt"), "utf8");
+const bothChecks = (binary, args) => (args[3] === "-s" ? { code: 1, stdout: CHECK_OUTPUT, stderr: "" } : { code: 1, stdout: SCENE_OUTPUT, stderr: "" });
+
+test("check: with yati_check_scene, the game's check scene runs after the importer's; its problems are Issues too", () => {
+	const scene = { name: "yati_check_scene", type: "string", value: "res://tools/check_maps.tscn" };
+	const s = make({ checkScript: true, properties: configured([scene]), fakeOptions: { process: bothChecks } });
+	fs.mkdirSync(path.join(s.godot, "tools"));
+	fs.writeFileSync(path.join(s.godot, "tools", "check_maps.tscn"), "[gd_scene format=3]\n");
+	const mapFile = path.join(s.maps, "mistakes.tmx");
+	s.fake.openFile(mapFile);
+	s.fake.trigger(ACTIONS.check);
+	assert.deepEqual(s.fake.out.processes.map((p) => p.args), [
+		["--headless", "--path", s.godot, "-s", "res://addons/yati_native/check_map.gd", "--", mapFile, "--project=" + s.projectFile],
+		["--headless", "--path", s.godot, "res://tools/check_maps.tscn", "--", "--tiled", mapFile],
+	]);
+	const issues = s.fake.out.issues;
+	assert.equal(issues.length, 5);
+	assert.equal(issues[4].severity, "error");
+	assert.equal(issues[4].text, "YATI check (check_maps.tscn): mistakes.tmx: object 1 \"up\" (Stairs): no other half on level 'upper': a Stairs there overlapping it, its direction DOWN, its target 'lower'");
+	issues[4].activate();
+	assert.deepEqual(s.fake.api.tiled.activeAsset.selectedObjects.map((o) => o.id), [1]);
+	assert.match(s.fake.out.alerts[0], /^Godot imported the map with 1 error\(s\) and 3 warning\(s\).*\ncheck_maps\.tscn found 1 error\(s\) and 0 warning\(s\) in \d+ ms\.\n\nThe messages are in the Issues view/);
+	assert.ok(s.fake.out.logs.some((l) => /^YATI: check_maps\.tscn found 1 error/.test(l)));
+
+	// Without the importer's script, the scene runs alone and the message says the other was skipped.
+	const t = make({ properties: configured([scene]), fakeOptions: { process: bothChecks } });
+	fs.mkdirSync(path.join(t.godot, "tools"));
+	fs.writeFileSync(path.join(t.godot, "tools", "check_maps.tscn"), "[gd_scene format=3]\n");
+	t.fake.openFile(path.join(t.maps, "clean.tmx"));
+	t.fake.trigger(ACTIONS.check);
+	assert.deepEqual(t.fake.out.processes.map((p) => p.args[3]), ["res://tools/check_maps.tscn"]);
+	assert.equal(t.fake.out.issues.length, 1);
+	assert.match(t.fake.out.alerts[0], /^The importer's check was skipped: the Godot project has no addons\/yati_native\/check_map\.gd\.\ncheck_maps\.tscn found 1 error/);
+
+	// A scene the project does not have: said, nothing runs; a scene that does not finish: said.
+	const u = make({ checkScript: true, properties: configured([scene]), fakeOptions: { process: bothChecks } });
+	u.fake.openFile(path.join(u.maps, "clean.tmx"));
+	u.fake.trigger(ACTIONS.check);
+	assert.match(u.fake.out.alerts[0], /^The Godot project has no tools\/check_maps\.tscn \(the setting yati_check_scene\)/);
+	assert.equal(u.fake.out.processes.length, 0);
+	const v = make({ checkScript: true, properties: configured([scene]), fakeOptions: { process: (b, args) => (args[3] === "-s" ? { code: 0, stdout: "YATI_CHECK result 0 0 3 0 1\n" } : { code: 1, stdout: "", stderr: "SCRIPT ERROR: x\n" }) } });
+	fs.mkdirSync(path.join(v.godot, "tools"));
+	fs.writeFileSync(path.join(v.godot, "tools", "check_maps.tscn"), "");
+	v.fake.openFile(path.join(v.maps, "clean.tmx"));
+	v.fake.trigger(ACTIONS.check);
+	assert.equal(v.fake.out.alerts[0], "Godot imported the map with 0 error(s) and 0 warning(s): 3 nodes, 0 cells, 1 ms.\n" +
+		"check_maps.tscn did not finish (no result line; exit code 1). Last output: SCRIPT ERROR: x");
+});
+
 test("check: a modified map is saved first when the user agrees (and validated on that save)", () => {
 	const s = make({ inMaps: true, checkScript: true, properties: inMaps(), propertyTypes: gameProjectTypes(), fakeOptions: { process: () => ({ code: 0, stdout: "YATI_CHECK result 0 0 3 0 1\n" }) } });
 	const map = s.fake.openFile(path.join(s.maps, "mistakes.tmx"));
@@ -552,9 +604,16 @@ function normalize(model) {
 	const props = (list) => list.map((p) => ({ name: p.name, type: p.type, value: p.type === "list" ? p.value.map((i) => ({ type: i.type, value: i.value })) : p.value, propertyType: p.propertyType || "", fromEnum: !!p.fromEnum }))
 		.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 	return {
+		className: model.className,
 		properties: props(model.properties),
-		layers: model.layers.map((l) => ({ id: l.id, name: l.name, path: l.path, className: l.className, properties: props(l.properties) })),
-		objects: model.objects.map((o) => ({ id: o.id, name: o.name, layerPath: o.layerPath, className: o.className, tileClassName: o.tileClassName, properties: props(o.properties) })),
+		layers: model.layers.map((l) => ({
+			id: l.id, name: l.name, path: l.path, className: l.className, properties: props(l.properties),
+			type: l.type, parentId: l.parentId, offsetX: l.offsetX, offsetY: l.offsetY,
+		})),
+		objects: model.objects.map((o) => ({
+			id: o.id, name: o.name, layerPath: o.layerPath, className: o.className, tileClassName: o.tileClassName, properties: props(o.properties),
+			layerId: o.layerId, x: o.x, y: o.y, width: o.width, height: o.height, isTile: o.isTile,
+		})),
 	};
 }
 

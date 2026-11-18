@@ -16,6 +16,7 @@ export const SETTING_NAMES = {
 	rules: "yati_rules",
 	rulesExclude: "yati_rules_exclude",
 	openCommand: "yati_open_command",
+	checkScene: "yati_check_scene",
 };
 
 export const DEFAULT_GODOT_BINARY = "godot";
@@ -236,6 +237,7 @@ export function readSettings(getProperty, projectFile) {
 		rulesRaw: str(SETTING_NAMES.rules),
 		rulesExcludeRaw: str(SETTING_NAMES.rulesExclude),
 		openCommand: str(SETTING_NAMES.openCommand),
+		checkScene: str(SETTING_NAMES.checkScene),
 		generated: parseGenerated(getProperty(SETTING_NAMES.generated)),
 		fixups: parseFixups(getProperty(SETTING_NAMES.fixups)),
 		missing: godotProject === "" ? [SETTING_NAMES.godotProject] : [],

@@ -19,12 +19,14 @@ through the `.tiled-project` file, the maps, and (for the check) the Godot binar
 > the [manual checklist](#manual-checklist-in-a-real-tiled-112)'s steps 4 to 8 in your Tiled 1.12
 > before relying on those, and report what differs in `docs/tiled-extension-plan.md` (section 5)
 > or `docs/tiled-extension-ux-plan.md` (section 4). The [rules](#rules) are newer: their save-time
-> findings and the setting of two members in one undo step ran in the real Tiled headless, the four
-> actions only against the fake; the checklist's steps 9 to 15 are for them.
+> findings, the setting of two members in one undo step and the making of a counterpart (`new
+> MapObject`, `ObjectGroup.addObject` in one macro) ran in the real Tiled headless, the actions on a
+> selection only against the fake; the checklist's steps 9 to 21 are for them.
 
 - Requires **Tiled 1.12** or newer (the custom-type API is new in 1.12).
 - The check action also needs **Godot 4.7** and the game's `addons/yati_native/` with
-  `check_map.gd`, which is in releases after YATI 3.1.0.
+  `check_map.gd`, which is in releases after YATI 3.1.0, or a check scene of the game's own
+  (`yati_check_scene`).
 - The plan with its decisions: [docs/tiled-extension-plan.md](../docs/tiled-extension-plan.md); the
   planned UX pass (one configuration dialog, no manual reopen):
   [docs/tiled-extension-ux-plan.md](../docs/tiled-extension-ux-plan.md).
@@ -54,7 +56,7 @@ are saved in the `.tiled-project` and shared with everyone who opens it. So the 
 open project: without one (Tiled starts without a project unless its session restores one; see
 *Project > Recent Projects*) the actions say so, and a saved map or tileset is validated without
 the project's custom types. *YATI: Configure…* is one dialog with a field for each of the first
-five (`yati_rules`, `yati_rules_exclude` and `yati_open_command` are set in *Project > Project Properties*); the other actions open it for you when the Godot project is not set. Paths are relative to
+six (`yati_rules`, `yati_rules_exclude` and `yati_open_command` are set in *Project > Project Properties*); the other actions open it for you when the Godot project is not set. Paths are relative to
 the project file unless they are absolute.
 
 | Property | Default | Meaning |
@@ -63,6 +65,7 @@ the project file unless they are absolute.
 | `godot_binary` | `godot` | the Godot 4.7 binary: a path, or a command on `PATH` |
 | `godot_scenes_dir` | the Godot project | where *Import scenes as classes* looks for scenes: `res://...` or a path |
 | `yati_import_options` | (none) | options for the check, as `name=value` pairs, e.g. `warn_unknown_classes=false assign_node_properties=false` ([Runtime.md's options](../Runtime.md#options); `class_scenes`, a Dictionary, cannot be given here) |
+| `yati_check_scene` | (none: only the importer's check) | a `res://` scene of the Godot project that checks a map by the game's own rules; *Check map in Godot* runs it after the importer's check (see [Check map in Godot](#check-map-in-godot)) |
 | `yati_validate` | `true` | `false` turns the validation on save off (the rules' checks too) |
 | `yati_rules` | (none) | what class members refer to, a JSON array: see [Rules](#rules) |
 | `yati_rules_exclude` | (none) | maps the rules that look across the project leave out (template maps): a folder, map or glob, or a JSON array of them; see [Leaving maps out](#leaving-maps-out) |
@@ -82,13 +85,14 @@ default*, `true`, `false` for a boolean, of the listed values for `parallax_mode
 `animation_mode`, `object_refs` and `unknown_class_fallback`, text for `custom_data_prefix` and
 `save_tileset_to`; each option's meaning and default as its tooltip; a value not in the list is
 kept as a last entry; text this version does not know is kept as written) whose *OK* writes the
-`name=value` text back into the field, so the stored form stays the string; *Validate maps and
-tilesets on save* is a check box. A line at the bottom says how many types the extension manages.
+`name=value` text back into the field, so the stored form stays the string; *Game check scene*
+is text (a `res://` path); *Validate maps and tilesets on save* is a check box. A line at the bottom says how many types the extension manages.
 
 *Save* checks everything first and refuses, naming each problem in red, while something cannot
 work: no Godot project or none with a `project.godot`, a binary path that does not exist, a
-scenes folder that does not exist, an option with a bad boolean, a `class_scenes`, or text that
-is no `name=value` pair. What may still work is a warning: a binary that `--version` could not
+scenes folder that does not exist, an option with a bad boolean, a `class_scenes`, text that
+is no `name=value` pair, or a game check scene that is no `res://` path, no `.tscn` or `.scn`, or
+not in the Godot project. What may still work is a warning: a binary that `--version` could not
 start or that is not Godot 4 (*Check map in Godot* will not work until it is fixed; the other
 actions do not need Godot), a scenes folder outside the Godot project, an unknown option name
 (passed on: a newer importer may know it). A warning your change brought asks you to press
@@ -98,20 +102,23 @@ and reports to the log, not a message box.
 
 ## Actions
 
-Tiled's `extendMenu` cannot make submenus, so the eight actions are at the end of the **Map** menu,
-after a separator, each named with the prefix *YATI:*. The last four act on the one selected object
-of the active map and need `yati_rules`.
+Tiled's `extendMenu` cannot make submenus, so the nine actions are at the end of the **Map** menu,
+after a separator, each named with the prefix *YATI:*. The last five act on the one selected object
+of the active map and need `yati_rules`. With no object selected, *Pick*, *Follow*, *Open or
+create file…* and *Show text* act on the map's own properties, through the rules with `"map": true`
+(when there are such rules of the action's kinds; else they ask for one object).
 
 | Action | What it does | What it writes |
 |--------|--------------|----------------|
 | *YATI: Configure…* | one dialog with a field per setting, tooltips, and a check of every field before it closes (above) | the settings above |
 | *YATI: Sync Godot project…* | reads `project.godot` | the enums `GodotPhysicsLayers`, `GodotNavigationLayers`, `GodotRenderLayers` (flags, stored as int, one value per layer up to the highest named one, an unnamed layer as `Layer N`, so a value's index is its bit); `GodotNodeType` (the mapping table's class names, stored as string, for a `godot_node_type` property); the class `MapRef` (`map`: file, `object`: int), the Reference's convention for a reference into another map |
 | *YATI: Import scenes as classes…* | scans `godot_scenes_dir` for `.tscn` files whose root node has a script (asks first) | one class per scene (below); the enums its exports use; `Vector2` / `Vector2i` when an export needs them |
-| *YATI: Check map in Godot* | runs the game's check script on the active map (offers to save it first) | Issues: one per error or warning of the import |
-| *YATI: Pick map and object…* | for an `object_in_map` rule with a `map` member: asks for a map (file dialog), then offers the names of its objects of the rule's `targetClass` in a list. For an `object_in_project` rule: one list of every named object of the rule's classes in the project's maps, each as `<map>: <name> (<class>)`, sorted by map. Several such rules for the class: a list of them first | both members (`object_in_map`) or the one member (`object_in_project`), in one undo step |
-| *YATI: Follow reference* | opens the map an `object_in_map` rule's `map` member names (or stays in the map without one), or for an `object_in_project` rule the project map that holds the named object, and selects and centres the named object; says so when there is none, and when there are several (the first is selected). Without such a value, a `map` rule's map is opened | nothing |
-| *YATI: Open or create file…* | opens a `file` rule's file with `yati_open_command` or the system's program for it. Unset member and a rule `template`: copies the template into the rule's `folder` (else beside the map) as `<map>_<object name>.<suffix>` after asking, and sets the member; a set member whose file is missing: makes that file from the template | the file; the member, in one undo step |
+| *YATI: Check map in Godot* | runs the importer's check script on the active map (offers to save it first), then the game's check scene when `yati_check_scene` is set | Issues: one per error or warning of the import, and one per problem the game's check reports |
+| *YATI: Pick map and object…* | for an `object_in_map` rule with a `map` member: asks for a map (file dialog), then offers the names of its objects of the rule's `targetClass` in a list. For an `object_in_project` rule: one list of every named object of the rule's classes in the project's maps, each as `<map>: <name> (<class>)`, sorted by map. For a `layer_in_map` rule: the names of the map's layers of the rule's class and kind, in the map's order. Several such rules for the class: a list of them first | both members (`object_in_map`) or the one member (`object_in_project`, `layer_in_map`), in one undo step |
+| *YATI: Follow reference* | opens the map an `object_in_map` rule's `map` member names (or stays in the map without one), or for an `object_in_project` rule the project map that holds the named object, and selects and centres the named object; says so when there is none, and when there are several (the first is selected). For a `layer_in_map` rule: makes the named layer the current layer. Without such a value, a `map` rule's map is opened | nothing |
+| *YATI: Open or create file…* | opens a `file` rule's file with `yati_open_command` or the system's program for it. Unset member and a rule `template`: copies the template into the rule's `folder` (else beside the map) as `<map>_<object name>.<suffix>` (for the map's own property `<map>.<suffix>`) after asking, and sets the member; a set member whose file is missing: makes that file from the template | the file; the member, in one undo step |
 | *YATI: Show text for selected object* | for each `key` rule: the table's text in every language, plain text, or that the key is not in the table (with keys that look close) | nothing (a message box and the log) |
+| *YATI: Create counterpart* | for a `counterpart` rule: makes the selected object's twin on the group layer its member names, in an object layer there named like the object's own (else the first): the same class, name, tile, size and place (as shown, the layers' offsets counted), its own properties copied, the member naming the object's own group layer and the `swap` members swapped; then selects it. When the twin exists already, selects that and says so | the new object, in one undo step |
 | (saving a map or tileset) | validates it, a map also against the rules | Issues: one per finding (below) |
 
 Each action reports what it created, updated, kept and removed in a message box and in the log.
@@ -198,8 +205,8 @@ When a map or tileset is saved (and `yati_validate` is not `false`), each findin
 | a layer mask (`collision_layer`, `collision_mask`, `navigation_layers`, `light_mask`, `visibility_layer`, `platform_floor_layers`, `platform_wall_layers`, `parsed_collision_mask`, `occluder_light_mask`, the tileset's `_n` forms and `layers_n`) whose string names a layer its enum does not have, or names layers without being of the enum's type (the importer then reads layer numbers) | warning | F5 |
 | a `godot_node_type` outside `GodotNodeType` | warning | the importer warns and falls back |
 
-With `yati_rules` set, a saved map's objects are also checked against the rules (next section), and
-so are the properties of each world in the rules that holds the map; a rule with a mistake is
+With `yati_rules` set, a saved map's objects and its own properties are also checked against the
+rules (next section), and so are the properties of each world in the rules that holds the map; a rule with a mistake is
 reported as a warning (`yati_rules, rule 3: ...`) and left out.
 
 ## Rules
@@ -211,6 +218,7 @@ lines) is a JSON array. Each rule says what one class member refers to:
 |-------|---------|
 | `class` | the objects' class (`"Warp"`), a list of classes, or `"*"` for any object. The class is the object's own, else its tile's, else its template's, as Tiled resolves it; class names are case-sensitive |
 | `world` | instead of `class`: a `.world` file (relative to the project file) whose own properties the rule checks |
+| `map` | `true` instead of `class` or `world`: the rule checks the saved map's own properties (*Map > Map Properties*), with the defaults of the map's class when it has one. Any kind but `unique_name` and `counterpart`; an `object_in_map` rule of the map looks in the same map. (An `object_in_map` rule's string `map` is still the member that names a map.) |
 | `member` | the member (property) checked. An object that does not set it has its class's default. `unique_name` takes none: it checks the objects' own names |
 | `kind` | `map`, `object_in_map`, `object_in_project`, `unique_name`, `file` or `key` (below) |
 | `required` | `true`: an unset or empty value is a finding (for `unique_name`: an object without a name). Otherwise an empty value is fine |
@@ -224,6 +232,8 @@ lines) is a JSON array. Each rule says what one class member refers to:
 | `unique_name` | (no `member`) an object of the rule's classes has a name that no other object of those classes has, in this map or any other map of the project; each clash is a finding naming the other map and object id. With `required`, every such object must have a name | `maps` |
 | `file` | name a file that exists, whose text matches every `contains` pattern | `contains`: `[{"pattern": <regular expression>, "label": <what it is, for the message>}]`; `template`: the file *Open or create file…* copies; `folder`: where the copies go (else beside the map) |
 | `key` | when it matches `keyPattern` (default `^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$`: UPPER_SNAKE_CASE with an underscore), be a key of the CSV file `table`, i.e. in its first column (Godot's translation CSV: a header row `keys,en,...`); a value of another shape is plain text and fine | `table`, `keyPattern` |
+| `layer_in_map` | be the name of a layer of the same map, at any depth, of class `targetClass` and of kind `layerType` (`group`, `tile`, `object` or `image`) when given; the message lists the layers that would do | `targetClass`, `layerType` |
+| `counterpart` | name a group layer of the same map (of class `targetClass` when given) that holds an object of the same class **overlapping** this one (as shown: a tile object's rectangle is above its y, the layers' offsets count), whose member names this object's own group layer (the innermost group of `targetClass` it lies in) and whose members in `swap` hold the swapped values (`{"direction": {"UP": "DOWN", "DOWN": "UP"}}`; a value the table does not list must be equal). No such object is a finding; a member that names no group layer, an object in no such group, or one naming its own group is left to the other rules. *YATI: Create counterpart* makes the twin | `targetClass`, `swap` |
 
 The project's maps, for `object_in_project` and `unique_name`, are the `.tmx` and `.tmj` files under
 the project's folders (*Project > Add Folder to Project*, `Project.folders`; hidden folders are
@@ -305,6 +315,22 @@ project with rules of every kind (in lower case class names; its warps use `obje
 `to_map` member, its portals in `maps/portals/` `object_in_project` and `unique_name`), maps with and
 without mistakes, sequences, templates, a table and a world.
 
+A map with floors as group layers, whose stairs name the other floor and come in pairs facing
+opposite ways, and whose own properties name a sequence and a display name (the sample's
+`maps/house.tmx`, and `maps/tower.tmx` with one mistake of each):
+
+```json
+[
+  {"class": "stairs", "member": "target", "kind": "layer_in_map", "targetClass": "level", "layerType": "group", "required": true},
+  {"class": "stairs", "member": "target", "kind": "counterpart", "targetClass": "level",
+   "swap": {"direction": {"UP": "DOWN", "DOWN": "UP", "LEFT": "RIGHT", "RIGHT": "LEFT"}}},
+  {"map": true, "member": "sequence", "kind": "file",
+   "contains": [{"pattern": "<sequence\\s+name=.on_(enter|leave).", "label": "section named on_enter or on_leave"}],
+   "template": "templates/trigger.xml", "folder": "sequences"},
+  {"map": true, "member": "display_name", "kind": "key", "table": "text/strings.csv"}
+]
+```
+
 What the rules cannot see: a warp in another map that names an object you rename here is reported
 when that map is saved, not this one (and a name you give here that another map already uses is
 reported here, but not in the other map until it is saved); a world file is read from disk, not
@@ -327,9 +353,22 @@ YATI_CHECK result <errors> <warnings> <nodes> <cells> <ms>
 ```
 
 Each message becomes an Issue that selects its object. The result line is shown in a message box
-and the log. Without the script the action says so and does nothing. When Godot does not start
-(`godot_binary` wrong) or prints no result line, the message box says why, with the last line Godot
-printed.
+and the log. When Godot does not start (`godot_binary` wrong) or prints no result line, the message
+box says why, with the last line Godot printed.
+
+With `yati_check_scene` set (a `res://` scene of the Godot project), the action then runs the game's
+own check on the same map:
+
+```
+<godot_binary> --headless --path <godot_project> <yati_check_scene> -- --tiled <map>
+```
+
+The scene prints the same `YATI_CHECK` lines (its `nodes` and `cells` are not shown), read by the same
+parser: each problem becomes an Issue named `YATI check (<scene file>): <map>: ...` that selects its
+object (`-`: none), and the message box has one line per check (`check_maps.tscn found 2 error(s)
+and 0 warning(s) in 430 ms.`). Without `check_map.gd` the scene runs alone and the message says the
+importer's check was skipped; without either, the action says so and does nothing. A scene the Godot
+project does not have stops the action before anything runs.
 
 ## Manual checklist in a real Tiled 1.12
 
@@ -342,7 +381,7 @@ what `test/real_tiled.test.mjs` runs headless; the rest needs the editor, so do 
    `tiled/sample.tiled-project` to `expected.tiled-project`, and copy
    `tiled-extension/test/fixtures/sample_start.tiled-project` (only the `godot_project` setting, no
    types) to `tiled/sample.tiled-project`. Open that in Tiled 1.12 and enable its extensions. The
-   log shows the module imported and no error. The Map menu ends with the four *YATI:* entries.
+   log shows the module imported and no error. The Map menu ends with the nine *YATI:* entries.
 2. *YATI: Configure…*: one dialog. Hover each field for its tooltip. Clear the Godot project and
    press *Save*: the dialog stays open and says so in red. Set it to `godot/`, type an import
    option such as `warn_unknown_classes=maybe` and see the message under the field; press
@@ -408,6 +447,35 @@ The rules (`sample/rules/`, its own Tiled project; copy `yati-godot/` into its `
     Run *YATI: Follow reference* on it: `town.tmx` opens with `from_cellar` selected and centred. On
     `to_twin` in `clash.tmx`: `twin` (id 3) is selected and a message names both objects.
 
+The levels and the map's own properties (the same project; `maps/house.tmx` is clean, `maps/tower.tmx`
+has one mistake of each):
+
+16. Open `maps/tower.tmx`, change something and save: seven findings, the first two about *Map
+    properties* (the sequence `notice.xml` without `on_enter`/`on_leave`, `MAP_HOUS` misspelt), then
+    `lone` (no counterpart), `roof` (no layer `roof`), `floorish` (`Floor` is a tile layer), `same`
+    and `same_up` (both face `LEFT`). Double-click a map one: nothing is selected. Save `house.tmx`:
+    none.
+17. In `tower.tmx` select `roof` and run *YATI: Pick map and object…*: a list offers `ground` and
+    `first`; choose `first`: `target` is `first`, one *Edit > Undo* restores `roof`.
+18. Select `up` and run *YATI: Follow reference*: the layer `first` becomes the current layer in the
+    *Layers* view. On `floorish`: a message says the map has no group layer `Floor` of class `level`.
+19. Select nothing and run *YATI: Show text for selected object*: `Map tower.tmx`, `MAP_HOUS` is no
+    key, `MAP_HOUSE` suggested. Run *YATI: Open or create file…*: `sequences/notice.xml` opens. Open
+    `town.tmx`, select nothing, run it again: it asks, makes `sequences/town.xml` from the template and
+    sets the map's `sequence` (*Map > Map Properties*); one *Edit > Undo* removes it.
+20. In `tower.tmx` select `lone` and run *YATI: Create counterpart*: a `stairs` named `lone` appears on
+    `first`'s object layer at the same place, with `target` `ground` and `direction` `DOWN`, and is
+    selected; save: no finding about `lone`. One *Edit > Undo* removes it. On `up`: a message says
+    `down` is its counterpart, and `down` is selected.
+
+With a Godot project that has a check scene (one that takes `-- --tiled <map>` and prints
+`YATI_CHECK` lines):
+
+21. Set *Game check scene* in *YATI: Configure…* to it (a wrong path is refused in red) and run
+    *YATI: Check map in Godot* on a map with a mistake the game knows: its problems appear as
+    `YATI check (<scene file>): ...` Issues after the importer's, and the message box has a line for
+    each check.
+
 The headless run (`test/real_tiled.test.mjs`) confirmed in Tiled 1.12.0: the ES module loads with
 its relative imports; `ClassPropertyType` and its constants exist on the global, and the global
 `StorageType` the reference documents does not (both handled); assigning `color`, `values`,
@@ -420,7 +488,11 @@ project file Tiled writes equal to the fake's; `new Dialog(title)` with `addFile
 handler), `addLabel` (`text`), tooltips read back, a `Process` run from a handler, properties written from the
 handler reaching the project file; `Project.folders` (absolute paths) and the save hook of the
 rules that look across the project's maps (`sample/rules/maps/portals/`, a map read through
-Tiled's format given its file name). Not confirmed yet, for the editor: the dialog's look; a
+Tiled's format given its file name); the level rules and the map's own on `sample/rules/maps/tower.tmx`
+(`Layer.isTileLayer`, `isImageLayer` and `offset`, `MapObject.width` and `height`, a map's own
+properties) and a counterpart made in one `Asset.macro` with `new MapObject(name)`, its `className`,
+`x`, `y`, `width` and `height` set and its properties set before `ObjectGroup.addObject` (an enum
+through `tiled.propertyValue`), on a map read through Tiled's format. Not confirmed yet, for the editor: the dialog's look; a
 `res://` file property read as an empty `localFile` with the URL in `url`; `Process.exec`
 finding `godot` on `PATH`; an Issue's activation; `tiled.extendMenu` (headless there is no Map
 menu, and the extension logs that instead of failing).
@@ -432,8 +504,12 @@ menu, and the extension logs that instead of failing).
 - The flags switch and float members go through the project file and a reload of the project
   (the open maps close and reopen).
 - Validation cannot see the game's `class_scenes`, and checks templates only as last saved.
-- *Check map in Godot* blocks Tiled while Godot runs (`Process.exec`), and so does *Open or create
-  file…* while its command runs: `yati_open_command` must name a launcher that returns at once.
+- *Check map in Godot* blocks Tiled while Godot runs (`Process.exec`), twice with a check scene, and
+  so does *Open or create file…* while its command runs: `yati_open_command` must name a launcher
+  that returns at once.
+- *Create counterpart* makes a rectangle (or the object's tile): an ellipse, polygon or point is made
+  as a rectangle of its size. Class values and object references among the object's own properties
+  are not copied (the log names them).
 - Tiled's scripting API has no status bar, so the key preview is an action, not a passive display.
 - The GDScript parser reads declarations, not expressions: a default computed from constants or
   calls is not followed.
@@ -447,7 +523,8 @@ node --test tiled-extension/test
 Node 22 (CI uses it). `test/` holds the fixtures (`fixtures/godot_project/`, a Godot project with
 every export form; `fixtures/maps/`, maps with one of each mistake; `fixtures/importer/`, copies of
 the importers' fixtures from `test/fixtures/`; `fixtures/check_output*.txt`, the check's output: one
-written by hand, two captured from the real `check_map.gd` with Godot's colour codes), the expected `.tiled-project` fragments
+written by hand, two captured from the real `check_map.gd` with Godot's colour codes, two
+(`check_output_scene*.txt`) from a game's check scene run with `-- --tiled <map>`), the expected `.tiled-project` fragments
 (`expected/`; `UPDATE_EXPECTED=1` rewrites them and the sample's project, then review the diff),
 and the fake API (`helpers/fake_tiled.mjs`). `helpers/api_surface.mjs` lists every Tiled member the
 extension uses, each with the reference page that documents it (the Qt widgets of `Dialog` have
@@ -482,6 +559,7 @@ fallback message runs), so the reload is the next run. Without a Tiled the test 
 | `yati-godot/lib/rules.mjs` | the project's rules: parsed, checked on a map and a world; maps read from their files; the CSV table; the actions' helpers |
 | `yati-godot/lib/check_output.mjs` | the check's command line and output |
 | `test/rules.test.mjs`, `test/rules_glue.test.mjs` | the rules under Node, and in the glue against the fake (on `sample/rules/`) |
+| `test/rules_map.test.mjs`, `test/rules_map_glue.test.mjs` | the rules of a map's own layers and properties (`layer_in_map`, `"map": true`, `counterpart`, *Create counterpart*) under Node, and in the glue against the fake (on `sample/rules/maps/tower.tmx` and `house.tmx`) |
 | `test/rules_project.test.mjs`, `test/rules_project_glue.test.mjs` | the rules that look across the project (`object_in_project`, `unique_name`, the project's maps, `yati_rules_exclude`, a 300-map project's cost) under Node, and in the glue against the fake (on `sample/rules/maps/portals/`) |
 | `test/real_tiled.test.mjs` | the sample inside a real Tiled, headless (skipped without one), the rules sample's save hook among it |
 | `test/helpers/real_tiled_harness.mjs` | runs inside Tiled under `--evaluate`: the actions and the save hook, the dialogs stubbed |
