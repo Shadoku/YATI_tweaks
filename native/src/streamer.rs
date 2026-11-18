@@ -1421,11 +1421,13 @@ impl TiledStreamer {
             let Some(idx) = index_of(k) else { continue };
             let l = all[idx];
             let mut srcs = Vec::new();
+            // A tile layer's x/y shift its cells (Layer::cell_shift)
+            let (sx, sy) = l.cell_shift();
             if map.is_infinite() && l.chunks.is_some() {
                 for (ci, c) in l.chunks.iter().flatten().enumerate() {
                     srcs.push(Src {
-                        x: c.x.unwrap_or(0) as i32,
-                        y: c.y.unwrap_or(0) as i32,
+                        x: (c.x.unwrap_or(0) + sx) as i32,
+                        y: (c.y.unwrap_or(0) + sy) as i32,
                         w: c.width.unwrap_or(0).max(0) as i32,
                         h: c.height.unwrap_or(0).max(0) as i32,
                         chunk: Some(ci),
@@ -1433,8 +1435,8 @@ impl TiledStreamer {
                 }
             } else if l.data.is_some() {
                 srcs.push(Src {
-                    x: 0,
-                    y: 0,
+                    x: sx as i32,
+                    y: sy as i32,
                     w: map.width.unwrap_or(0).max(0) as i32,
                     h: map.height.unwrap_or(0).max(0) as i32,
                     chunk: None,

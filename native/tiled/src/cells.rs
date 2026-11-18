@@ -507,7 +507,8 @@ pub fn chunk_blobs(
             continue;
         };
         let cells = cells?;
-        let (x, y) = (c.x.unwrap_or(0), c.y.unwrap_or(0));
+        let (sx, sy) = layer.cell_shift();
+        let (x, y) = (c.x.unwrap_or(0) + sx, c.y.unwrap_or(0) + sy);
         let width = c.width.unwrap_or(0).max(0) as usize;
         out.push(ChunkBlob {
             x,
@@ -530,6 +531,7 @@ pub fn layer_blob(
     if layer.kind_or_tile() != "tilelayer" {
         return None;
     }
+    let (sx, sy) = layer.cell_shift();
     if map.is_infinite() && layer.chunks.is_some() {
         let mut w = BlobWriter::with_capacity(0);
         for c in layer.chunks.iter().flatten() {
@@ -544,8 +546,8 @@ pub fn layer_blob(
             write_cells(
                 &mut w,
                 &cells,
-                c.x.unwrap_or(0) as i32,
-                c.y.unwrap_or(0) as i32,
+                (c.x.unwrap_or(0) + sx) as i32,
+                (c.y.unwrap_or(0) + sy) as i32,
                 width,
                 lookup,
                 options,
@@ -558,7 +560,9 @@ pub fn layer_blob(
         Err(e) => return Some(Err(e)),
     };
     let width = map.width.unwrap_or(0).max(0) as usize;
-    Some(Ok(tile_map_data(&cells, 0, 0, width, lookup, options)))
+    Some(Ok(tile_map_data(
+        &cells, sx as i32, sy as i32, width, lookup, options,
+    )))
 }
 
 /// Every tile layer of the map (depth first) with its blob, one thread per layer.

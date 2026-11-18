@@ -739,8 +739,8 @@ holds the property.
 of the diamond for an isometric one, `(0, 0, (width + height) * tilewidth / 2, (width + height) * tileheight / 2)` (the
 importer places the diamond's left corner at x = 0); Tiled's size of the staggered or hexagonal grid
 (`hexsidelength` included). An infinite map's bounds are those of the union of the chunks of all its tile layers (in
-tiles, then in pixels as above; negative coordinates included), `Rect2()` without chunks. Layer offsets are not
-included. `TilemapCreator.get_map_rect()` returns the same after `create()`. A camera's limits, for example:
+tiles, then in pixels as above; negative coordinates included; a tile layer's `x` / `y` shift its chunks, see
+[Specialities](#specialities)), `Rect2()` without chunks. Layer offsets are not included. `TilemapCreator.get_map_rect()` returns the same after `create()`. A camera's limits, for example:
 
 ```gdscript
 var r: Rect2 = map.get_meta("map_rect")
@@ -786,6 +786,18 @@ of that name (with the underscores).
 This can be overcome by adding a special property to the object named 'clip_artifacts' (type bool) and setting it to `On`
 (the sprite region then shrinks by half a pixel on every side). An animated tile's object stays a Sprite2D with it.
 - Skip Tiled layers by adding a custom property 'no_import' (type bool) and set it to 'true' (new in v1.2).  
+- A layer's `x` and `y` attributes (written by older Tiled versions; Tiled 1.12 neither shows nor edits them) are
+  read as Tiled 1.12 draws them, in both importers, for `.tmx` and `.tmj` maps, under `import()`, `import_async()`,
+  `import_world()` and the `TiledStreamer`:
+  - a **tile layer**'s are a shift of its cells in tiles: the cell at (0, 0) of a layer with `x="2" y="1"` is at
+    (2, 1), finite or infinite map (an infinite map's `map_rect` takes the shifted chunks);
+  - an **image layer**'s, in a `.tmx` map, are its pixel offset when it has neither `offsetx` nor `offsety` (Tiled
+    before 0.15 kept the offset there); with an offset, or in a `.tmj` map, they are ignored;
+  - an **object layer**'s and a **group**'s are ignored (before, both importers added them to the node's position
+    as pixels, so every object of such a layer was off by them).
+
+  `offsetx` / `offsety` are unaffected. Checked against Tiled 1.12.0's own renderer (`tmxrasterizer`) on the
+  fixtures `layer_xy*.tmx` / `.tmj`.
 
 ## Newly supported Tiled features
 

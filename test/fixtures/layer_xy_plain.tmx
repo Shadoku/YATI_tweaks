@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.12.0" orientation="orthogonal" renderorder="right-down" width="8" height="6" tilewidth="16" tileheight="16" infinite="0" nextlayerid="9" nextobjectid="5">
+ <!-- layer_xy.tmx as Tiled 1.12 draws it, without x/y: the tile layers' cells shifted, the image layers' x/y as their offset. -->
+ <tileset firstgid="1" source="terrain.tsx"/>
+ <layer id="1" name="Tiles" width="8" height="6">
+  <data encoding="csv">
+0,0,0,0,0,0,0,0,
+0,0,1,2,0,0,0,0,
+0,0,0,0,3,0,0,0,
+0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,9
+</data>
+ </layer>
+ <group id="2" name="Group" offsetx="10" offsety="20">
+  <layer id="3" name="Inner" width="8" height="6">
+   <data encoding="csv">
+0,4,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,
+0,0,0,0,10,0,0,0,
+0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0
+</data>
+  </layer>
+  <objectgroup id="4" name="GroupObjects">
+   <object id="1" name="GRect" x="8" y="8" width="16" height="16"/>
+  </objectgroup>
+ </group>
+ <objectgroup id="5" name="Objects" offsetx="4">
+  <object id="2" name="Rect" x="32" y="16" width="16" height="8"/>
+  <object id="3" name="Point" x="40" y="48">
+   <point/>
+  </object>
+  <object id="4" name="TileObj" gid="2" x="64" y="48" width="16" height="16"/>
+ </objectgroup>
+ <imagelayer id="6" name="ImgOffset" offsetx="4" offsety="6">
+  <image source="bg.png" width="64" height="32"/>
+ </imagelayer>
+ <imagelayer id="7" name="ImgLegacy" offsetx="5" offsety="7">
+  <image source="bg.png" width="64" height="32"/>
+ </imagelayer>
+ <imagelayer id="8" name="ImgLegacyX" offsetx="9" offsety="0">
+  <image source="bg.png" width="64" height="32"/>
+ </imagelayer>
+</map>

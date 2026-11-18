@@ -22,10 +22,10 @@ pub struct Layer {
     pub name: Option<String>,
     /// `class` (Tiled 1.9+).
     pub class: Option<String>,
-    /// `x` (cells; always 0 in Tiled).
+    /// `x` (cells; Tiled offers no way to set it, see [`Layer::cell_shift`]).
     #[serde(deserialize_with = "de::opt_i64")]
     pub x: Option<i64>,
-    /// `y` (cells; always 0 in Tiled).
+    /// `y` (cells; Tiled offers no way to set it, see [`Layer::cell_shift`]).
     #[serde(deserialize_with = "de::opt_i64")]
     pub y: Option<i64>,
     /// `width` in cells (tile layers).
@@ -99,6 +99,18 @@ impl Layer {
     /// The layer's `kind` (`tilelayer` when absent, as the GDScript runtime assumes).
     pub fn kind_or_tile(&self) -> &str {
         self.kind.as_deref().unwrap_or("tilelayer")
+    }
+
+    /// The cells a tile layer's cells are shifted by: its `x` and `y`. Tiled offers no way to set
+    /// them, but a map an older Tiled wrote can carry them, and Tiled 1.12 draws a tile layer's
+    /// cells that many tiles further (finite or infinite, TMX or JSON). The `x` and `y` of the
+    /// other layer kinds it ignores, and so do the builders (an image layer's from a TMX file
+    /// become its offset when it has none: the XML parser does that).
+    pub fn cell_shift(&self) -> (i64, i64) {
+        if self.kind_or_tile() != "tilelayer" {
+            return (0, 0);
+        }
+        (self.x.unwrap_or(0), self.y.unwrap_or(0))
     }
 
     /// Every layer in this group and below it, depth first, this one excluded.

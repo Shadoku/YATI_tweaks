@@ -574,8 +574,9 @@ impl Map {
             if l.kind_or_tile() != "tilelayer" {
                 continue;
             }
+            let (sx, sy) = l.cell_shift();
             for c in l.chunks.iter().flatten() {
-                let (x, y) = (c.x.unwrap_or(0), c.y.unwrap_or(0));
+                let (x, y) = (c.x.unwrap_or(0) + sx, c.y.unwrap_or(0) + sy);
                 let (x1, y1) = (x + c.width.unwrap_or(0), y + c.height.unwrap_or(0));
                 acc = Some(match acc {
                     None => (x, y, x1, y1),

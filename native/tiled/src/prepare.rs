@@ -49,19 +49,21 @@ impl PreparedLayer {
         let enc = layer.encoding.as_deref();
         let comp = layer.compression.as_deref();
         let mut segs: Vec<RawSegment> = Vec::new();
+        let (sx, sy) = layer.cell_shift();
         if map.is_infinite() && layer.chunks.is_some() {
             for c in layer.chunks.iter().flatten() {
                 let w = c.width.unwrap_or(0).max(0) as usize;
                 let h = c.height.unwrap_or(0).max(0) as usize;
                 let Some(p) = &c.data else { continue };
                 let cells = decode(p, enc, comp, w * h).map_err(|e| e.message);
-                segs.push((c.x.unwrap_or(0) as i32, c.y.unwrap_or(0) as i32, w, cells));
+                let (x, y) = (c.x.unwrap_or(0) + sx, c.y.unwrap_or(0) + sy);
+                segs.push((x as i32, y as i32, w, cells));
             }
         } else if let Some(p) = &layer.data {
             let w = map.width.unwrap_or(0).max(0) as usize;
             let h = map.height.unwrap_or(0).max(0) as usize;
             let cells = decode(p, enc, comp, w * h).map_err(|e| e.message);
-            segs.push((0, 0, w, cells));
+            segs.push((sx as i32, sy as i32, w, cells));
         }
         let total: usize = segs
             .iter()

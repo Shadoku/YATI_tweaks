@@ -496,11 +496,15 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 		if not _use_default_filter:
 			_tilemap_layer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		
+		# A tile layer's x/y (in tiles; Tiled offers no way to set them, but draws the layer's cells
+		# that many tiles further) shift its cells
+		var layer_cell_x := int(layer.get("x", 0))
+		var layer_cell_y := int(layer.get("y", 0))
 		if _infinite and layer.has("chunks"):
 			# Chunks
 			for chunk in layer["chunks"]:
-				var offset_x = int(chunk["x"])
-				var offset_y = int(chunk["y"])
+				var offset_x = int(chunk["x"]) + layer_cell_x
+				var offset_y = int(chunk["y"]) + layer_cell_y
 				var chunk_width = int(chunk["width"])
 				var chunk_height = int(chunk["height"])
 				var chunk_data = handle_data(chunk["data"], chunk_width * chunk_height)
@@ -511,7 +515,7 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 			# Data
 			var data = handle_data(layer["data"], _map_width * _map_height)
 			if data != null:
-				create_map_from_data(data, 0, 0, _map_width)
+				create_map_from_data(data, layer_cell_x, layer_cell_y, _map_width)
 
 		set_layer_class_meta(_tilemap_layer, layer)
 		var obj_id = layer.get("id", 0)
@@ -544,9 +548,8 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 		if layer_opacity < 1.0 or tint_color != "#ffffff":
 			layer_node.modulate = layer_color(tint_color, layer_opacity)
 		layer_node.visible = layer.get("visible", true)
-		var layer_pos_x = layer.get("x", 0.0)
-		var layer_pos_y = layer.get("y", 0.0)
-		layer_node.position = Vector2(layer_pos_x + layer_offset_x, layer_pos_y + layer_offset_y)
+		# An object layer's x/y are ignored, as Tiled does (it neither shows nor draws them)
+		layer_node.position = Vector2(layer_offset_x, layer_offset_y)
 		if layer_node is Parallax2D and _parallax_mode != "legacy":
 			# A Parallax2D sets its own position, so the layer offset goes into its scroll_offset
 			layer_node.scroll_offset += layer_node.position
@@ -588,9 +591,8 @@ func handle_layer(layer: Dictionary, parent: Node2D):
 		if layer_opacity < 1.0 or tint_color != "#ffffff":
 			group_node.modulate = layer_color(tint_color, layer_opacity)
 		group_node.visible = layer.get("visible", true)
-		var layer_pos_x = layer.get("x", 0.0)
-		var layer_pos_y = layer.get("y", 0.0)
-		group_node.position = Vector2(layer_pos_x + layer_offset_x, layer_pos_y + layer_offset_y)
+		# A group's x/y are ignored, as Tiled does (it neither shows nor draws them)
+		group_node.position = Vector2(layer_offset_x, layer_offset_y)
 		if group_node is Parallax2D and _parallax_mode != "legacy":
 			group_node.scroll_offset += group_node.position
 		apply_blend_mode(group_node, layer)
@@ -709,8 +711,10 @@ static func get_map_tile_rect(map_dict: Dictionary) -> Rect2i:
 static func add_chunk_rects(layers: Array, acc: Array) -> void:
 	for layer in layers:
 		if str(layer.get("type", "tilelayer")) == "tilelayer":
+			# The layer's x/y shift its chunks (handle_layer)
+			var shift := Vector2i(int(layer.get("x", 0)), int(layer.get("y", 0)))
 			for chunk in layer.get("chunks", []):
-				var r := Rect2i(int(chunk.get("x", 0)), int(chunk.get("y", 0)), int(chunk.get("width", 0)), int(chunk.get("height", 0)))
+				var r := Rect2i(int(chunk.get("x", 0)) + shift.x, int(chunk.get("y", 0)) + shift.y, int(chunk.get("width", 0)), int(chunk.get("height", 0)))
 				acc[1] = r if not acc[0] else acc[1].merge(r)
 				acc[0] = true
 		if layer.has("layers"):

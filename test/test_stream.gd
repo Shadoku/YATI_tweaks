@@ -32,6 +32,13 @@ const EQUAL_MAPS := {
 	"masks.tmx": "masks.tiled-project", "background.tmx": "", "parallax.tmx": "",
 	"animations.tmx": "", "clip.tmx": "", "colors.tmx": "", "single_layer.tmx": "",
 	"legacy_xml.tmx": "", "tile_info.tmx": "tile_info.tiled-project",
+	"layer_xy.tmx": "", "layer_xy.tmj": "", "layer_xy_infinite.tmx": "",
+}
+
+## A map with layer x/y (an older Tiled's) and its twin as Tiled draws it without them.
+const LAYER_XY_PAIRS := {
+	"layer_xy.tmx": "layer_xy_plain.tmx", "layer_xy.tmj": "layer_xy_plain.tmj",
+	"layer_xy_infinite.tmx": "layer_xy_infinite_plain.tmx",
 }
 
 var _passed := 0
@@ -49,6 +56,7 @@ func _initialize() -> void:
 func main() -> void:
 	write_spread_map()
 	await test_load_all_equals_build()
+	await test_layer_xy_as_tiled_draws()
 	await test_window_over_infinite()
 	await test_objects_with_chunks()
 	await test_keep_objects_resident()
@@ -185,6 +193,54 @@ func test_load_all_equals_build() -> void:
 		if built != null:
 			built.free()
 		s.free()
+	await settle(2)
+
+
+## A layer's x/y streamed as Tiled draws them: load_all() of each map equals the build of its
+## _plain twin, alone and as a world's map (the streamer's object grid included: an object
+## layer's x/y no longer move its node away from where the grid put its objects).
+func test_layer_xy_as_tiled_draws() -> void:
+	var opts := TiledImportOptions.new()
+	opts.always_wrap_root = true
+	for f: String in LAYER_XY_PAIRS:
+		var built: Node = TiledBuilder.new().build(load_map(FIX + LAYER_XY_PAIRS[f]), TiledTileSets.new(), opts)
+		var s := streamer_for(load_map(FIX + f), opts)
+		s.load_all()
+		var root_node: Node2D = s.get_map_root("")
+		if built != null and root_node != null:
+			built.name = root_node.name # the file's name
+		check(built != null and root_node != null and describe(built) == describe(root_node), "%s: load_all() equals the build of its _plain twin" % f)
+		if built != null:
+			built.free()
+		s.free()
+	# The same maps as a world's
+	var world := {"type": "world", "maps": [
+		{"fileName": "../fixtures/layer_xy.tmx", "x": 0, "y": 0, "width": 128, "height": 96},
+		{"fileName": "../fixtures/layer_xy_infinite.tmx", "x": 128, "y": 0, "width": 128, "height": 128}]}
+	var path := "res://test/out/layer_xy_stream.world"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://test/out"))
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	file.store_string(JSON.stringify(world))
+	file.close()
+	var w := TiledWorld.new()
+	w.load(path, "")
+	var ws := TiledStreamer.new()
+	ws.tilesets = TiledTileSets.new()
+	ws.options = opts
+	ws.world = w
+	root.add_child(ws)
+	ws.set_process(false)
+	ws.load_all()
+	for f in ["layer_xy.tmx", "layer_xy_infinite.tmx"]:
+		var map_root: Node2D = ws.get_map_root(FIX + f)
+		var built: Node2D = TiledBuilder.new().build(load_map(FIX + LAYER_XY_PAIRS[f]), TiledTileSets.new(), opts) as Node2D
+		if map_root != null and built != null:
+			built.name = map_root.name
+			built.position = map_root.position
+		check(map_root != null and built != null and describe(built) == describe(map_root), "world: %s equals the build of its _plain twin" % f)
+		if built != null:
+			built.free()
+	ws.free()
 	await settle(2)
 
 

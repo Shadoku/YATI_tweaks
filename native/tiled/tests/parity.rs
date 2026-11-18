@@ -53,6 +53,13 @@ fn every_map_matches_the_runtime_dictionary() {
         "world/area_1_0.tmx",
         // A tile object's info.tile (shared tileset, image collection, flips)
         "tile_info.tmx",
+        // Layers with Tiled's old x/y attributes, and their twins without them
+        "layer_xy.tmx",
+        "layer_xy_plain.tmx",
+        "layer_xy.tmj",
+        "layer_xy_plain.tmj",
+        "layer_xy_infinite.tmx",
+        "layer_xy_infinite_plain.tmx",
     ] {
         map_parity(name, None, &format!("{}.json", name.replace('/', "_")));
     }

@@ -142,6 +142,12 @@ func simple_element(element_name: String, attribs: Dictionary):
 					_current_dictionary = {}
 					dict["value"] = _current_dictionary
 		else:
+			if dict_key == "imagelayer" and not attribs.has("offsetx") and not attribs.has("offsety") and (attribs.has("x") or attribs.has("y")):
+				# Tiled before 0.15 kept an image layer's pixel position in x/y. Tiled still reads them
+				# as its offset when the layer has neither offsetx nor offsety (only from TMX; the
+				# JSON reader ignores them), so they become the offset here too.
+				attribs["offsetx"] = attribs.get("x", "0")
+				attribs["offsety"] = attribs.get("y", "0")
 			if dict_key == "objectgroup" or dict_key == "imagelayer":
 				# to be later added to the layer attributes (by insert_attributes)
 				attribs["type"] = dict_key

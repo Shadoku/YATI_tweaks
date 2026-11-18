@@ -548,7 +548,24 @@ impl<'a> Xml<'a> {
         self.fill(e, &mut l, layer_attr, |l| &mut l.extra)?;
         match e.name().as_ref() {
             b"objectgroup" if !tile_group => l.kind = Some("objectgroup".into()),
-            b"imagelayer" => l.kind = Some("imagelayer".into()),
+            b"imagelayer" => {
+                l.kind = Some("imagelayer".into());
+                // Tiled before 0.15 kept an image layer's pixel position in x/y. Tiled still
+                // reads them as its offset when the layer has neither offsetx nor offsety (only
+                // from TMX), as DictionaryFromXml.gd does.
+                if l.offsetx.is_none() && l.offsety.is_none() {
+                    let (mut x, mut y): (Option<String>, Option<String>) = (None, None);
+                    self.attrs(e, |k, v| match k {
+                        "x" => x = Some(v.to_string()),
+                        "y" => y = Some(v.to_string()),
+                        _ => {}
+                    })?;
+                    if x.is_some() || y.is_some() {
+                        l.offsetx = num(x.as_deref().unwrap_or("0"));
+                        l.offsety = num(y.as_deref().unwrap_or("0"));
+                    }
+                }
+            }
             b"group" => l.kind = Some("group".into()),
             _ => {}
         }

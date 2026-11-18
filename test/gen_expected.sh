@@ -17,6 +17,8 @@ for f in background.tmx classes.tmx encodings.tmx hexagonal.tmx infinite.tmx inf
 		animations.tmx area_gravity.tmx clip.tmj clip.tmx colors.tmx layer_class.tmx \
 		parallax.tmx single_layer.tmx template_files.tmx templates.tmx unknown_class.tmx \
 		object_refs.tmx scenes.tmx masks.tmx tile_info.tmx \
+		layer_xy.tmx layer_xy_plain.tmx layer_xy.tmj layer_xy_plain.tmj \
+		layer_xy_infinite.tmx layer_xy_infinite_plain.tmx \
 		terrain.tsx iso.tsx json_tiles.tsj tile_info.tsx \
 		enemy.tx crate.tx json_enemy.tj probe_rect.tx probe_text.tx probe_tpl.tx; do
 	dump "test/fixtures/$f" "$f.json"

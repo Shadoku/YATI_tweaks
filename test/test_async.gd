@@ -87,6 +87,7 @@ func main() -> void:
 	await test_cancel_leaks_nothing()
 	await test_signals()
 	await test_small_and_zip_equal_sync()
+	await test_layer_xy_as_tiled_draws()
 	await test_failures_and_counts()
 
 	print("")
@@ -144,6 +145,36 @@ func _describe(n: Node, prefix: String, lines: PackedStringArray) -> void:
 	lines.append(line)
 	for c in n.get_children():
 		_describe(c, p, lines)
+
+
+## describe() with every node's position and metadata values and every cell of a layer.
+func describe_full(n: Node) -> PackedStringArray:
+	var lines: PackedStringArray = []
+	_describe_full(n, "", lines)
+	return lines
+
+
+func _describe_full(n: Node, prefix: String, lines: PackedStringArray) -> void:
+	var p := prefix + "/" + String(n.name)
+	var metas := PackedStringArray()
+	for k in n.get_meta_list():
+		metas.append("%s=%s" % [k, str(n.get_meta(k))])
+	var pos := ""
+	if n is Node2D:
+		pos = str((n as Node2D).position)
+	elif n is Control:
+		pos = str((n as Control).position)
+	var line := "%s|%s|%d|%s|%s" % [p, n.get_class(), n.get_child_count(), pos, ",".join(metas)]
+	if n is TileMapLayer:
+		var l := n as TileMapLayer
+		var cells := PackedStringArray()
+		for c in l.get_used_cells():
+			cells.append("%s:%d:%s:%d" % [c, l.get_cell_source_id(c), l.get_cell_atlas_coords(c), l.get_cell_alternative_tile(c)])
+		cells.sort()
+		line += "|cells=" + ";".join(cells)
+	lines.append(line)
+	for c in n.get_children():
+		_describe_full(c, p, lines)
 
 
 func cell_count(n: Node) -> int:
@@ -592,6 +623,23 @@ func test_small_and_zip_equal_sync() -> void:
 	check(zimp.last_error_count == zs_errors, "zip: same error count")
 	if zs: zs.free()
 	if za: za.free()
+
+
+## A layer's x/y (an older Tiled's) imported asynchronously as Tiled draws them: each map equals
+## the synchronous import of its _plain twin (run_tests.gd's test_bug_layer_xy_as_tiled_draws).
+func test_layer_xy_as_tiled_draws() -> void:
+	var pairs := {"layer_xy.tmx": "layer_xy_plain.tmx", "layer_xy.tmj": "layer_xy_plain.tmj",
+		"layer_xy_infinite.tmx": "layer_xy_infinite_plain.tmx"}
+	for f: String in pairs:
+		var imp: Object = ImporterScript.new()
+		var plain: Node = imp.import(FIX + pairs[f])
+		var a: Node = await imp.import_async(FIX + f)
+		if plain and a:
+			# The root's name is the file's
+			a.name = plain.name
+		check(plain != null and a != null and describe_full(plain) == describe_full(a), "async %s equals the sync import of its _plain twin" % f)
+		if plain: plain.free()
+		if a: a.free()
 
 
 ## Errors and warnings counted as by the synchronous import; a fatal error returns null.

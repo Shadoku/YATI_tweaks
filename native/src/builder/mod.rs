@@ -524,9 +524,8 @@ impl<'m> Build<'m> {
                     layer_node.set_modulate(layer_color(&tint, opacity));
                 }
                 layer_node.set_visible(visible);
-                let px = l.x.unwrap_or(0) as f64 + offset_x;
-                let py = l.y.unwrap_or(0) as f64 + offset_y;
-                layer_node.set_position(Vector2::new(px as f32, py as f32));
+                // An object layer's x/y are ignored, as Tiled does (it neither shows nor draws them)
+                layer_node.set_position(Vector2::new(offset_x as f32, offset_y as f32));
                 self.parallax_offset(&mut layer_node);
                 self.texture_filter(&mut layer_node);
                 let draw_order = l.draworder.as_deref().unwrap_or("topdown");
@@ -574,9 +573,8 @@ impl<'m> Build<'m> {
                     group.set_modulate(layer_color(&tint, opacity));
                 }
                 group.set_visible(visible);
-                let px = l.x.unwrap_or(0) as f64 + offset_x;
-                let py = l.y.unwrap_or(0) as f64 + offset_y;
-                group.set_position(Vector2::new(px as f32, py as f32));
+                // A group's x/y are ignored, as Tiled does (it neither shows nor draws them)
+                group.set_position(Vector2::new(offset_x as f32, offset_y as f32));
                 self.parallax_offset(&mut group);
                 self.apply_blend_mode(&mut group.clone().upcast(), l);
                 // Tiled multiplies the parallax factors of nested layers

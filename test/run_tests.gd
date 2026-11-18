@@ -827,6 +827,83 @@ func test_group_layer() -> bool:
 	return done()
 
 
+## Every node below a root (the root's own name left out): path, class, child count, position,
+## metadata, and every cell of a tile layer.
+func _tree_lines(n: Node) -> PackedStringArray:
+	var lines: PackedStringArray = []
+	_tree_line(n, "", lines)
+	return lines
+
+
+func _tree_line(n: Node, path: String, lines: PackedStringArray) -> void:
+	var metas := PackedStringArray()
+	for k in n.get_meta_list():
+		metas.append("%s=%s" % [k, str(n.get_meta(k))])
+	var pos := ""
+	if n is Node2D:
+		pos = str((n as Node2D).position)
+	elif n is Control:
+		pos = str((n as Control).position) + " " + str((n as Control).size)
+	var line := "%s|%s|%d|%s|%s" % [path, n.get_class(), n.get_child_count(), pos, ",".join(metas)]
+	if n is TileMapLayer:
+		var l := n as TileMapLayer
+		var cells := PackedStringArray()
+		for c in l.get_used_cells():
+			cells.append("%s:%d:%s:%d" % [c, l.get_cell_source_id(c), l.get_cell_atlas_coords(c), l.get_cell_alternative_tile(c)])
+		cells.sort()
+		line += "|cells=" + ";".join(cells)
+	lines.append(line)
+	for c in n.get_children():
+		_tree_line(c, path + "/" + String(c.name), lines)
+
+
+## Fails with the first line where two trees differ.
+func _same_tree(a: Node, b: Node, msg: String) -> bool:
+	if a == null or b == null: return false
+	var x := _tree_lines(a)
+	var y := _tree_lines(b)
+	for i in maxi(x.size(), y.size()):
+		var l := x[i] if i < x.size() else "<none>"
+		var r := y[i] if i < y.size() else "<none>"
+		if l != r:
+			fail("%s: '%s' but '%s'" % [msg, l.left(240), r.left(240)])
+			return false
+	return true
+
+
+func test_bug_layer_xy_as_tiled_draws() -> bool:
+	# A layer's x/y attributes (an older Tiled's; Tiled 1.12 offers no way to set them): Tiled 1.12
+	# draws a tile layer's cells that many tiles further (finite and infinite, TMX and JSON),
+	# ignores an object layer's and a group's, and reads a TMX image layer's as its offset when it
+	# has neither offsetx nor offsety (its JSON reader ignores them). Each map imports exactly like
+	# its _plain twin, the same map written as Tiled draws it without x/y (tmxrasterizer of
+	# Tiled 1.12.0 draws each pair alike). The runtime used to apply an object layer's and a
+	# group's x/y as pixels and to ignore a tile layer's and an image layer's.
+	for pair in [["layer_xy.tmx", "layer_xy_plain.tmx"], ["layer_xy.tmj", "layer_xy_plain.tmj"],
+			["layer_xy_infinite.tmx", "layer_xy_infinite_plain.tmx"]]:
+		_same_tree(_import(pair[0], {"add_id_as_metadata": true}), _import(pair[1], {"add_id_as_metadata": true}), pair[0] + " vs " + pair[1])
+	var n := _import("layer_xy.tmx")
+	if n:
+		var objects := need(n, "Objects", "Node2D") as Node2D
+		if objects: eq(objects.position, Vector2(4, 0), "Objects: offsetx only, x/y ignored")
+		var group := need(n, "Group", "Node2D") as Node2D
+		if group: eq(group.position, Vector2(10, 20), "Group: its offset only, x/y ignored")
+		var tiles := layer(n, "Tiles")
+		if tiles: check(tiles.get_cell_source_id(Vector2i(2, 1)) != -1 and tiles.get_cell_source_id(Vector2i(0, 0)) == -1, "Tiles: cell (0, 0) drawn at (2, 1)")
+		var legacy := need(n, "ImgLegacy", "TextureRect") as TextureRect
+		if legacy: eq(legacy.position, Vector2(5, 7), "ImgLegacy: x/y as its offset")
+		var with_offset := need(n, "ImgOffset", "TextureRect") as TextureRect
+		if with_offset: eq(with_offset.position, Vector2(4, 6), "ImgOffset: its offset, x/y ignored")
+	var j := _import("layer_xy.tmj")
+	if j:
+		var legacy := need(j, "ImgLegacy", "TextureRect") as TextureRect
+		if legacy: eq(legacy.position, Vector2.ZERO, "JSON ImgLegacy: x/y ignored")
+	var inf := _import("layer_xy_infinite.tmx")
+	if inf:
+		meta(inf, "map_rect", Rect2(-14 * 16, 0, 32 * 16, 19 * 16))
+	return done()
+
+
 func test_new_layer_blend_modes() -> bool:
 	var n := _import("layers.tmx")
 	var add := layer(n, "AddLayer")
@@ -2587,6 +2664,31 @@ func test_new_world_explicit() -> bool:
 		eq(hub.position, Vector2(-160, 0), "hub position")
 		meta(hub, "map_rect", Rect2(0, 0, 160, 160))
 	eq(imp.get("last_error_count"), 0, "import_world errors")
+	return done()
+
+
+func test_bug_world_layer_xy_as_tiled_draws() -> bool:
+	# import_world() builds a map with layer x/y as import() does (test_bug_layer_xy_as_tiled_draws):
+	# each map of a world with layer_xy.tmx and layer_xy_infinite.tmx equals the same map of a world
+	# with their _plain twins, at the same world position.
+	var imp := _new_importer({"add_id_as_metadata": true})
+	if not check(imp.has_method("import_world"), "Importer has no import_world()"): return done()
+	var worlds: Array[Node] = []
+	for suffix in ["", "_plain"]:
+		var world := {"type": "world", "maps": [
+			{"fileName": "../fixtures/layer_xy%s.tmx" % suffix, "x": 0, "y": 0, "width": 128, "height": 96},
+			{"fileName": "../fixtures/layer_xy_infinite%s.tmx" % suffix, "x": 128, "y": 0, "width": 128, "height": 128}]}
+		var path := OUT + "layer_xy%s.world" % suffix
+		var f := FileAccess.open(path, FileAccess.WRITE)
+		f.store_string(JSON.stringify(world))
+		f.close()
+		var w: Node = imp.call("import_world", path)
+		if not check(w != null, "import_world(%s) returned null" % path): return done()
+		_to_free.append(w)
+		worlds.append(w)
+	if eq(worlds[0].get_child_count(), 2, "world maps") and eq(worlds[1].get_child_count(), 2, "plain world maps"):
+		for i in 2:
+			_same_tree(worlds[0].get_child(i), worlds[1].get_child(i), "world map %d" % i)
 	return done()
 
 

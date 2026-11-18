@@ -108,6 +108,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unset warned. The extension's validation on save no longer reports unset references either.
 
 ### Fixed
+- Both importers: a layer's `x` and `y` attributes (an older Tiled's; Tiled 1.12 neither shows nor edits them) are
+  read as Tiled 1.12 draws them. An object layer's and a group's are ignored: before, both were added to the node's
+  position as pixels, so a map last saved by an older Tiled (seen: `<objectgroup ... y="-1">`) had every object of
+  the layer off by them. A tile layer's shift its cells by that many tiles (finite and infinite maps, also the
+  infinite map's `map_rect`); before, they were ignored. A `.tmx` image layer's are its offset when it has neither
+  `offsetx` nor `offsety` (Tiled's reading of maps from before 0.15); before, they were ignored. Both formats,
+  `import()`, `import_async()`, `import_world()` and `TiledStreamer` (whose object grid already ignored them).
+  Fixtures `layer_xy.tmx`, `.tmj`, `layer_xy_infinite.tmx` and their `_plain` twins (the same maps as Tiled draws
+  them, checked with Tiled 1.12.0's `tmxrasterizer`); tests `test_bug_layer_xy_as_tiled_draws`,
+  `test_bug_world_layer_xy_as_tiled_draws`, checks in `test/test_async.gd` and `test/test_stream.gd`,
+  `native/tiled/tests/layer_xy.rs`, parity dumps. Native library: needs one built from this commit or later.
 - Both importers: a tile object with a class of its own on a tile that has a class kept the tile's class as its
   `class` metadata (the scene was already chosen by the object's class). The object's own class wins, as in Tiled;
   an object without one still takes the tile's.

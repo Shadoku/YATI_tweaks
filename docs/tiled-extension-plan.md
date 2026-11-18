@@ -370,7 +370,7 @@ through the `.tiled-project` file, the maps and (for the check) the Godot binary
   findings on `sample/rules/maps/portals/clash.tmx` (`real_tiled.test.mjs`, the map read through the tmx format and
   given its file name through a `Proxy`). **For the editor** (README checklist 14 and 15): Pick's list, the undo step
   and Follow.
-- 2026-11-15, open items noted for later (asked for by a game that uses the rules; neither is started):
+- 2026-11-15, open items noted for later (asked for by a game that uses the rules; the second done 2026-11-18, below):
   - **An `exclude` for the project-wide rules.** `object_in_project` and `unique_name` take a `maps` folder or glob
     but cannot leave a folder out. A game that keeps template maps under `maps/templates/` (copied to start a new
     map, never loaded) has their placeholder names counted for uniqueness and offered by Pick. Wanted: an
@@ -379,3 +379,13 @@ through the `.tiled-project` file, the maps and (for the check) the Godot binary
     (seen: `<objectgroup ... y="-1">`). Tiled 1.12 neither shows nor edits them, and both importers apply them as
     a pixel offset, so every object of the layer sits off by that much. Wanted: the importers ignore them as Tiled
     does (or warn once), and the extension's save-time validation reports them.
+- 2026-11-18, **a layer's old `x` / `y` attributes done** (branch `claude/exclude-and-layer-xy`):
+  - **A layer's `x` / `y`**, both importers, as Tiled 1.12.0 draws them, checked with its own renderer
+    (`tmxrasterizer` of the AppImage, headless) rather than taken from the TMX reference: an object layer's and a
+    group's are ignored (both formats); a **tile layer's are honoured**, as a shift of its cells in tiles (both
+    formats, finite and infinite; the layer is saved back with them, and its region starts there); a TMX image
+    layer's are its pixel offset when it has neither `offsetx` nor `offsety` (`MapReader`'s compatibility with maps
+    from before 0.15; Tiled's JSON reader ignores them). Before, both importers added an object layer's and a
+    group's to the node's position as pixels and ignored a tile layer's and an image layer's. The save-time
+    report the 2026-11-15 note also asked for was not added: with the importers drawing as Tiled does there is
+    nothing to warn about. Reference.md's "Specialities", CHANGELOG.
